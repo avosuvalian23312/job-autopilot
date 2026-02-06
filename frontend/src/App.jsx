@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-const API = "http://localhost:7071/api";
+const API = "/api";
+
 
 function copyText(text) {
   if (!text) return;
