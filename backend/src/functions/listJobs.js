@@ -1,3 +1,4 @@
+// src/functions/listJobs.js
 const { CosmosClient } = require("@azure/cosmos");
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
@@ -6,19 +7,21 @@ const container = cosmos
   .container(process.env.COSMOS_CONTAINER_NAME);
 
 async function listJobs(request, context) {
-  const query = {
-    query: "SELECT * FROM c WHERE c.userId = @uid ORDER BY c.createdAt DESC",
-    parameters: [{ name: "@uid", value: "demo" }]
-  };
+  try {
+    const { resources } = await container.items
+      .query({
+        query: "SELECT * FROM c ORDER BY c.createdAt DESC"
+      })
+      .fetchAll();
 
-  const { resources } = await container.items
-    .query(query)
-    .fetchAll();
-
-  return {
-    status: 200,
-    jsonBody: { jobs: resources }
-  };
+    return { status: 200, jsonBody: { jobs: resources || [] } };
+  } catch (err) {
+    context.error("listJobs error:", err);
+    return {
+      status: 500,
+      jsonBody: { error: "Failed to list jobs", details: err?.message || "Unknown error" }
+    };
+  }
 }
 
 module.exports = { listJobs };

@@ -1,80 +1,114 @@
-const { CosmosClient } = require("@azure/cosmos");
+// src/functions/generateDocuments.js
 const OpenAI = require("openai");
-const crypto = require("crypto");
+const { CosmosClient } = require("@azure/cosmos");
+
+const client = new OpenAI({
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+  baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
+  defaultQuery: { "api-version": "2024-02-15-preview" },
+  defaultHeaders: { "api-key": process.env.AZURE_OPENAI_API_KEY }
+});
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
   .database(process.env.COSMOS_DB_NAME)
   .container(process.env.COSMOS_CONTAINER_NAME);
 
-async function generateDocuments(request, context) {
-  let body = {};
+function normalizeString(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+function ensureArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean).map(String);
+  if (typeof v === "string" && v.trim()) return [v.trim()];
+  return [];
+}
+async function safeJson(request) {
   try {
-    body = await request.json();
-  } catch {}
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
 
-  const { jobDescription, userProfile } = body;
+async function generateDocuments(request, context) {
+  const body = await safeJson(request);
 
-  if (!jobDescription || !userProfile) {
+  const jobDescription = normalizeString(body.jobDescription);
+  const userProfile = body.userProfile || {};
+
+  const name = normalizeString(userProfile.name);
+  const experience = ensureArray(userProfile.experience);
+  const skills = ensureArray(userProfile.skills);
+
+  if (!jobDescription || !name) {
     return {
       status: 400,
-      jsonBody: { error: "Missing jobDescription or userProfile" }
+      jsonBody: { error: "Missing jobDescription or userProfile.name" }
     };
   }
 
-  const client = new OpenAI({
-    apiKey: process.env.AZURE_OPENAI_API_KEY,
-    baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
-    defaultQuery: { "api-version": "2024-02-15-preview" },
-    defaultHeaders: { "api-key": process.env.AZURE_OPENAI_API_KEY }
-  });
+  try {
+    const prompt = `
+Return JSON only with keys:
+- jobTitle (string)
+- coverLetter (string)
+- resumeBullets (array of 4-6 strings)
 
-  const prompt = `
-Write a professional cover letter and 4 resume bullet points.
-Do not invent experience.
+Rules:
+- Be honest. Do NOT invent experience.
+- Use the candidate info exactly as given.
 
 JOB DESCRIPTION:
 ${jobDescription}
 
 CANDIDATE:
-Name: ${userProfile.name}
-Experience: ${userProfile.experience.join(", ")}
-Skills: ${userProfile.skills.join(", ")}
+Name: ${name}
+Experience: ${experience.join(", ")}
+Skills: ${skills.join(", ")}
 `;
 
-  const aiResp = await client.chat.completions.create({
-    model: process.env.AZURE_OPENAI_DEPLOYMENT,
-    messages: [
-      { role: "system", content: "You are a professional resume assistant." },
-      { role: "user", content: prompt }
-    ],
-    temperature: 0.4
-  });
+    const aiResp = await client.chat.completions.create({
+      model: process.env.AZURE_OPENAI_DEPLOYMENT,
+      messages: [
+        { role: "system", content: "You produce strict JSON. No markdown. No extra keys." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.4
+    });
 
-  const content = aiResp.choices?.[0]?.message?.content || "";
+    const raw = aiResp.choices?.[0]?.message?.content || "{}";
 
-  const jobDoc = {
-    id: crypto.randomUUID(),
-    userId: "demo",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    jobTitle: jobDescription.split("\n")[0].slice(0, 80),
-    status: "generated",
-    jobDescription,
-    coverLetter: content,
-    resumeBullets: content
-      .split("\n")
-      .filter(l => l.startsWith("-"))
-      .map(l => l.replace(/^- /, ""))
-      .slice(0, 4)
-  };
+    // Parse model output safely
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { status: 500, jsonBody: { error: "AI returned non-JSON output", raw } };
+    }
 
-  await container.items.create(jobDoc);
+    const job = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "generated",
+      jobDescription,
+      jobTitle: normalizeString(parsed.jobTitle) || "Untitled",
+      coverLetter: normalizeString(parsed.coverLetter) || "",
+      resumeBullets: Array.isArray(parsed.resumeBullets) ? parsed.resumeBullets : [],
+      // If your Cosmos container uses /id as PK, you’re good.
+      // If you later add auth, add userId here and use PK /userId.
+    };
 
-  return {
-    status: 200,
-    jsonBody: jobDoc
-  };
+    await container.items.create(job);
+
+    return { status: 200, jsonBody: job };
+  } catch (err) {
+    context.error("generateDocuments error:", err);
+    return {
+      status: 500,
+      jsonBody: { error: "AI generation failed", details: err?.message || "Unknown error" }
+    };
+  }
 }
 
 module.exports = { generateDocuments };
