@@ -1,87 +1,63 @@
+// src/functions/updateJobStatus.js
 const { CosmosClient } = require("@azure/cosmos");
 
-function getContainer() {
-  const cs = process.env.COSMOS_CONNECTION_STRING;
-  const db = process.env.COSMOS_DB_NAME;
-  const ctn = process.env.COSMOS_CONTAINER_NAME;
+const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+const container = cosmos
+  .database(process.env.COSMOS_DB_NAME)
+  .container(process.env.COSMOS_CONTAINER_NAME);
 
-  if (!cs || !db || !ctn) {
-    throw new Error(
-      `Missing env vars: COSMOS_CONNECTION_STRING=${!!cs}, COSMOS_DB_NAME=${!!db}, COSMOS_CONTAINER_NAME=${!!ctn}`
-    );
-  }
-
-  const client = new CosmosClient(cs);
-  return client.database(db).container(ctn);
+function getPartitionKey(item) {
+  // Supports common choices. If your container PK is /id this works.
+  return item.userId ?? item.partitionKey ?? item.id;
 }
 
 async function updateJobStatus(request, context) {
-  // catch absolutely everything (including weird runtime errors)
+  const jobId = request?.params?.jobId || request?.params?.id;
+  if (!jobId) {
+    return { status: 400, jsonBody: { error: "Missing route param id" } };
+  }
+
+  let body = {};
   try {
-    const jobId = context?.bindingData?.jobId;
-    context.log("updateJobStatus called", { jobId, method: request.method });
+    body = await request.json();
+  } catch {}
 
-    if (!jobId) {
-      return { status: 400, jsonBody: { error: "Missing route param id" } };
-    }
+  const newStatus = body?.status;
+  if (!newStatus) {
+    return { status: 400, jsonBody: { error: "Missing status" } };
+  }
 
-    let body;
-    try {
-      body = await request.json();
-    } catch (e) {
-      context.log("Invalid JSON body", e?.message || e);
-      return { status: 400, jsonBody: { error: "Invalid JSON body" } };
-    }
-
-    const newStatus = body?.status;
-    if (!newStatus) {
-      return { status: 400, jsonBody: { error: "Missing status" } };
-    }
-
-    const container = getContainer();
-
-    // CROSS-PARTITION query explicitly enabled
-    const querySpec = {
-      query: "SELECT * FROM c WHERE c.id = @id",
-      parameters: [{ name: "@id", value: jobId }]
-    };
-
+  try {
+    // Find the item by id (works even if you don't know PK yet)
     const { resources } = await container.items
-      .query(querySpec, { enableCrossPartitionQuery: true })
+      .query({
+        query: "SELECT * FROM c WHERE c.id = @id",
+        parameters: [{ name: "@id", value: jobId }]
+      })
       .fetchAll();
 
-    context.log("query result count", resources?.length || 0);
-
-    if (!resources?.length) {
+    const job = resources?.[0];
+    if (!job) {
       return { status: 404, jsonBody: { error: "Job not found" } };
     }
 
-    const job = resources[0];
-    const pk = job.userId;
-
-    if (!pk) {
-      // this is the classic partition key bug
-      return {
-        status: 500,
-        jsonBody: { error: "Job missing partition key userId", jobId }
-      };
-    }
-
+    // Update fields
     job.status = newStatus;
     job.updatedAt = new Date().toISOString();
 
-    const { resource: updated } = await container.item(jobId, pk).replace(job);
+    // Replace using correct PK
+    const pk = getPartitionKey(job);
+    await container.item(job.id, pk).replace(job);
 
-    return { status: 200, jsonBody: updated };
+    return {
+      status: 200,
+      jsonBody: { ok: true, job }
+    };
   } catch (err) {
-    // this ensures you NEVER get content-length: 0 again
-    context.log("FATAL updateJobStatus error:", err);
+    context.error("updateJobStatus error:", err);
     return {
       status: 500,
-      jsonBody: {
-        error: "Unhandled error in updateJobStatus",
-        details: err?.message || String(err)
-      }
+      jsonBody: { error: "Update failed", details: err?.message || "Unknown error" }
     };
   }
 }
