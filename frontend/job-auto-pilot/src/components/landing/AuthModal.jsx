@@ -7,16 +7,23 @@ import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
  * Runtime config at /public/config.json
- * IMPORTANT: For External ID (customers/CIAM) use *.ciamlogin.com (or custom domain),
- * NOT login.microsoftonline.com, otherwise you will only ever see Microsoft sign-in.
  *
- * config.json should look like:
+ * REQUIRED for CIAM (External ID):
+ * - AUTHORITY should be the tenant v2.0 base:
+ *   "https://jobautopilotext.ciamlogin.com/<TENANT_ID>/v2.0"
+ * - KNOWN_AUTHORITIES should include the host:
+ *   ["jobautopilotext.ciamlogin.com"]
+ * - USER_FLOW is the Sign up / Sign in user flow name:
+ *   "signup_signin"
+ *
+ * Example config.json:
  * {
- *   "TENANT_ID": "...",
- *   "CLIENT_ID": "...",
- *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/<TENANT_ID>/signup_signin",
+ *   "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
+ *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
+ *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1/v2.0",
  *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
- *   "REDIRECT_URI": "https://<your-static-app>",
+ *   "USER_FLOW": "signup_signin",
+ *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
  *   "SCOPES": ["openid","profile","email"]
  * }
  */
@@ -47,6 +54,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
+        // User flow name (policy) for CIAM routing
+        const userFlow = cfg.USER_FLOW || cfg.userFlow || cfg.user_flow || "signup_signin";
+
+        // knownAuthorities is REQUIRED for CIAM/custom domains in MSAL
         let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
         if (!knownAuthorities && authority) {
           try {
@@ -57,7 +68,16 @@ export default function AuthModal({ open, onClose, onComplete }) {
           }
         }
 
-        return { tenantId, clientId, authority, redirectUri, scopes, knownAuthorities, raw: cfg };
+        return {
+          tenantId,
+          clientId,
+          authority,
+          redirectUri,
+          scopes,
+          knownAuthorities,
+          userFlow,
+          raw: cfg,
+        };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -68,6 +88,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
           knownAuthorities: null,
+          userFlow: "signup_signin",
           raw: null,
         };
       });
@@ -152,38 +173,34 @@ export default function AuthModal({ open, onClose, onComplete }) {
       return;
     }
 
-    const { scopes } = await loadRuntimeConfig();
+    const { scopes, userFlow } = await loadRuntimeConfig();
 
-    // Prevent AADSTS1002014-ish conflicts by clearing any active account
-    // so MSAL doesn't attach opaque login_hint behind your back.
+    // Prevent conflicts where MSAL attaches opaque login_hint
     try {
       pca.setActiveAccount(null);
     } catch {
       // ignore
     }
 
-    // Use redirect (CIAM hosted pages). Popups are often blocked and CIAM is designed for redirects.
+    // Always pass the CIAM policy/user flow as `p`
     const request = {
       scopes,
       prompt: provider === "email" ? "login" : "select_account",
+      extraQueryParameters: {
+        p: userFlow,
+      },
     };
 
     if (provider === "google") {
-      // CIAM IdP hint (preferred). This makes the hosted page route into Google.
-      request.extraQueryParameters = {
-        idp: "google",
-      };
-      // Fallback (older behavior): request.extraQueryParameters = { domain_hint: "google.com" };
+      // Route to Google in CIAM
+      request.extraQueryParameters = { ...request.extraQueryParameters, idp: "google" };
     } else if (provider === "microsoft") {
-      // Route to Microsoft (Entra ID / MS accounts) via IdP hint as well.
-      request.extraQueryParameters = {
-        idp: "microsoft",
-      };
-      // Fallback: request.extraQueryParameters = { domain_hint: "microsoft.com" };
+      // Route to Microsoft in CIAM
+      request.extraQueryParameters = { ...request.extraQueryParameters, idp: "microsoft" };
     } else if (provider === "email") {
       const loginHint = email?.trim();
       if (loginHint) request.loginHint = loginHint;
-      // No idp/domain_hint for email.
+      // no idp for email
     }
 
     try {
@@ -247,9 +264,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   <div className="w-full border-t border-white/10"></div>
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-[#0E0E12] text-white/30">
-                    Or continue with email
-                  </span>
+                  <span className="px-2 bg-[#0E0E12] text-white/30">Or continue with email</span>
                 </div>
               </div>
 
