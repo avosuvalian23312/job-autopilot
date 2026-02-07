@@ -6,33 +6,28 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * Runtime config:
+ * External ID runtime config:
  * Put config at:  frontend/job-auto-pilot/public/config.json
  * Served at:      https://<your-site>/config.json
  *
  * Example config.json:
  * {
- *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
- *   "AUTHORITY": "https://login.microsoftonline.com/common",
- *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
+ *   "TENANT_ID": "...",
+ *   "CLIENT_ID": "...",
+ *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
+ *   "REDIRECT_URI": "https://<your-site>",
  *   "SCOPES": ["openid","profile","email"]
  * }
- *
- * IMPORTANT:
- * - If you want PERSONAL Microsoft accounts to work, your AUTHORITY should be:
- *     https://login.microsoftonline.com/common
- *   and your App Registration "Supported account types" must include personal accounts.
- * - With Entra External ID, you generally cannot *hard force* Google/Microsoft like B2C's idp=.
- *   The best you can do is hint; the UI may still show a picker.
  */
 
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
+  const [startingAuth, setStartingAuth] = useState(false);
 
   const cfgPromiseRef = useRef(null);
   const pcaRef = useRef(null);
   const pcaInitPromiseRef = useRef(null);
-  const authStartedRef = useRef(false);
+  const didHandleRedirectRef = useRef(false);
 
   const loadRuntimeConfig = () => {
     if (cfgPromiseRef.current) return cfgPromiseRef.current;
@@ -43,24 +38,26 @@ export default function AuthModal({ open, onClose, onComplete }) {
         return res.json();
       })
       .then((cfg) => {
+        const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
         const clientId = cfg.CLIENT_ID || cfg.clientId || "";
         const authority =
           cfg.AUTHORITY ||
           cfg.authority ||
-          "https://login.microsoftonline.com/common"; // safest default
+          (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
         const redirectUri =
           cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        return { clientId, authority, redirectUri, scopes, raw: cfg };
+        return { tenantId, clientId, authority, redirectUri, scopes, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
         return {
+          tenantId: "",
           clientId: "",
-          authority: "https://login.microsoftonline.com/common",
+          authority: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
           raw: null,
@@ -78,7 +75,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       if (!clientId || !authority) {
         console.error(
-          "[AuthModal] Missing config. /config.json must include CLIENT_ID and AUTHORITY."
+          "[AuthModal] Missing External ID config. /config.json must include CLIENT_ID and AUTHORITY (or TENANT_ID)."
         );
         alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY).");
         return null;
@@ -104,80 +101,75 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
-  // ✅ Fix: DO NOT call onComplete / navigate until AFTER redirect completes successfully.
+  // IMPORTANT:
+  // - We handle the redirect ONCE.
+  // - We call onComplete ONLY AFTER the redirect result comes back (so you don't jump to Pricing early).
   useEffect(() => {
+    if (didHandleRedirectRef.current) return;
+    didHandleRedirectRef.current = true;
+
     (async () => {
       const pca = await getInitializedPca();
       if (!pca) return;
 
       try {
         const result = await pca.handleRedirectPromise();
-
-        // If we came back from login, MSAL gives a result with an account
         if (result?.account) {
-          try {
-            pca.setActiveAccount(result.account);
-          } catch {}
-          authStartedRef.current = false;
-          onComplete?.(result);
-          onClose?.();
-          return;
-        }
-
-        // Or user is already signed in (page refresh)
-        const accounts = pca.getAllAccounts();
-        if (accounts?.length) {
-          try {
-            pca.setActiveAccount(accounts[0]);
-          } catch {}
-          authStartedRef.current = false;
-          // don't auto-close modal unless it's open and user actually started auth
-          // (prevents random UI jumps)
+          pca.setActiveAccount(result.account);
+          onComplete?.(result); // <-- call ONLY after auth completes
         }
       } catch (e) {
-        authStartedRef.current = false;
         console.error("[AuthModal] handleRedirectPromise error:", e);
+      } finally {
+        setStartingAuth(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAuth = async (provider) => {
+    setStartingAuth(true);
+
+    // DO NOT call onComplete here — that is what was sending you to Pricing early.
+    // If you want, you can close the modal visually:
+    // onClose?.();
+
     const pca = await getInitializedPca();
-    if (!pca) return;
+    if (!pca) {
+      setStartingAuth(false);
+      return;
+    }
 
     const { scopes } = await loadRuntimeConfig();
 
-    // Prevent double-click race
-    if (authStartedRef.current) return;
-    authStartedRef.current = true;
+    // We want:
+    // - Google button -> go straight to Google (best-effort via domain_hint)
+    // - Microsoft button -> Microsoft sign-in (no forced account picker)
+    // - Email button -> prefill email (loginHint), but DO NOT combine with domain_hint (causes AADSTS1002014)
+    const request = {
+      scopes,
+      prompt: "login",
+    };
 
-    // Hints (not guaranteed to force provider in External ID)
-    const extraQueryParameters = {};
     if (provider === "google") {
-      // Best-effort hint; may still show "Sign-in options"
-      extraQueryParameters.domain_hint = "google.com";
-      extraQueryParameters.login_hint = email?.trim() || "";
+      // Best-effort “go straight to Google”.
+      // NOTE: This only works if Google is configured as an identity provider in your External ID tenant.
+      request.extraQueryParameters = { domain_hint: "google.com" };
     } else if (provider === "microsoft") {
-      extraQueryParameters.domain_hint = "organizations";
+      // Best-effort “go straight to Microsoft”.
+      // If you want personal MS accounts too, you must enable it in App Registration (Supported account types).
+      request.extraQueryParameters = { domain_hint: "consumers" };
     } else if (provider === "email") {
-      // email OTP / whatever your tenant allows — this just hints the username
-      if (email?.trim()) extraQueryParameters.login_hint = email.trim();
+      const loginHint = email?.trim();
+      if (loginHint) request.loginHint = loginHint;
+      // IMPORTANT: no domain_hint here, or you hit AADSTS1002014.
     }
 
     try {
-      await pca.loginRedirect({
-        scopes,
-        prompt: provider === "google" ? "login" : "select_account",
-        ...(Object.keys(extraQueryParameters).length
-          ? { extraQueryParameters }
-          : {}),
-      });
-
-      // Note: execution stops here due to redirect
+      await pca.loginRedirect(request);
     } catch (e) {
-      authStartedRef.current = false;
       console.error("[AuthModal] loginRedirect error:", e);
+      setStartingAuth(false);
       alert("Login failed to start. Check console for details.");
     }
   };
@@ -190,7 +182,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={startingAuth ? undefined : onClose}
             className="fixed inset-0 bg-black/80 backdrop-blur-md z-50"
           />
           <motion.div
@@ -201,8 +193,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
           >
             <div className="bg-[#0E0E12] rounded-2xl p-8 max-w-md w-full border border-white/20 relative shadow-2xl">
               <button
-                onClick={onClose}
-                className="absolute top-4 right-4 text-white/40 hover:text-white/70 transition-colors"
+                onClick={startingAuth ? undefined : onClose}
+                className="absolute top-4 right-4 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
+                disabled={startingAuth}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -213,6 +206,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
               <div className="space-y-3 mb-6">
                 <Button
                   onClick={() => handleAuth("google")}
+                  disabled={startingAuth}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
                   Continue with Google
@@ -220,6 +214,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
                 <Button
                   onClick={() => handleAuth("microsoft")}
+                  disabled={startingAuth}
                   className="w-full py-6 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
                   Continue with Microsoft
@@ -243,10 +238,12 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={startingAuth}
                   className="bg-white/[0.05] border-white/10 text-white placeholder:text-white/40 py-5 rounded-xl focus:border-purple-500/50"
                 />
                 <Button
                   onClick={() => handleAuth("email")}
+                  disabled={startingAuth}
                   className="w-full py-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-semibold"
                 >
                   <Mail className="w-4 h-4 mr-2" />
