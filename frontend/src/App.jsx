@@ -74,7 +74,7 @@ export default function App() {
 
   const [result, setResult] = useState(null);
   const [jobs, setJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState(null;
+  const [selectedJobId, setSelectedJobId] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
