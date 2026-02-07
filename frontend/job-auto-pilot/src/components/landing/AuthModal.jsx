@@ -6,17 +6,22 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * External ID runtime config:
+ * External ID runtime config (served by Vite):
  * Put config at:  frontend/job-auto-pilot/public/config.json
  * Served at:      https://<your-site>/config.json
  *
- * Example config.json:
+ * Minimal config.json:
  * {
- *   "TENANT_ID": "...",
- *   "CLIENT_ID": "...",
+ *   "TENANT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+ *   "CLIENT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
  *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
  *   "REDIRECT_URI": "https://<your-site>",
- *   "SCOPES": ["openid","profile","email"]
+ *   "SCOPES": ["openid","profile","email"],
+ *
+ *   // OPTIONAL (helps go straight to a provider when your tenant supports it):
+ *   // Try these first; if your tenant expects different values, change them.
+ *   "IDP_GOOGLE": "google",
+ *   "IDP_MICROSOFT": "microsoft"
  * }
  */
 
@@ -26,6 +31,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const cfgPromiseRef = useRef(null);
   const pcaRef = useRef(null);
   const pcaInitPromiseRef = useRef(null);
+  const redirectHandledRef = useRef(false);
 
   const loadRuntimeConfig = () => {
     if (cfgPromiseRef.current) return cfgPromiseRef.current;
@@ -42,13 +48,26 @@ export default function AuthModal({ open, onClose, onComplete }) {
           cfg.AUTHORITY ||
           cfg.authority ||
           (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
+
         const redirectUri =
           cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        return { tenantId, clientId, authority, redirectUri, scopes, raw: cfg };
+        const idpGoogle = cfg.IDP_GOOGLE || cfg.idpGoogle || "google";
+        const idpMicrosoft = cfg.IDP_MICROSOFT || cfg.idpMicrosoft || "microsoft";
+
+        return {
+          tenantId,
+          clientId,
+          authority,
+          redirectUri,
+          scopes,
+          idpGoogle,
+          idpMicrosoft,
+          raw: cfg,
+        };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -58,6 +77,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
           authority: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
+          idpGoogle: "google",
+          idpMicrosoft: "microsoft",
           raw: null,
         };
       });
@@ -79,7 +100,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
         return null;
       }
 
-      // Create once
       if (!pcaRef.current) {
         pcaRef.current = new PublicClientApplication({
           auth: { clientId, authority, redirectUri },
@@ -87,7 +107,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
         });
       }
 
-      // MSAL v3 requires initialize()
       try {
         await pcaRef.current.initialize();
       } catch (e) {
@@ -101,14 +120,27 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
-  // Handle redirect response once (after initialization)
+  // Handle redirect result ONCE, then run onComplete AFTER sign-in is actually finished.
   useEffect(() => {
     (async () => {
+      if (redirectHandledRef.current) return;
+      redirectHandledRef.current = true;
+
       const pca = await getInitializedPca();
       if (!pca) return;
 
       try {
-        await pca.handleRedirectPromise();
+        const result = await pca.handleRedirectPromise();
+
+        // Only call onComplete if there *was* a redirect response
+        if (result) {
+          // If you stored a "return to" route, you can read it here
+          // const returnTo = sessionStorage.getItem("postLoginPath");
+          // sessionStorage.removeItem("postLoginPath");
+
+          onComplete?.(result);
+          onClose?.();
+        }
       } catch (e) {
         console.error("[AuthModal] handleRedirectPromise error:", e);
       }
@@ -117,21 +149,30 @@ export default function AuthModal({ open, onClose, onComplete }) {
   }, []);
 
   const handleAuth = async (provider) => {
-    onComplete?.();
-
     const pca = await getInitializedPca();
     if (!pca) return;
 
-    const { scopes } = await loadRuntimeConfig();
+    const { scopes, idpGoogle, idpMicrosoft } = await loadRuntimeConfig();
 
-    // External ID: no B2C-style idp forcing. Email button can provide loginHint.
+    // Prevent the “go to pricing before login finishes” behavior:
+    // DO NOT call onComplete here. We call it only after handleRedirectPromise gets a result.
+    // Also, store current path so you can return after auth if you want.
+    // sessionStorage.setItem("postLoginPath", window.location.pathname + window.location.search);
+
     const loginHint = provider === "email" && email ? email.trim() : undefined;
+
+    // Try to force the provider directly (works only if your External ID setup supports it)
+    // If ignored by the tenant, it will just show the normal provider picker.
+    let extraQueryParameters = undefined;
+    if (provider === "google") extraQueryParameters = { idp: idpGoogle };
+    if (provider === "microsoft") extraQueryParameters = { idp: idpMicrosoft };
 
     try {
       await pca.loginRedirect({
         scopes,
-        prompt: "select_account",
+        prompt: "login", // prefer going straight to sign-in
         ...(loginHint ? { loginHint } : {}),
+        ...(extraQueryParameters ? { extraQueryParameters } : {}),
       });
     } catch (e) {
       console.error("[AuthModal] loginRedirect error:", e);
