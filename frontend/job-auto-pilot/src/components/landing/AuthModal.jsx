@@ -5,206 +5,75 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
-/**
- * Runtime config at /public/config.json
- *
- * Recommended config.json:
- * {
- *   "TENANT_ID": "...",                       // optional if you provide TENANT_DOMAIN
- *   "TENANT_DOMAIN": "jobautopilotext.onmicrosoft.com", // recommended for CIAM
- *   "CLIENT_ID": "...",
- *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com", // base host (NO /v2.0)
- *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
- *   "USER_FLOW": "signup_signin",             // your user-flow/policy name
- *   "REDIRECT_URI": "https://<your-static-app>",
- *   "SCOPES": ["openid","profile","email"]
- * }
- */
-
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [startingAuth, setStartingAuth] = useState(false);
 
-  const cfgPromiseRef = useRef(null);
+  const cfgRef = useRef(null);
   const pcaRef = useRef(null);
-  const pcaInitPromiseRef = useRef(null);
-  const didHandleRedirectRef = useRef(false);
+  const handledRedirectRef = useRef(false);
 
-  const normalizeAuthority = ({ authorityBase, tenantId, userFlow, tenantDomain }) => {
-    /**
-     * CIAM/B2C authorities MUST include a tenant domain segment (typically <tenant>.onmicrosoft.com)
-     * plus the user flow/policy name.
-     *
-     * Examples:
-     *  - https://jobautopilotext.ciamlogin.com/jobautopilotext.onmicrosoft.com/B2C_1_signupsignin
-     *  - https://<tenant>.b2clogin.com/<tenant>.onmicrosoft.com/<policy>
-     *
-     * Many people paste a GUID TENANT_ID — that is NOT a valid path segment for these hosts and
-     * will cause 404 + CORS errors in the SPA.
-     */
-    try {
-      const url = new URL(authorityBase);
+  const loadConfig = async () => {
+    if (cfgRef.current) return cfgRef.current;
 
-      // If user provided a full authority that already contains /<something>/<something>, keep it.
-      const path = (url.pathname || "").replace(/\/+$/, "");
-      const looksLikeFull =
-        path.split("/").filter(Boolean).length >= 2 && !path.endsWith("/v2.0");
-      if (looksLikeFull) return `${url.origin}${path}`;
+    const res = await fetch("/config.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
+    const cfg = await res.json();
 
-      const flow = (userFlow || "").trim();
-      if (!flow) return `${url.origin}`; // we will error later if flow missing
+    const CLIENT_ID = cfg.CLIENT_ID;
+    const AUTHORITY = (cfg.AUTHORITY || "").replace(/\/v2\.0$/, ""); // should include /<TENANT_GUID>
+    const REDIRECT_URI = cfg.REDIRECT_URI || window.location.origin;
+    const SCOPES = cfg.SCOPES || ["openid", "profile", "email"];
 
-      // Resolve tenant domain:
-      // 1) explicit tenantDomain in config
-      // 2) if tenantId already looks like a domain (contains a dot), use it
-      // 3) infer from subdomain of ciamlogin.com / b2clogin.com host
-      let td = (tenantDomain || "").trim();
-      if (!td) {
-        const tid = (tenantId || "").trim();
-        td = tid.includes(".") ? tid : "";
-      }
-      if (!td) {
-        const hostParts = (url.host || "").split(".");
-        // jobautopilotext.ciamlogin.com -> tenant name = jobautopilotext
-        const tenantName = hostParts.length ? hostParts[0] : "";
-        td = tenantName ? `${tenantName}.onmicrosoft.com` : "";
-      }
+    const KNOWN_AUTHORITIES =
+      cfg.KNOWN_AUTHORITIES ||
+      (AUTHORITY ? [new URL(AUTHORITY).host] : []);
 
-      if (!td) return `${url.origin}`;
-
-      return `${url.origin}/${td}/${flow}`;
-    } catch {
-      return authorityBase;
+    if (!CLIENT_ID || !AUTHORITY) {
+      throw new Error("config.json missing CLIENT_ID or AUTHORITY");
     }
+
+    // Guard: prevent accidental Microsoft login authority
+    if (AUTHORITY.includes("login.microsoftonline.com")) {
+      throw new Error("AUTHORITY must be *.ciamlogin.com/<TENANT_GUID> for your setup");
+    }
+
+    cfgRef.current = {
+      CLIENT_ID,
+      AUTHORITY,
+      REDIRECT_URI,
+      SCOPES,
+      KNOWN_AUTHORITIES,
+    };
+    return cfgRef.current;
   };
 
-  const loadRuntimeConfig = () => {
-    if (cfgPromiseRef.current) return cfgPromiseRef.current;
+  const getPca = async () => {
+    if (pcaRef.current) return pcaRef.current;
 
-    cfgPromiseRef.current = fetch("/config.json", { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
-        return res.json();
-      })
-      .then((cfg) => {
-        const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
-        const clientId = cfg.CLIENT_ID || cfg.clientId || "";
+    const cfg = await loadConfig();
 
-        // Accept either a full AUTHORITY or a base host.
-        // If you pass "https://.../v2.0" that is NOT what we want for user flows.
-        const rawAuthority = cfg.AUTHORITY || cfg.authority || "";
-        const userFlow = cfg.USER_FLOW || cfg.userFlow || "";
+    pcaRef.current = new PublicClientApplication({
+      auth: {
+        clientId: cfg.CLIENT_ID,
+        authority: cfg.AUTHORITY,
+        redirectUri: cfg.REDIRECT_URI,
+        knownAuthorities: cfg.KNOWN_AUTHORITIES,
+      },
+      cache: { cacheLocation: "localStorage" },
+    });
 
-        const redirectUri =
-          cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
-
-        let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
-        if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
-
-        let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
-        if (!knownAuthorities && rawAuthority) {
-          try {
-            const host = new URL(rawAuthority).host;
-            knownAuthorities = [host];
-          } catch {
-            knownAuthorities = null;
-          }
-        }
-
-        // If rawAuthority ends with /v2.0, strip it (user flows are not /v2.0 endpoints)
-        let authorityBase = rawAuthority;
-        if (authorityBase.endsWith("/v2.0")) {
-          authorityBase = authorityBase.replace(/\/v2\.0$/, "");
-        }
-
-        const tenantDomain =
-          cfg.TENANT_DOMAIN || cfg.tenantDomain || cfg.TENANT_NAME || cfg.tenantName || "";
-
-        const authority = normalizeAuthority({ authorityBase, tenantId, userFlow, tenantDomain });
-
-        return {
-          tenantId,
-          clientId,
-          authority,
-          authorityBase,
-          userFlow,
-          redirectUri,
-          scopes,
-          knownAuthorities,
-          raw: cfg,
-        };
-      })
-      .catch((err) => {
-        console.error("[AuthModal] Failed to load /config.json:", err);
-        return {
-          tenantId: "",
-          clientId: "",
-          authority: "",
-          authorityBase: "",
-          userFlow: "",
-          redirectUri: window.location.origin,
-          scopes: ["openid", "profile", "email"],
-          knownAuthorities: null,
-          raw: null,
-        };
-      });
-
-    return cfgPromiseRef.current;
-  };
-
-  const getInitializedPca = async () => {
-    if (pcaInitPromiseRef.current) return pcaInitPromiseRef.current;
-
-    pcaInitPromiseRef.current = (async () => {
-      const { clientId, authority, knownAuthorities, redirectUri } =
-        await loadRuntimeConfig();
-
-      if (!clientId || !authority) {
-        console.error("[AuthModal] Missing config: CLIENT_ID or AUTHORITY/USER_FLOW");
-        alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY / USER_FLOW).");
-        return null;
-      }
-
-      if (authority.includes("login.microsoftonline.com")) {
-        console.error("[AuthModal] Wrong authority for External ID. Use *.ciamlogin.com");
-        alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
-        return null;
-      }
-
-      if (!pcaRef.current) {
-        pcaRef.current = new PublicClientApplication({
-          auth: {
-            clientId,
-            authority,
-            redirectUri,
-            ...(knownAuthorities ? { knownAuthorities } : {}),
-          },
-          cache: { cacheLocation: "localStorage" },
-        });
-      }
-
-      try {
-        await pcaRef.current.initialize();
-      } catch (e) {
-        console.error("[AuthModal] MSAL initialize() failed:", e);
-        return null;
-      }
-
-      return pcaRef.current;
-    })();
-
-    return pcaInitPromiseRef.current;
+    await pcaRef.current.initialize();
+    return pcaRef.current;
   };
 
   useEffect(() => {
-    if (didHandleRedirectRef.current) return;
-    didHandleRedirectRef.current = true;
+    if (handledRedirectRef.current) return;
+    handledRedirectRef.current = true;
 
     (async () => {
-      const pca = await getInitializedPca();
-      if (!pca) return;
-
       try {
+        const pca = await getPca();
         const result = await pca.handleRedirectPromise();
         if (result?.account) {
           pca.setActiveAccount(result.account);
@@ -219,95 +88,69 @@ export default function AuthModal({ open, onClose, onComplete }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startRedirect = async (pca, request) => {
-    await pca.loginRedirect(request);
-  };
-
-  const handleAuth = async (provider) => {
+  const login = async (provider) => {
     setStartingAuth(true);
 
-    const pca = await getInitializedPca();
-    if (!pca) {
-      setStartingAuth(false);
-      return;
-    }
-
-    const { scopes } = await loadRuntimeConfig();
-
-    // Clear active account so we don't get stale hints
     try {
-      pca.setActiveAccount(null);
-    } catch {
-      // ignore
-    }
+      const pca = await getPca();
+      const cfg = await loadConfig();
 
-    const baseRequest = {
-      scopes,
-      prompt:
-        provider === "google"
-          ? "select_account"
-          : provider === "email"
-          ? "login"
-          : "select_account",
-    };
+      // Clear any active account so hints don’t get ignored
+      try {
+        pca.setActiveAccount(null);
+      } catch {
+        // ignore
+      }
 
-    try {
+      const baseRequest = {
+        scopes: cfg.SCOPES,
+        // For “go straight to provider” UX, login is better than select_account
+        prompt: provider === "google" ? "login" : "select_account",
+      };
+
       if (provider === "google") {
-        // Force Google IdP when the tenant has Google federated.
-        // - domain_hint=google.com (AAD/CIAM often honors this)
-        // - idp=google.com (B2C-style direct-to-provider) as fallback below
-        await startRedirect(pca, {
+        /**
+         * Try to FORCE Google:
+         * - idp=google.com (commonly used in B2C-style federation)
+         * - domain_hint=google.com (AAD/CIAM sometimes honors)
+         *
+         * If CIAM ignores these, the fallback is it will still land on the CIAM page,
+         * but in many tenants this does jump directly to Google.
+         */
+        await pca.loginRedirect({
           ...baseRequest,
-          extraQueryParameters: { domain_hint: "google.com" },
+          extraQueryParameters: {
+            idp: "google.com",
+            domain_hint: "google.com",
+          },
         });
         return;
       }
 
       if (provider === "microsoft") {
-        await startRedirect(pca, {
+        await pca.loginRedirect({
           ...baseRequest,
-          extraQueryParameters: { domain_hint: "organizations" },
+          extraQueryParameters: {
+            domain_hint: "organizations",
+          },
         });
         return;
       }
 
       if (provider === "email") {
-        const loginHint = email?.trim();
-        await startRedirect(pca, {
+        const hint = email.trim();
+        await pca.loginRedirect({
           ...baseRequest,
-          ...(loginHint ? { loginHint } : {}),
+          prompt: "login",
+          ...(hint ? { loginHint: hint } : {}),
         });
         return;
       }
-    } catch (e1) {
-      // Fallback for Google/Microsoft hint param name differences
-      if (provider === "google") {
-        try {
-          await startRedirect(pca, {
-            ...baseRequest,
-            extraQueryParameters: { idp: "google.com" },
-          });
-          return;
-        } catch (e2) {
-          console.error("[AuthModal] google redirect failed:", e1, e2);
-        }
-      } else if (provider === "microsoft") {
-        try {
-          await startRedirect(pca, {
-            ...baseRequest,
-            extraQueryParameters: { domain_hint: "organizations" },
-          });
-          return;
-        } catch (e2) {
-          console.error("[AuthModal] microsoft redirect failed:", e1, e2);
-        }
-      } else {
-        console.error("[AuthModal] loginRedirect error:", e1);
-      }
+    } catch (e) {
+      console.error("[AuthModal] loginRedirect error:", e);
+      alert("Login failed to start. Check console errors.");
+      setStartingAuth(false);
     }
-
-    setStartingAuth(false);
-    alert("Login failed to start. Check console for details.");
   };
 
   return (
@@ -321,6 +164,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
             onClick={startingAuth ? undefined : onClose}
             className="fixed inset-0 bg-black/80 backdrop-blur-md z-50"
           />
+
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -341,7 +185,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
               <div className="space-y-3 mb-6">
                 <Button
-                  onClick={() => handleAuth("google")}
+                  onClick={() => login("google")}
                   disabled={startingAuth}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold"
                 >
@@ -349,7 +193,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 </Button>
 
                 <Button
-                  onClick={() => handleAuth("microsoft")}
+                  onClick={() => login("microsoft")}
                   disabled={startingAuth}
                   className="w-full py-6 bg-white/10 hover:bg-white/15 text-white rounded-xl font-semibold border border-white/20"
                 >
@@ -376,7 +220,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 </div>
 
                 <Button
-                  onClick={() => handleAuth("email")}
+                  onClick={() => login("email")}
                   disabled={startingAuth}
                   className="w-full py-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold"
                 >
