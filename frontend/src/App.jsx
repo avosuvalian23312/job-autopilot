@@ -24,73 +24,42 @@ function formatDate(iso) {
   return d.toLocaleString();
 }
 
-function statusPillStyle(status) {
-  const s = (status || "").toLowerCase();
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-  };
-
-  const map = {
-    generated: { borderColor: "rgba(255,255,255,0.15)" },
-    applied: { borderColor: "rgba(0, 200, 255, 0.25)" },
-    interview: { borderColor: "rgba(255, 200, 0, 0.25)" },
-    offer: { borderColor: "rgba(0, 255, 140, 0.25)" },
-    rejected: { borderColor: "rgba(255, 80, 80, 0.25)" },
-  };
-
-  return { ...base, ...(map[s] || {}) };
-}
-
-function dotStyle(status) {
-  const s = (status || "").toLowerCase();
-  const base = {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.35)",
-  };
-  const map = {
-    generated: { background: "rgba(255,255,255,0.45)" },
-    applied: { background: "rgba(0, 200, 255, 0.7)" },
-    interview: { background: "rgba(255, 200, 0, 0.75)" },
-    offer: { background: "rgba(0, 255, 140, 0.75)" },
-    rejected: { background: "rgba(255, 80, 80, 0.75)" },
-  };
-  return { ...base, ...(map[s] || {}) };
+function normalizeJobResponse(data) {
+  // Supports both: updatedJob OR { job: updatedJob }
+  if (!data) return null;
+  return data.job && typeof data.job === "object" ? data.job : data;
 }
 
 export default function App() {
+  // Tabs: "dashboard" | "generate" | "jobs"
+  const [tab, setTab] = useState("dashboard");
+
+  // Generate form
   const [jobDescription, setJobDescription] = useState("");
   const [name, setName] = useState("Avetis Suvalian");
   const [experience, setExperience] = useState("Walmart Auto Care\nAndy's Frozen Custard");
   const [skills, setSkills] = useState("Customer service\nTroubleshooting");
 
-  const [result, setResult] = useState(null);
+  // Data
   const [jobs, setJobs] = useState([]);
+  const [result, setResult] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState(null);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  // UI upgrades
+  // Dashboard controls
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("newest"); // newest|oldest|title
-  const [toast, setToast] = useState(null);
+  const [sortBy, setSortBy] = useState("newest");
 
+  // UX state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
   function showToast(message, kind = "info") {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, kind });
-    toastTimer.current = setTimeout(() => setToast(null), 2200);
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
   }
 
   async function loadJobs() {
@@ -98,7 +67,9 @@ export default function App() {
     const r = await fetch(`${API}/listJobs`);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data?.error || `listJobs failed (${r.status})`);
-    setJobs(data.jobs || []);
+    const list = Array.isArray(data.jobs) ? data.jobs : [];
+    // Defensive: ensure every job has an id (don’t crash UI)
+    setJobs(list.filter((j) => j && j.id));
   }
 
   useEffect(() => {
@@ -107,6 +78,59 @@ export default function App() {
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
+
+  const selectedJob = useMemo(() => {
+    if (!selectedJobId) return null;
+    return jobs.find((j) => j.id === selectedJobId) || null;
+  }, [jobs, selectedJobId]);
+
+  const preview = selectedJob || result;
+
+  const filteredJobs = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let out = [...jobs];
+
+    if (statusFilter !== "all") {
+      out = out.filter((j) => (j.status || "").toLowerCase() === statusFilter);
+    }
+
+    if (q) {
+      out = out.filter((j) => {
+        const hay = [
+          j.jobTitle,
+          j.status,
+          j.userId,
+          j.jobDescription,
+          j.createdAt,
+          j.updatedAt,
+          j.id,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    if (sortBy === "title") {
+      out.sort((a, b) => (a.jobTitle || "").localeCompare(b.jobTitle || ""));
+    } else if (sortBy === "oldest") {
+      out.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    } else {
+      out.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    }
+
+    return out;
+  }, [jobs, query, statusFilter, sortBy]);
+
+  const stats = useMemo(() => {
+    const counts = { total: jobs.length, generated: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
+    for (const j of jobs) {
+      const s = (j.status || "generated").toLowerCase();
+      if (counts[s] !== undefined) counts[s] += 1;
+    }
+    return counts;
+  }, [jobs]);
 
   async function generate() {
     setLoading(true);
@@ -135,20 +159,28 @@ export default function App() {
       setResult(data);
       showToast("Generated docs + saved job", "success");
       await loadJobs();
+      setTab("dashboard");
     } catch (e) {
       setError(e.message || "Generate failed");
+      showToast("Generate failed", "error");
     } finally {
       setLoading(false);
     }
   }
 
-  // Optimistic status updates
   async function updateStatus(jobId, newStatus) {
     setError("");
 
-    // optimistic UI: update immediately
+    if (!jobId) {
+      setError("Missing job id in UI (refresh jobs list).");
+      showToast("Missing job id (refresh)", "error");
+      return;
+    }
+
+    // Optimistic update
+    const optimisticUpdatedAt = new Date().toISOString();
     setJobs((prev) =>
-      prev.map((j) => (j.id === jobId ? { ...j, status: newStatus, updatedAt: new Date().toISOString() } : j))
+      prev.map((j) => (j.id === jobId ? { ...j, status: newStatus, updatedAt: optimisticUpdatedAt } : j))
     );
 
     try {
@@ -161,483 +193,471 @@ export default function App() {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error || `update status failed (${r.status})`);
 
-      // server truth: patch local list
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? data : j)));
-      showToast(`Status updated → ${newStatus}`, "success");
+      const updatedJob = normalizeJobResponse(data);
+      if (!updatedJob?.id) {
+        // Don’t corrupt state if backend returns unexpected shape
+        throw new Error("Backend returned an unexpected response (missing id).");
+      }
+
+      // Replace with server truth (THIS FIXES THE undefined bug)
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? updatedJob : j)));
+      showToast(`Status → ${newStatus}`, "success");
     } catch (e) {
-      // rollback: reload from server to be safe
       setError(e.message || "Status update failed");
       showToast("Status update failed (rolled back)", "error");
+      // Rollback by reloading
       await loadJobs().catch(() => {});
     }
   }
 
-  const selectedJob = useMemo(
-    () => jobs.find((j) => j.id === selectedJobId) || null,
-    [jobs, selectedJobId]
+  const styles = {
+    page: {
+      minHeight: "100vh",
+      display: "flex",
+      background:
+        "radial-gradient(1200px 700px at 10% 10%, rgba(120, 90, 255, 0.18), transparent 55%)," +
+        "radial-gradient(900px 600px at 90% 20%, rgba(0, 200, 255, 0.12), transparent 60%)," +
+        "linear-gradient(180deg, #0b0c10 0%, #0a0b12 60%, #070812 100%)",
+      color: "rgba(255,255,255,0.92)",
+      fontFamily:
+        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
+    },
+    sidebar: {
+      width: 260,
+      padding: 16,
+      borderRight: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(0,0,0,0.20)",
+      backdropFilter: "blur(10px)",
+      position: "sticky",
+      top: 0,
+      height: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      gap: 12,
+    },
+    main: {
+      flex: 1,
+      padding: 18,
+      display: "grid",
+      gridTemplateColumns: "1.05fr 0.95fr",
+      gap: 16,
+      alignItems: "start",
+    },
+    card: {
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(255,255,255,0.04)",
+      borderRadius: 16,
+      padding: 16,
+      boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+      backdropFilter: "blur(10px)",
+    },
+    btn: (active = false) => ({
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: active
+        ? "linear-gradient(90deg, rgba(120,90,255,0.55), rgba(0,200,255,0.28))"
+        : "rgba(255,255,255,0.06)",
+      color: "rgba(255,255,255,0.92)",
+      fontWeight: 800,
+      cursor: "pointer",
+      textAlign: "left",
+    }),
+    input: {
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(0,0,0,0.25)",
+      color: "rgba(255,255,255,0.92)",
+      outline: "none",
+    },
+    textarea: {
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(0,0,0,0.25)",
+      color: "rgba(255,255,255,0.92)",
+      outline: "none",
+      resize: "vertical",
+      minHeight: 130,
+    },
+    pill: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "6px 10px",
+      borderRadius: 999,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(255,255,255,0.06)",
+      fontSize: 12,
+      fontWeight: 700,
+    },
+    toast: {
+      position: "fixed",
+      right: 18,
+      bottom: 18,
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(0,0,0,0.55)",
+      boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+      maxWidth: 360,
+      zIndex: 9999,
+    },
+  };
+
+  const DashboardPanel = () => (
+    <div style={{ ...styles.card, height: "calc(100vh - 36px)", overflow: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>Dashboard</div>
+          <div style={{ opacity: 0.7, marginTop: 4, fontSize: 13 }}>Search, filter, sort, and update status.</div>
+        </div>
+        <button
+          style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 800 }}
+          onClick={() => loadJobs().then(() => showToast("Refreshed jobs", "success")).catch((e) => setError(e.message))}
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 160px", gap: 10, marginTop: 14 }}>
+        <input placeholder="Search jobs..." value={query} onChange={(e) => setQuery(e.target.value)} style={styles.input} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={styles.input}>
+          <option value="all">All statuses</option>
+          <option value="generated">generated</option>
+          <option value="applied">applied</option>
+          <option value="interview">interview</option>
+          <option value="offer">offer</option>
+          <option value="rejected">rejected</option>
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={styles.input}>
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="title">Title (A-Z)</option>
+        </select>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+        <span style={styles.pill}>Total: {stats.total}</span>
+        <span style={styles.pill}>Applied: {stats.applied}</span>
+        <span style={styles.pill}>Interview: {stats.interview}</span>
+        <span style={styles.pill}>Offer: {stats.offer}</span>
+        <span style={styles.pill}>Rejected: {stats.rejected}</span>
+      </div>
+
+      <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+        {filteredJobs.length === 0 ? (
+          <div style={{ opacity: 0.75 }}>No jobs match your filters.</div>
+        ) : (
+          filteredJobs.map((job) => (
+            <div
+              key={job.id}
+              onClick={() => setSelectedJobId(job.id)}
+              style={{
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 14,
+                padding: 12,
+                background: selectedJobId === job.id ? "rgba(120, 90, 255, 0.10)" : "rgba(0,0,0,0.18)",
+                cursor: "pointer",
+              }}
+              title="Click to preview"
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 260 }}>
+                  <div style={{ fontWeight: 900, fontSize: 15 }}>
+                    {job.jobTitle || "(untitled job)"}
+                  </div>
+                  <div style={{ opacity: 0.65, marginTop: 6, fontSize: 12 }}>
+                    Created: {formatDate(job.createdAt)} {job.updatedAt ? `• Updated: ${formatDate(job.updatedAt)}` : ""}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <select
+                    value={job.status || "generated"}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      updateStatus(job.id, e.target.value);
+                    }}
+                    style={{ ...styles.input, width: 160 }}
+                  >
+                    <option value="generated">generated</option>
+                    <option value="applied">applied</option>
+                    <option value="interview">interview</option>
+                    <option value="rejected">rejected</option>
+                    <option value="offer">offer</option>
+                  </select>
+
+                  <button
+                    style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 800 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyText(job.jobTitle || "");
+                      showToast("Copied title", "success");
+                    }}
+                  >
+                    Copy Title
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 
-  const shown = selectedJob || result;
+  const GeneratePanel = () => (
+    <div style={{ ...styles.card, height: "calc(100vh - 36px)", overflow: "auto" }}>
+      <div style={{ fontSize: 18, fontWeight: 900 }}>Generate</div>
+      <div style={{ opacity: 0.7, marginTop: 4, fontSize: 13 }}>
+        Paste a job description, generate bullets + cover letter, then track status.
+      </div>
 
-  const filteredJobs = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let out = [...jobs];
+      <div style={{ marginTop: 14 }}>
+        <textarea
+          rows={8}
+          placeholder="Paste job description here..."
+          value={jobDescription}
+          onChange={(e) => setJobDescription(e.target.value)}
+          style={styles.textarea}
+        />
+      </div>
 
-    if (statusFilter !== "all") {
-      out = out.filter((j) => (j.status || "").toLowerCase() === statusFilter);
-    }
+      <div style={{ marginTop: 10 }}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={styles.input} />
+      </div>
 
-    if (q) {
-      out = out.filter((j) => {
-        const hay = [
-          j.jobTitle,
-          j.jobDescription,
-          j.status,
-          j.userId,
-          j.createdAt,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
-      });
-    }
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+        <textarea rows={5} value={experience} onChange={(e) => setExperience(e.target.value)} style={{ ...styles.textarea, minHeight: 120 }} />
+        <textarea rows={5} value={skills} onChange={(e) => setSkills(e.target.value)} style={{ ...styles.textarea, minHeight: 120 }} />
+      </div>
 
-    if (sortBy === "title") {
-      out.sort((a, b) => (a.jobTitle || "").localeCompare(b.jobTitle || ""));
-    } else if (sortBy === "oldest") {
-      out.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-    } else {
-      out.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    }
+      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+        <button
+          style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+          disabled={loading || !jobDescription.trim()}
+          onClick={generate}
+        >
+          {loading ? "Generating..." : "Generate Docs"}
+        </button>
 
-    return out;
-  }, [jobs, query, statusFilter, sortBy]);
+        <button
+          style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+          onClick={() => {
+            setJobDescription("");
+            showToast("Cleared job description", "info");
+          }}
+        >
+          Clear JD
+        </button>
+      </div>
+    </div>
+  );
 
-  const pageStyle = {
-    minHeight: "100vh",
-    color: "rgba(255,255,255,0.92)",
-    background:
-      "radial-gradient(1200px 700px at 10% 10%, rgba(120, 90, 255, 0.18), transparent 55%)," +
-      "radial-gradient(900px 600px at 90% 20%, rgba(0, 200, 255, 0.12), transparent 60%)," +
-      "linear-gradient(180deg, #0b0c10 0%, #0a0b12 60%, #070812 100%)",
-    padding: 24,
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
-  };
+  const PreviewPanel = () => (
+    <div style={{ ...styles.card, height: "calc(100vh - 36px)", overflow: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div style={{ fontSize: 18, fontWeight: 900 }}>Preview</div>
+        <button
+          style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+          onClick={() => {
+            setSelectedJobId(null);
+            setResult(null);
+            showToast("Cleared preview", "info");
+          }}
+        >
+          Clear
+        </button>
+      </div>
 
-  const shellStyle = {
-    maxWidth: 1100,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 18,
-  };
-
-  const cardStyle = {
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-    backdropFilter: "blur(10px)",
-    borderRadius: 16,
-    padding: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-  };
-
-  const inputStyle = {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.25)",
-    color: "rgba(255,255,255,0.92)",
-    outline: "none",
-  };
-
-  const textareaStyle = {
-    ...inputStyle,
-    minHeight: 110,
-    resize: "vertical",
-  };
-
-  const buttonStyle = (variant = "primary") => {
-    const base = {
-      borderRadius: 12,
-      padding: "10px 12px",
-      border: "1px solid rgba(255,255,255,0.12)",
-      cursor: "pointer",
-      fontWeight: 600,
-      color: "rgba(255,255,255,0.92)",
-      background: "rgba(255,255,255,0.06)",
-    };
-    if (variant === "primary") {
-      return {
-        ...base,
-        background: "linear-gradient(90deg, rgba(120,90,255,0.6), rgba(0,200,255,0.35))",
-        border: "1px solid rgba(120,90,255,0.25)",
-      };
-    }
-    if (variant === "danger") {
-      return { ...base, border: "1px solid rgba(255,80,80,0.25)" };
-    }
-    return base;
-  };
-
-  return (
-    <div style={pageStyle}>
-      <div style={shellStyle}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: -0.6 }}>Job Autopilot</div>
-            <div style={{ opacity: 0.75, marginTop: 4 }}>
-              Generate tailored bullets + cover letters, then track applications.
-            </div>
+      {!preview ? (
+        <div style={{ opacity: 0.75, marginTop: 10 }}>
+          No preview yet. Click a job on the dashboard or generate docs.
+        </div>
+      ) : (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>
+            {preview.jobTitle || "Result"}
+          </div>
+          <div style={{ opacity: 0.7, fontSize: 12, marginTop: 6 }}>
+            Created: {formatDate(preview.createdAt)} {preview.updatedAt ? `• Updated: ${formatDate(preview.updatedAt)}` : ""}
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={statusPillStyle("generated")}>
-              <span style={dotStyle("generated")} />
-              Saved: {jobs.length}
-            </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
             <button
-              style={buttonStyle("secondary")}
+              style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+              disabled={!preview.resumeBullets?.length}
               onClick={() => {
-                setSelectedJobId(null);
-                setResult(null);
-                setError("");
-                showToast("Cleared preview", "info");
+                copyText((preview.resumeBullets || []).join("\n"));
+                showToast("Copied bullets", "success");
               }}
             >
-              Clear Preview
+              Copy Bullets
+            </button>
+
+            <button
+              style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+              disabled={!preview.coverLetter}
+              onClick={() => {
+                copyText(preview.coverLetter || "");
+                showToast("Copied cover letter", "success");
+              }}
+            >
+              Copy Cover Letter
+            </button>
+
+            <button
+              style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+              disabled={!preview.resumeBullets?.length}
+              onClick={() => {
+                downloadText("resume-bullets.txt", (preview.resumeBullets || []).join("\n"));
+                showToast("Downloaded bullets", "success");
+              }}
+            >
+              Download Bullets
+            </button>
+
+            <button
+              style={{ ...styles.input, width: "auto", cursor: "pointer", fontWeight: 900 }}
+              disabled={!preview.coverLetter}
+              onClick={() => {
+                downloadText("cover-letter.txt", preview.coverLetter || "");
+                showToast("Downloaded cover letter", "success");
+              }}
+            >
+              Download Cover Letter
             </button>
           </div>
-        </div>
 
-        {/* Toast */}
-        {toast ? (
-          <div
-            style={{
-              position: "fixed",
-              right: 18,
-              bottom: 18,
-              padding: "10px 12px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(0,0,0,0.55)",
-              color: "rgba(255,255,255,0.92)",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-              maxWidth: 360,
-              zIndex: 9999,
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 2 }}>
-              {toast.kind === "success" ? "✅" : toast.kind === "error" ? "⚠️" : "ℹ️"}{" "}
-              {toast.kind === "success" ? "Done" : toast.kind === "error" ? "Problem" : "Info"}
-            </div>
-            <div style={{ opacity: 0.9 }}>{toast.message}</div>
-          </div>
-        ) : null}
-
-        {/* Error */}
-        {error ? (
-          <div style={{ ...cardStyle, borderColor: "rgba(255,80,80,0.25)" }}>
-            <strong style={{ color: "rgba(255,160,160,0.95)" }}>Error:</strong>{" "}
-            <span style={{ opacity: 0.95 }}>{error}</span>
-          </div>
-        ) : null}
-
-        {/* Generate */}
-        <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>Generate</div>
-
-            <textarea
-              rows={6}
-              placeholder="Paste job description here..."
-              value={jobDescription}
-              onChange={(e) => setJobDescription(e.target.value)}
-              style={textareaStyle}
-            />
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={inputStyle} />
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <textarea
-                  rows={4}
-                  value={experience}
-                  onChange={(e) => setExperience(e.target.value)}
-                  style={{ ...textareaStyle, minHeight: 110 }}
-                />
-                <textarea
-                  rows={4}
-                  value={skills}
-                  onChange={(e) => setSkills(e.target.value)}
-                  style={{ ...textareaStyle, minHeight: 110 }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-              <button onClick={generate} disabled={loading || !jobDescription.trim()} style={buttonStyle("primary")}>
-                {loading ? "Generating..." : "Generate Docs"}
-              </button>
-
-              <button
-                style={buttonStyle("secondary")}
-                onClick={() => {
-                  setJobDescription("");
-                  showToast("Cleared job description", "info");
-                }}
-              >
-                Clear JD
-              </button>
-
-              <div style={{ opacity: 0.7, fontSize: 12 }}>
-                Tip: after generating, pick a job on the right to preview + copy.
-              </div>
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>Preview</div>
-
-            {!shown ? (
-              <div style={{ opacity: 0.75, fontSize: 14, lineHeight: 1.5 }}>
-                No preview yet. Generate docs or click a job from the dashboard.
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>
-                    {shown.jobTitle || "Result"}
-                    {shown.status ? (
-                      <span style={{ marginLeft: 10, ...statusPillStyle(shown.status) }}>
-                        <span style={dotStyle(shown.status)} />
-                        {shown.status}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                  <button
-                    style={buttonStyle("secondary")}
-                    onClick={() => {
-                      copyText((shown.resumeBullets || []).join("\n"));
-                      showToast("Copied bullets", "success");
-                    }}
-                    disabled={!shown.resumeBullets?.length}
-                  >
-                    Copy Bullets
-                  </button>
-
-                  <button
-                    style={buttonStyle("secondary")}
-                    onClick={() => {
-                      copyText(shown.coverLetter || "");
-                      showToast("Copied cover letter", "success");
-                    }}
-                    disabled={!shown.coverLetter}
-                  >
-                    Copy Cover Letter
-                  </button>
-
-                  <button
-                    style={buttonStyle("secondary")}
-                    onClick={() => {
-                      downloadText("resume-bullets.txt", (shown.resumeBullets || []).join("\n"));
-                      showToast("Downloaded bullets", "success");
-                    }}
-                    disabled={!shown.resumeBullets?.length}
-                  >
-                    Download Bullets
-                  </button>
-
-                  <button
-                    style={buttonStyle("secondary")}
-                    onClick={() => {
-                      downloadText("cover-letter.txt", shown.coverLetter || "");
-                      showToast("Downloaded cover letter", "success");
-                    }}
-                    disabled={!shown.coverLetter}
-                  >
-                    Download Cover Letter
-                  </button>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.85, marginBottom: 6 }}>Resume Bullets</div>
-                  <div
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(0,0,0,0.20)",
-                    }}
-                  >
-                    {(shown.resumeBullets || []).length ? (
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        {(shown.resumeBullets || []).map((b, i) => (
-                          <li key={i} style={{ marginBottom: 6, lineHeight: 1.5 }}>
-                            {b}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div style={{ opacity: 0.75 }}>No bullets yet.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.85, marginBottom: 6 }}>Cover Letter</div>
-                  <div
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(0,0,0,0.20)",
-                      whiteSpace: "pre-wrap",
-                      lineHeight: 1.55,
-                      maxHeight: 240,
-                      overflow: "auto",
-                    }}
-                  >
-                    {shown.coverLetter || <span style={{ opacity: 0.75 }}>No cover letter yet.</span>}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
-                  Created: {formatDate(shown.createdAt)} {shown.updatedAt ? `• Updated: ${formatDate(shown.updatedAt)}` : ""}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Dashboard */}
-        <div style={cardStyle}>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>Dashboard</div>
-              <div style={{ opacity: 0.7, marginTop: 4, fontSize: 13 }}>
-                Search, filter, sort, and update status instantly.
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <input
-                placeholder="Search jobs..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                style={{ ...inputStyle, width: 240 }}
-              />
-
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 160 }}>
-                <option value="all">All statuses</option>
-                <option value="generated">generated</option>
-                <option value="applied">applied</option>
-                <option value="interview">interview</option>
-                <option value="offer">offer</option>
-                <option value="rejected">rejected</option>
-              </select>
-
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ ...inputStyle, width: 160 }}>
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="title">Title (A-Z)</option>
-              </select>
-
-              <button
-                style={buttonStyle("secondary")}
-                onClick={() => loadJobs().then(() => showToast("Refreshed jobs", "success")).catch((e) => setError(e.message))}
-              >
-                Refresh
-              </button>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontWeight: 900, marginBottom: 6, opacity: 0.85 }}>Resume Bullets</div>
+            <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.18)" }}>
+              {(preview.resumeBullets || []).length ? (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {(preview.resumeBullets || []).map((b, i) => (
+                    <li key={i} style={{ marginBottom: 6, lineHeight: 1.5 }}>{b}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ opacity: 0.75 }}>No bullets.</div>
+              )}
             </div>
           </div>
 
           <div style={{ marginTop: 14 }}>
-            {filteredJobs.length === 0 ? (
-              <div style={{ opacity: 0.75 }}>No jobs match your filters yet.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {filteredJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background:
-                        selectedJobId === job.id ? "rgba(120, 90, 255, 0.10)" : "rgba(0,0,0,0.18)",
-                      cursor: "pointer",
-                      transition: "background 120ms ease",
-                    }}
-                    onClick={() => setSelectedJobId(job.id)}
-                    title="Click to preview"
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {job.jobTitle}
-                          </div>
+            <div style={{ fontWeight: 900, marginBottom: 6, opacity: 0.85 }}>Cover Letter</div>
+            <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.18)", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+              {preview.coverLetter || <span style={{ opacity: 0.75 }}>No cover letter.</span>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
-                          <span style={statusPillStyle(job.status)}>
-                            <span style={dotStyle(job.status)} />
-                            {job.status}
-                          </span>
-                        </div>
-
-                        <div style={{ marginTop: 6, opacity: 0.65, fontSize: 12 }}>
-                          Created: {formatDate(job.createdAt)}
-                          {job.updatedAt ? ` • Updated: ${formatDate(job.updatedAt)}` : ""}
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <select
-                          value={job.status}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            updateStatus(job.id, e.target.value);
-                          }}
-                          style={{ ...inputStyle, width: 160 }}
-                        >
-                          <option value="generated">generated</option>
-                          <option value="applied">applied</option>
-                          <option value="interview">interview</option>
-                          <option value="rejected">rejected</option>
-                          <option value="offer">offer</option>
-                        </select>
-
-                        <button
-                          style={buttonStyle("secondary")}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyText(job.jobTitle || "");
-                            showToast("Copied job title", "success");
-                          }}
-                        >
-                          Copy Title
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+  return (
+    <div style={styles.page}>
+      {/* Sidebar */}
+      <div style={styles.sidebar}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 1000, letterSpacing: -0.5 }}>Job Autopilot</div>
+          <div style={{ opacity: 0.7, marginTop: 6, fontSize: 13 }}>
+            Generate docs + track your pipeline.
           </div>
         </div>
 
-        <div style={{ opacity: 0.55, fontSize: 12, textAlign: "center", marginTop: 4 }}>
-          Built with Azure Static Web Apps + Azure Functions + Cosmos DB.
+        <button style={styles.btn(tab === "dashboard")} onClick={() => setTab("dashboard")}>
+          📊 Dashboard
+        </button>
+        <button style={styles.btn(tab === "generate")} onClick={() => setTab("generate")}>
+          ✍️ Generate
+        </button>
+        <button style={styles.btn(tab === "jobs")} onClick={() => setTab("jobs")}>
+          🗂️ Jobs (list)
+        </button>
+
+        <div style={{ marginTop: 6, display: "grid", gap: 8 }}>
+          <div style={styles.pill}>Saved: {jobs.length}</div>
+          <div style={styles.pill}>Applied: {stats.applied}</div>
+          <div style={styles.pill}>Interview: {stats.interview}</div>
+        </div>
+
+        <div style={{ marginTop: "auto", opacity: 0.55, fontSize: 12, lineHeight: 1.4 }}>
+          Built with Azure Static Web Apps + Functions + Cosmos.
         </div>
       </div>
+
+      {/* Main */}
+      <div style={styles.main}>
+        {/* Left main content */}
+        <div>
+          {error ? (
+            <div style={{ ...styles.card, borderColor: "rgba(255,80,80,0.25)" }}>
+              <strong style={{ color: "rgba(255,160,160,0.95)" }}>Error:</strong>{" "}
+              <span style={{ opacity: 0.95 }}>{error}</span>
+            </div>
+          ) : null}
+
+          {tab === "dashboard" ? <DashboardPanel /> : null}
+          {tab === "generate" ? <GeneratePanel /> : null}
+
+          {tab === "jobs" ? (
+            <div style={{ ...styles.card, height: "calc(100vh - 36px)", overflow: "auto" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Jobs</div>
+              <div style={{ opacity: 0.7, marginTop: 4, fontSize: 13 }}>
+                Raw list (click any job to preview).
+              </div>
+
+              <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                {jobs.length === 0 ? (
+                  <div style={{ opacity: 0.75 }}>No jobs yet.</div>
+                ) : (
+                  jobs.map((job) => (
+                    <div
+                      key={job.id}
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        borderRadius: 14,
+                        padding: 12,
+                        background: "rgba(0,0,0,0.18)",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => setSelectedJobId(job.id)}
+                    >
+                      <div style={{ fontWeight: 900 }}>{job.jobTitle || "(untitled job)"}</div>
+                      <div style={{ opacity: 0.65, marginTop: 6, fontSize: 12 }}>
+                        {job.id} • {job.status} • {formatDate(job.createdAt)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Right preview */}
+        <div>
+          <PreviewPanel />
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast ? (
+        <div style={styles.toast}>
+          <div style={{ fontWeight: 900, marginBottom: 2 }}>
+            {toast.kind === "success" ? "✅" : toast.kind === "error" ? "⚠️" : "ℹ️"}{" "}
+            {toast.kind === "success" ? "Done" : toast.kind === "error" ? "Problem" : "Info"}
+          </div>
+          <div style={{ opacity: 0.92 }}>{toast.message}</div>
+        </div>
+      ) : null}
     </div>
   );
 }
