@@ -6,16 +6,17 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * External ID runtime config:
- * Put config at:  frontend/job-auto-pilot/public/config.json
- * Served at:      https://<your-site>/config.json
+ * Runtime config at /public/config.json
+ * IMPORTANT: For External ID (customers/CIAM) use *.ciamlogin.com (or custom domain),
+ * NOT login.microsoftonline.com, otherwise you will only ever see Microsoft sign-in.
  *
- * Example config.json:
+ * config.json should look like:
  * {
  *   "TENANT_ID": "...",
  *   "CLIENT_ID": "...",
- *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
- *   "REDIRECT_URI": "https://<your-site>",
+ *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/<TENANT_ID>/signup_signin",
+ *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
+ *   "REDIRECT_URI": "https://<your-static-app>",
  *   "SCOPES": ["openid","profile","email"]
  * }
  */
@@ -40,17 +41,23 @@ export default function AuthModal({ open, onClose, onComplete }) {
       .then((cfg) => {
         const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
         const clientId = cfg.CLIENT_ID || cfg.clientId || "";
-        const authority =
-          cfg.AUTHORITY ||
-          cfg.authority ||
-          (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
-        const redirectUri =
-          cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
+        const authority = cfg.AUTHORITY || cfg.authority || "";
+        const redirectUri = cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        return { tenantId, clientId, authority, redirectUri, scopes, raw: cfg };
+        let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
+        if (!knownAuthorities && authority) {
+          try {
+            const host = new URL(authority).host;
+            knownAuthorities = [host];
+          } catch {
+            knownAuthorities = null;
+          }
+        }
+
+        return { tenantId, clientId, authority, redirectUri, scopes, knownAuthorities, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -60,6 +67,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
           authority: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
+          knownAuthorities: null,
           raw: null,
         };
       });
@@ -71,19 +79,30 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (pcaInitPromiseRef.current) return pcaInitPromiseRef.current;
 
     pcaInitPromiseRef.current = (async () => {
-      const { clientId, authority, redirectUri } = await loadRuntimeConfig();
+      const { clientId, authority, redirectUri, knownAuthorities } = await loadRuntimeConfig();
 
       if (!clientId || !authority) {
-        console.error(
-          "[AuthModal] Missing External ID config. /config.json must include CLIENT_ID and AUTHORITY (or TENANT_ID)."
-        );
+        console.error("[AuthModal] Missing config: CLIENT_ID or AUTHORITY in /config.json");
         alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY).");
+        return null;
+      }
+
+      if (authority.includes("login.microsoftonline.com")) {
+        console.error(
+          "[AuthModal] AUTHORITY is login.microsoftonline.com. For External ID (customers) use *.ciamlogin.com (or custom domain)."
+        );
+        alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
         return null;
       }
 
       if (!pcaRef.current) {
         pcaRef.current = new PublicClientApplication({
-          auth: { clientId, authority, redirectUri },
+          auth: {
+            clientId,
+            authority,
+            redirectUri,
+            ...(knownAuthorities ? { knownAuthorities } : {}),
+          },
           cache: { cacheLocation: "localStorage" },
         });
       }
@@ -101,9 +120,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
-  // IMPORTANT:
-  // - We handle the redirect ONCE.
-  // - We call onComplete ONLY AFTER the redirect result comes back (so you don't jump to Pricing early).
   useEffect(() => {
     if (didHandleRedirectRef.current) return;
     didHandleRedirectRef.current = true;
@@ -116,7 +132,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
         const result = await pca.handleRedirectPromise();
         if (result?.account) {
           pca.setActiveAccount(result.account);
-          onComplete?.(result); // <-- call ONLY after auth completes
+          onComplete?.(result);
         }
       } catch (e) {
         console.error("[AuthModal] handleRedirectPromise error:", e);
@@ -130,10 +146,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const handleAuth = async (provider) => {
     setStartingAuth(true);
 
-    // DO NOT call onComplete here — that is what was sending you to Pricing early.
-    // If you want, you can close the modal visually:
-    // onClose?.();
-
     const pca = await getInitializedPca();
     if (!pca) {
       setStartingAuth(false);
@@ -142,47 +154,36 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     const { scopes } = await loadRuntimeConfig();
 
-    // We want:
-    // - Google button -> go straight to Google (best-effort via domain_hint)
-    // - Microsoft button -> Microsoft sign-in
-    // - Email button -> prefill email (loginHint)
-    //
-    // BUGFIX (AADSTS1002014):
-    // Entra can reject requests when BOTH `domain_hint` and an *opaque* `login_hint` are present.
-    // MSAL may auto-inject a login hint when an account is cached/active.
-    // When forcing a provider (Google/Microsoft) we clear the active account and use select_account
-    // to prevent MSAL from sending an opaque login_hint.
+    // Prevent AADSTS1002014-ish conflicts by clearing any active account
+    // so MSAL doesn't attach opaque login_hint behind your back.
+    try {
+      pca.setActiveAccount(null);
+    } catch {
+      // ignore
+    }
+
+    // Use redirect (CIAM hosted pages). Popups are often blocked and CIAM is designed for redirects.
     const request = {
       scopes,
       prompt: provider === "email" ? "login" : "select_account",
     };
 
     if (provider === "google") {
-      // Prevent MSAL from attaching an opaque login_hint when an account is cached.
-      try {
-        pca.setActiveAccount(null);
-      } catch {
-        // ignore
-      }
-
-      // Best-effort “go straight to Google”.
-      // NOTE: This only works if Google is configured as an identity provider in your External ID tenant.
-      request.extraQueryParameters = { domain_hint: "google.com" };
+      // CIAM IdP hint (preferred). This makes the hosted page route into Google.
+      request.extraQueryParameters = {
+        idp: "google",
+      };
+      // Fallback (older behavior): request.extraQueryParameters = { domain_hint: "google.com" };
     } else if (provider === "microsoft") {
-      // Prevent MSAL from attaching an opaque login_hint when an account is cached.
-      try {
-        pca.setActiveAccount(null);
-      } catch {
-        // ignore
-      }
-
-      // Best-effort “go straight to Microsoft”.
-      // If you want personal MS accounts too, you must enable it in App Registration (Supported account types).
-      request.extraQueryParameters = { domain_hint: "consumers" };
+      // Route to Microsoft (Entra ID / MS accounts) via IdP hint as well.
+      request.extraQueryParameters = {
+        idp: "microsoft",
+      };
+      // Fallback: request.extraQueryParameters = { domain_hint: "microsoft.com" };
     } else if (provider === "email") {
       const loginHint = email?.trim();
       if (loginHint) request.loginHint = loginHint;
-      // IMPORTANT: no domain_hint here, or you hit AADSTS1002014.
+      // No idp/domain_hint for email.
     }
 
     try {

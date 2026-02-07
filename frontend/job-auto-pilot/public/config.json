@@ -1,7 +1,8 @@
 {
   "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
-  "AUTHORITY": "https://login.microsoftonline.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
+  "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1/signup_signin",
   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
-  "SCOPES": ["openid", "profile", "email"]
+  "SCOPES": ["openid", "profile", "email"],
+  "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"]
 }
