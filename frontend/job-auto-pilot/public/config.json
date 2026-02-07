@@ -5,5 +5,7 @@
   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
   "USER_FLOW": "signup_signin",
   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
-  "SCOPES": ["openid", "profile", "email"]
+  "SCOPES": ["openid", "profile", "email"],
+  "TENANT_DOMAIN": "jobautopilotext.onmicrosoft.com"
+
 }

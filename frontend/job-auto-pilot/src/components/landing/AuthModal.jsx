@@ -10,11 +10,12 @@ import { PublicClientApplication } from "@azure/msal-browser";
  *
  * Recommended config.json:
  * {
- *   "TENANT_ID": "...",
+ *   "TENANT_ID": "...",                       // optional if you provide TENANT_DOMAIN
+ *   "TENANT_DOMAIN": "jobautopilotext.onmicrosoft.com", // recommended for CIAM
  *   "CLIENT_ID": "...",
- *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com",   // OR full authority
+ *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com", // base host (NO /v2.0)
  *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
- *   "USER_FLOW": "signup_signin",
+ *   "USER_FLOW": "signup_signin",             // your user-flow/policy name
  *   "REDIRECT_URI": "https://<your-static-app>",
  *   "SCOPES": ["openid","profile","email"]
  * }
@@ -29,22 +30,49 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const pcaInitPromiseRef = useRef(null);
   const didHandleRedirectRef = useRef(false);
 
-  const normalizeAuthority = ({ authorityBase, tenantId, userFlow }) => {
-    // If user provided a full authority that already contains /TENANT/FLOW, keep it.
-    // Otherwise build: https://<host>/<TENANT_ID>/<USER_FLOW>
+  const normalizeAuthority = ({ authorityBase, tenantId, userFlow, tenantDomain }) => {
+    /**
+     * CIAM/B2C authorities MUST include a tenant domain segment (typically <tenant>.onmicrosoft.com)
+     * plus the user flow/policy name.
+     *
+     * Examples:
+     *  - https://jobautopilotext.ciamlogin.com/jobautopilotext.onmicrosoft.com/B2C_1_signupsignin
+     *  - https://<tenant>.b2clogin.com/<tenant>.onmicrosoft.com/<policy>
+     *
+     * Many people paste a GUID TENANT_ID — that is NOT a valid path segment for these hosts and
+     * will cause 404 + CORS errors in the SPA.
+     */
     try {
       const url = new URL(authorityBase);
-      const path = (url.pathname || "").replace(/\/+$/, ""); // trim trailing /
+
+      // If user provided a full authority that already contains /<something>/<something>, keep it.
+      const path = (url.pathname || "").replace(/\/+$/, "");
       const looksLikeFull =
         path.split("/").filter(Boolean).length >= 2 && !path.endsWith("/v2.0");
-
       if (looksLikeFull) return `${url.origin}${path}`;
 
-      const tid = tenantId?.trim();
-      const flow = userFlow?.trim();
-      if (!tid || !flow) return `${url.origin}${path || ""}`.replace(/\/+$/, "");
+      const flow = (userFlow || "").trim();
+      if (!flow) return `${url.origin}`; // we will error later if flow missing
 
-      return `${url.origin}/${tid}/${flow}`;
+      // Resolve tenant domain:
+      // 1) explicit tenantDomain in config
+      // 2) if tenantId already looks like a domain (contains a dot), use it
+      // 3) infer from subdomain of ciamlogin.com / b2clogin.com host
+      let td = (tenantDomain || "").trim();
+      if (!td) {
+        const tid = (tenantId || "").trim();
+        td = tid.includes(".") ? tid : "";
+      }
+      if (!td) {
+        const hostParts = (url.host || "").split(".");
+        // jobautopilotext.ciamlogin.com -> tenant name = jobautopilotext
+        const tenantName = hostParts.length ? hostParts[0] : "";
+        td = tenantName ? `${tenantName}.onmicrosoft.com` : "";
+      }
+
+      if (!td) return `${url.origin}`;
+
+      return `${url.origin}/${td}/${flow}`;
     } catch {
       return authorityBase;
     }
@@ -89,7 +117,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
           authorityBase = authorityBase.replace(/\/v2\.0$/, "");
         }
 
-        const authority = normalizeAuthority({ authorityBase, tenantId, userFlow });
+        const tenantDomain =
+          cfg.TENANT_DOMAIN || cfg.tenantDomain || cfg.TENANT_NAME || cfg.tenantName || "";
+
+        const authority = normalizeAuthority({ authorityBase, tenantId, userFlow, tenantDomain });
 
         return {
           tenantId,
@@ -135,9 +166,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
       }
 
       if (authority.includes("login.microsoftonline.com")) {
-        console.error(
-          "[AuthModal] Wrong authority for External ID. Use *.ciamlogin.com"
-        );
+        console.error("[AuthModal] Wrong authority for External ID. Use *.ciamlogin.com");
         alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
         return null;
       }
@@ -205,7 +234,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     const { scopes } = await loadRuntimeConfig();
 
-    // Clear active account so we don't get "pick an account" / stale hints
+    // Clear active account so we don't get stale hints
     try {
       pca.setActiveAccount(null);
     } catch {
@@ -214,17 +243,22 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     const baseRequest = {
       scopes,
-      // Google: "login" tends to go straight to provider, less account-picker UX.
-      // Microsoft/email: "select_account" is usually fine.
-      prompt: provider === "google" ? "login" : provider === "email" ? "login" : "select_account",
+      prompt:
+        provider === "google"
+          ? "select_account"
+          : provider === "email"
+          ? "login"
+          : "select_account",
     };
 
     try {
       if (provider === "google") {
-        // Try provider hint first
+        // Force Google IdP when the tenant has Google federated.
+        // - domain_hint=google.com (AAD/CIAM often honors this)
+        // - idp=google.com (B2C-style direct-to-provider) as fallback below
         await startRedirect(pca, {
           ...baseRequest,
-          extraQueryParameters: { provider: "google" },
+          extraQueryParameters: { domain_hint: "google.com" },
         });
         return;
       }
@@ -232,7 +266,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
       if (provider === "microsoft") {
         await startRedirect(pca, {
           ...baseRequest,
-          extraQueryParameters: { provider: "microsoft" },
+          extraQueryParameters: { domain_hint: "organizations" },
         });
         return;
       }
@@ -251,7 +285,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
         try {
           await startRedirect(pca, {
             ...baseRequest,
-            extraQueryParameters: { idp: "google" },
+            extraQueryParameters: { idp: "google.com" },
           });
           return;
         } catch (e2) {
@@ -261,7 +295,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
         try {
           await startRedirect(pca, {
             ...baseRequest,
-            extraQueryParameters: { idp: "microsoft" },
+            extraQueryParameters: { domain_hint: "organizations" },
           });
           return;
         } catch (e2) {
@@ -309,7 +343,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 <Button
                   onClick={() => handleAuth("google")}
                   disabled={startingAuth}
-                  className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold flex items-center justify-center gap-3"
+                  className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold"
                 >
                   Continue with Google
                 </Button>
@@ -317,38 +351,35 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 <Button
                   onClick={() => handleAuth("microsoft")}
                   disabled={startingAuth}
-                  className="w-full py-6 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white rounded-xl font-semibold flex items-center justify-center gap-3"
+                  className="w-full py-6 bg-white/10 hover:bg-white/15 text-white rounded-xl font-semibold border border-white/20"
                 >
                   Continue with Microsoft
                 </Button>
               </div>
 
-              <div className="relative mb-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/10"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-[#0E0E12] text-white/30">
-                    Or continue with email
-                  </span>
-                </div>
+              <div className="flex items-center gap-3 my-6">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-white/30 text-sm">Or continue with email</span>
+                <div className="h-px flex-1 bg-white/10" />
               </div>
 
               <div className="space-y-3">
-                <Input
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={startingAuth}
-                  className="bg-white/[0.05] border-white/10 text-white placeholder:text-white/40 py-5 rounded-xl focus:border-purple-500/50"
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-white/30 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    className="pl-10 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl"
+                    disabled={startingAuth}
+                  />
+                </div>
+
                 <Button
                   onClick={() => handleAuth("email")}
                   disabled={startingAuth}
-                  className="w-full py-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-semibold"
+                  className="w-full py-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold"
                 >
-                  <Mail className="w-4 h-4 mr-2" />
                   Continue with Email
                 </Button>
               </div>
