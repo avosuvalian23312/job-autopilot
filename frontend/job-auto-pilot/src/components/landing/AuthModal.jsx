@@ -5,19 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
-/**
- * CIAM (External ID) requirements:
- * - AUTHORITY should be: https://<tenant>.ciamlogin.com/<TENANT_ID>/v2.0
- * - KNOWN_AUTHORITIES: ["<tenant>.ciamlogin.com"]
- * - USER_FLOW: your sign-up/sign-in user flow name (ex: "signup_signin")
- *
- * NOTE:
- * Google 400 redirect_uri_mismatch is NOT a React/MSAL bug.
- * Fix it by adding the CIAM redirect URI shown in:
- * Entra -> External Identities -> Identity providers -> Google
- * into Google Cloud Console OAuth client "Authorized redirect URIs".
- */
-
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [startingAuth, setStartingAuth] = useState(false);
@@ -44,7 +31,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        const userFlow = cfg.USER_FLOW || cfg.userFlow || "signup_signin";
+        const userFlow = cfg.USER_FLOW || cfg.userFlow || cfg.user_flow || "signup_signin";
 
         let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
         if (!knownAuthorities && authority) {
@@ -117,7 +104,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
-  // Handle redirect result ONCE
   useEffect(() => {
     if (didHandleRedirectRef.current) return;
     didHandleRedirectRef.current = true;
@@ -152,28 +138,33 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     const { scopes, redirectUri, userFlow } = await loadRuntimeConfig();
 
-    // Prevent MSAL from injecting opaque login_hint (helps avoid AADSTS1002014-type issues)
+    // Reduce hint conflicts
     try {
       pca.setActiveAccount(null);
     } catch {
       // ignore
     }
 
-    // Always include policy/user flow in CIAM via `p`
     const request = {
       scopes,
-      redirectUri, // explicit
+      redirectUri,
       prompt: provider === "email" ? "login" : "select_account",
       extraQueryParameters: {
-        p: userFlow,
+        p: userFlow, // CIAM user flow
       },
     };
 
     if (provider === "google") {
-      // Best-effort "start with Google" in CIAM
-      request.extraQueryParameters = { ...request.extraQueryParameters, idp: "google" };
+      // Most reliable way to auto-route to Google in CIAM
+      request.extraQueryParameters = {
+        ...request.extraQueryParameters,
+        domain_hint: "google.com",
+      };
     } else if (provider === "microsoft") {
-      request.extraQueryParameters = { ...request.extraQueryParameters, idp: "microsoft" };
+      request.extraQueryParameters = {
+        ...request.extraQueryParameters,
+        domain_hint: "microsoft.com",
+      };
     } else if (provider === "email") {
       const loginHint = email?.trim();
       if (loginHint) request.loginHint = loginHint;
