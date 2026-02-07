@@ -81,7 +81,7 @@ export default function App() {
     setError("");
     try {
       const r = await fetch(`${API}/jobs/${id}/status`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
