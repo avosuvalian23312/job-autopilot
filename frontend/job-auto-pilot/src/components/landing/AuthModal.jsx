@@ -5,6 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
+/**
+ * Runtime config at /public/config.json
+ *
+ * ✅ For Microsoft Entra External ID (customers / CIAM) you MUST use *.ciamlogin.com (or your custom domain)
+ * as the authority host — NOT login.microsoftonline.com.
+ *
+ * Example /public/config.json:
+ * {
+ *   "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
+ *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
+ *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1/v2.0",
+ *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
+ *   "USER_FLOW": "signup_signin",
+ *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
+ *   "SCOPES": ["openid","profile","email"]
+ * }
+ */
+
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [startingAuth, setStartingAuth] = useState(false);
@@ -31,8 +49,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
+        // User flow name you created in External ID (ex: signup_signin)
         const userFlow = cfg.USER_FLOW || cfg.userFlow || cfg.user_flow || "signup_signin";
 
+        // CIAM/custom domains require knownAuthorities so MSAL trusts the host.
         let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
         if (!knownAuthorities && authority) {
           try {
@@ -42,7 +62,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
           }
         }
 
-        return { tenantId, clientId, authority, redirectUri, scopes, knownAuthorities, userFlow, raw: cfg };
+        return { tenantId, clientId, authority, redirectUri, scopes, userFlow, knownAuthorities, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -52,8 +72,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
           authority: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
-          knownAuthorities: null,
           userFlow: "signup_signin",
+          knownAuthorities: null,
           raw: null,
         };
       });
@@ -74,8 +94,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
       }
 
       if (authority.includes("login.microsoftonline.com")) {
-        console.error("[AuthModal] Wrong AUTHORITY. Use *.ciamlogin.com/<TENANT_ID>/v2.0 for External ID.");
-        alert("AUTHORITY is wrong. Use <tenant>.ciamlogin.com/<TENANT_ID>/v2.0 in /config.json.");
+        console.error(
+          "[AuthModal] AUTHORITY is login.microsoftonline.com. For External ID (customers) use *.ciamlogin.com (or custom domain)."
+        );
+        alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
         return null;
       }
 
@@ -138,29 +160,34 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     const { scopes, redirectUri, userFlow } = await loadRuntimeConfig();
 
-    // Reduce hint conflicts
+    // IMPORTANT: avoids AADSTS1002014-like conflicts (domain_hint + opaque login_hint)
     try {
       pca.setActiveAccount(null);
     } catch {
       // ignore
     }
 
+    // We force prompt="login" so Google shows the email/phone screen (not the account picker)
+    // and to reduce extra account-selection screens.
     const request = {
       scopes,
       redirectUri,
-      prompt: provider === "email" ? "login" : "select_account",
+      prompt: "login",
       extraQueryParameters: {
-        p: userFlow, // CIAM user flow
+        // CIAM user flow
+        p: userFlow,
       },
     };
 
     if (provider === "google") {
-      // Most reliable way to auto-route to Google in CIAM
+      // Best-effort to immediately route into Google.
+      // If your tenant/user-flow has Google enabled, CIAM will bounce to Google.
       request.extraQueryParameters = {
         ...request.extraQueryParameters,
         domain_hint: "google.com",
       };
     } else if (provider === "microsoft") {
+      // Route to Microsoft (work/school or Microsoft account depending on your tenant settings)
       request.extraQueryParameters = {
         ...request.extraQueryParameters,
         domain_hint: "microsoft.com",
@@ -168,6 +195,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     } else if (provider === "email") {
       const loginHint = email?.trim();
       if (loginHint) request.loginHint = loginHint;
+      // NOTE: do NOT set domain_hint here.
     }
 
     try {
