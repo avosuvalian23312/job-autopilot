@@ -6,26 +6,16 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * Runtime config at /public/config.json
+ * CIAM (External ID) requirements:
+ * - AUTHORITY should be: https://<tenant>.ciamlogin.com/<TENANT_ID>/v2.0
+ * - KNOWN_AUTHORITIES: ["<tenant>.ciamlogin.com"]
+ * - USER_FLOW: your sign-up/sign-in user flow name (ex: "signup_signin")
  *
- * REQUIRED for CIAM (External ID):
- * - AUTHORITY should be the tenant v2.0 base:
- *   "https://jobautopilotext.ciamlogin.com/<TENANT_ID>/v2.0"
- * - KNOWN_AUTHORITIES should include the host:
- *   ["jobautopilotext.ciamlogin.com"]
- * - USER_FLOW is the Sign up / Sign in user flow name:
- *   "signup_signin"
- *
- * Example config.json:
- * {
- *   "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
- *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
- *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1/v2.0",
- *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
- *   "USER_FLOW": "signup_signin",
- *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
- *   "SCOPES": ["openid","profile","email"]
- * }
+ * NOTE:
+ * Google 400 redirect_uri_mismatch is NOT a React/MSAL bug.
+ * Fix it by adding the CIAM redirect URI shown in:
+ * Entra -> External Identities -> Identity providers -> Google
+ * into Google Cloud Console OAuth client "Authorized redirect URIs".
  */
 
 export default function AuthModal({ open, onClose, onComplete }) {
@@ -54,30 +44,18 @@ export default function AuthModal({ open, onClose, onComplete }) {
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        // User flow name (policy) for CIAM routing
-        const userFlow = cfg.USER_FLOW || cfg.userFlow || cfg.user_flow || "signup_signin";
+        const userFlow = cfg.USER_FLOW || cfg.userFlow || "signup_signin";
 
-        // knownAuthorities is REQUIRED for CIAM/custom domains in MSAL
         let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
         if (!knownAuthorities && authority) {
           try {
-            const host = new URL(authority).host;
-            knownAuthorities = [host];
+            knownAuthorities = [new URL(authority).host];
           } catch {
             knownAuthorities = null;
           }
         }
 
-        return {
-          tenantId,
-          clientId,
-          authority,
-          redirectUri,
-          scopes,
-          knownAuthorities,
-          userFlow,
-          raw: cfg,
-        };
+        return { tenantId, clientId, authority, redirectUri, scopes, knownAuthorities, userFlow, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -109,10 +87,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
       }
 
       if (authority.includes("login.microsoftonline.com")) {
-        console.error(
-          "[AuthModal] AUTHORITY is login.microsoftonline.com. For External ID (customers) use *.ciamlogin.com (or custom domain)."
-        );
-        alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
+        console.error("[AuthModal] Wrong AUTHORITY. Use *.ciamlogin.com/<TENANT_ID>/v2.0 for External ID.");
+        alert("AUTHORITY is wrong. Use <tenant>.ciamlogin.com/<TENANT_ID>/v2.0 in /config.json.");
         return null;
       }
 
@@ -141,6 +117,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
+  // Handle redirect result ONCE
   useEffect(() => {
     if (didHandleRedirectRef.current) return;
     didHandleRedirectRef.current = true;
@@ -173,18 +150,19 @@ export default function AuthModal({ open, onClose, onComplete }) {
       return;
     }
 
-    const { scopes, userFlow } = await loadRuntimeConfig();
+    const { scopes, redirectUri, userFlow } = await loadRuntimeConfig();
 
-    // Prevent conflicts where MSAL attaches opaque login_hint
+    // Prevent MSAL from injecting opaque login_hint (helps avoid AADSTS1002014-type issues)
     try {
       pca.setActiveAccount(null);
     } catch {
       // ignore
     }
 
-    // Always pass the CIAM policy/user flow as `p`
+    // Always include policy/user flow in CIAM via `p`
     const request = {
       scopes,
+      redirectUri, // explicit
       prompt: provider === "email" ? "login" : "select_account",
       extraQueryParameters: {
         p: userFlow,
@@ -192,15 +170,13 @@ export default function AuthModal({ open, onClose, onComplete }) {
     };
 
     if (provider === "google") {
-      // Route to Google in CIAM
+      // Best-effort "start with Google" in CIAM
       request.extraQueryParameters = { ...request.extraQueryParameters, idp: "google" };
     } else if (provider === "microsoft") {
-      // Route to Microsoft in CIAM
       request.extraQueryParameters = { ...request.extraQueryParameters, idp: "microsoft" };
     } else if (provider === "email") {
       const loginHint = email?.trim();
       if (loginHint) request.loginHint = loginHint;
-      // no idp for email
     }
 
     try {
