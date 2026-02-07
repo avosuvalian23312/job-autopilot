@@ -1,4 +1,3 @@
-// AuthModal.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
@@ -7,14 +6,14 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * External ID (Entra) runtime config:
+ * External ID runtime config:
  * Put config at:  frontend/job-auto-pilot/public/config.json
- * It will be served at: https://<your-site>/config.json
+ * Served at:      https://<your-site>/config.json
  *
- * Expected config.json (example):
+ * Example config.json:
  * {
- *   "TENANT_ID": "....",
- *   "CLIENT_ID": "....",
+ *   "TENANT_ID": "...",
+ *   "CLIENT_ID": "...",
  *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
  *   "REDIRECT_URI": "https://<your-site>",
  *   "SCOPES": ["openid","profile","email"]
@@ -23,8 +22,10 @@ import { PublicClientApplication } from "@azure/msal-browser";
 
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
+
   const cfgPromiseRef = useRef(null);
-  const msalPromiseRef = useRef(null);
+  const pcaRef = useRef(null);
+  const pcaInitPromiseRef = useRef(null);
 
   const loadRuntimeConfig = () => {
     if (cfgPromiseRef.current) return cfgPromiseRef.current;
@@ -37,13 +38,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
       .then((cfg) => {
         const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
         const clientId = cfg.CLIENT_ID || cfg.clientId || "";
-
-        // Prefer explicit authority; otherwise build from tenantId
         const authority =
           cfg.AUTHORITY ||
           cfg.authority ||
           (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
-
         const redirectUri =
           cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
@@ -67,44 +65,46 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return cfgPromiseRef.current;
   };
 
-  const getMsal = async () => {
-    if (msalPromiseRef.current) return msalPromiseRef.current;
+  const getInitializedPca = async () => {
+    if (pcaInitPromiseRef.current) return pcaInitPromiseRef.current;
 
-    msalPromiseRef.current = (async () => {
+    pcaInitPromiseRef.current = (async () => {
       const { clientId, authority, redirectUri } = await loadRuntimeConfig();
 
       if (!clientId || !authority) {
         console.error(
-          "[AuthModal] Missing External ID config. Ensure /public/config.json contains CLIENT_ID and AUTHORITY (or TENANT_ID)."
+          "[AuthModal] Missing External ID config. /config.json must include CLIENT_ID and AUTHORITY (or TENANT_ID)."
         );
-        alert(
-          "Login is not configured yet. Missing External ID config in /config.json (CLIENT_ID / AUTHORITY or TENANT_ID)."
-        );
+        alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY).");
         return null;
       }
 
-      const pca = new PublicClientApplication({
-        auth: {
-          clientId,
-          authority,
-          redirectUri,
-        },
-        cache: {
-          cacheLocation: "localStorage",
-          storeAuthStateInCookie: false,
-        },
-      });
+      // Create once
+      if (!pcaRef.current) {
+        pcaRef.current = new PublicClientApplication({
+          auth: { clientId, authority, redirectUri },
+          cache: { cacheLocation: "localStorage" },
+        });
+      }
 
-      return pca;
+      // MSAL v3 requires initialize()
+      try {
+        await pcaRef.current.initialize();
+      } catch (e) {
+        console.error("[AuthModal] MSAL initialize() failed:", e);
+        return null;
+      }
+
+      return pcaRef.current;
     })();
 
-    return msalPromiseRef.current;
+    return pcaInitPromiseRef.current;
   };
 
-  // Complete redirect flow if we got sent back with tokens
+  // Handle redirect response once (after initialization)
   useEffect(() => {
     (async () => {
-      const pca = await getMsal();
+      const pca = await getInitializedPca();
       if (!pca) return;
 
       try {
@@ -119,14 +119,12 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const handleAuth = async (provider) => {
     onComplete?.();
 
-    const pca = await getMsal();
+    const pca = await getInitializedPca();
     if (!pca) return;
 
     const { scopes } = await loadRuntimeConfig();
 
-    // External ID does NOT support B2C-style "idp=Google/Microsoft" forcing from the client.
-    // Users choose provider on the Microsoft sign-in page based on the providers you enabled in External ID.
-    // We'll still use the email field as a loginHint for the Email button.
+    // External ID: no B2C-style idp forcing. Email button can provide loginHint.
     const loginHint = provider === "email" && email ? email.trim() : undefined;
 
     try {
@@ -174,24 +172,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   onClick={() => handleAuth("google")}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
                   Continue with Google
                 </Button>
 
@@ -199,13 +179,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   onClick={() => handleAuth("microsoft")}
                   className="w-full py-6 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 23 23">
-                    <path fill="#f3f3f3" d="M0 0h23v23H0z" />
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
                   Continue with Microsoft
                 </Button>
               </div>
@@ -237,17 +210,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   Continue with Email
                 </Button>
               </div>
-
-              <p className="text-xs text-white/20 text-center mt-6">
-                By continuing, you agree to our{" "}
-                <a href="#" className="text-purple-400 hover:text-purple-300">
-                  Terms
-                </a>{" "}
-                and{" "}
-                <a href="#" className="text-purple-400 hover:text-purple-300">
-                  Privacy Policy
-                </a>
-              </p>
             </div>
           </motion.div>
         </>
