@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 const API = "/api";
 
-
 function copyText(text) {
   if (!text) return;
   navigator.clipboard.writeText(text);
@@ -34,8 +33,8 @@ export default function App() {
   async function loadJobs() {
     setError("");
     const r = await fetch(`${API}/listJobs`);
-    if (!r.ok) throw new Error(`listJobs failed (${r.status})`);
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data?.error || `listJobs failed (${r.status})`);
     setJobs(data.jobs || []);
   }
 
@@ -52,16 +51,22 @@ export default function App() {
       jobDescription,
       userProfile: {
         name,
-        experience: experience.split("\n").map((s) => s.trim()).filter(Boolean),
-        skills: skills.split("\n").map((s) => s.trim()).filter(Boolean),
-      },
+        experience: experience
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        skills: skills
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      }
     };
 
     try {
       const r = await fetch(`${API}/generateDocuments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
       });
 
       const data = await r.json().catch(() => ({}));
@@ -69,7 +74,6 @@ export default function App() {
 
       setResult(data);
       await loadJobs();
-      // leave selectedJob as-is; user can click a job to open
     } catch (e) {
       setError(e.message || "Generate failed");
     } finally {
@@ -83,22 +87,22 @@ export default function App() {
       const r = await fetch(`${API}/jobs/${id}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status })
       });
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error || `update status failed (${r.status})`);
 
+      // refresh list
       await loadJobs();
 
-      // keep the open panel synced if you updated the selected job
-      if (selectedJob?.id === id) setSelectedJob(data.job || selectedJob);
+      // keep selected panel synced (backend returns updated job directly)
+      if (selectedJob?.id === id) setSelectedJob(data);
     } catch (e) {
       setError(e.message || "Status update failed");
     }
   }
 
-  // Show selected dashboard item first; otherwise show last generated result
   const shown = selectedJob || result;
 
   return (
@@ -179,7 +183,7 @@ export default function App() {
             <strong
               style={{
                 cursor: "pointer",
-                textDecoration: selectedJob?.id === job.id ? "underline" : "none",
+                textDecoration: selectedJob?.id === job.id ? "underline" : "none"
               }}
               onClick={() => setSelectedJob(job)}
               title="Click to open"
