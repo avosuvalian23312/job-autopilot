@@ -144,18 +144,38 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     // We want:
     // - Google button -> go straight to Google (best-effort via domain_hint)
-    // - Microsoft button -> Microsoft sign-in (no forced account picker)
-    // - Email button -> prefill email (loginHint), but DO NOT combine with domain_hint (causes AADSTS1002014)
+    // - Microsoft button -> Microsoft sign-in
+    // - Email button -> prefill email (loginHint)
+    //
+    // BUGFIX (AADSTS1002014):
+    // Entra can reject requests when BOTH `domain_hint` and an *opaque* `login_hint` are present.
+    // MSAL may auto-inject a login hint when an account is cached/active.
+    // When forcing a provider (Google/Microsoft) we clear the active account and use select_account
+    // to prevent MSAL from sending an opaque login_hint.
     const request = {
       scopes,
-      prompt: "login",
+      prompt: provider === "email" ? "login" : "select_account",
     };
 
     if (provider === "google") {
+      // Prevent MSAL from attaching an opaque login_hint when an account is cached.
+      try {
+        pca.setActiveAccount(null);
+      } catch {
+        // ignore
+      }
+
       // Best-effort “go straight to Google”.
       // NOTE: This only works if Google is configured as an identity provider in your External ID tenant.
       request.extraQueryParameters = { domain_hint: "google.com" };
     } else if (provider === "microsoft") {
+      // Prevent MSAL from attaching an opaque login_hint when an account is cached.
+      try {
+        pca.setActiveAccount(null);
+      } catch {
+        // ignore
+      }
+
       // Best-effort “go straight to Microsoft”.
       // If you want personal MS accounts too, you must enable it in App Registration (Supported account types).
       request.extraQueryParameters = { domain_hint: "consumers" };
