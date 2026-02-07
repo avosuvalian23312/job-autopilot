@@ -6,32 +6,34 @@ import { Input } from "@/components/ui/input";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * External ID runtime config (served by Vite):
+ * Runtime config:
  * Put config at:  frontend/job-auto-pilot/public/config.json
  * Served at:      https://<your-site>/config.json
  *
- * Minimal config.json:
+ * Example:
  * {
- *   "TENANT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
- *   "CLIENT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
- *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
- *   "REDIRECT_URI": "https://<your-site>",
- *   "SCOPES": ["openid","profile","email"],
- *
- *   // OPTIONAL (helps go straight to a provider when your tenant supports it):
- *   // Try these first; if your tenant expects different values, change them.
- *   "IDP_GOOGLE": "google",
- *   "IDP_MICROSOFT": "microsoft"
+ *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
+ *   "AUTHORITY": "https://login.microsoftonline.com/common",
+ *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
+ *   "SCOPES": ["openid","profile","email"]
  * }
+ *
+ * NOTES:
+ * - If you want PERSONAL Microsoft accounts allowed, set:
+ *   AUTHORITY = "https://login.microsoftonline.com/common"
+ *   and in App Registration -> Supported account types -> include "personal Microsoft accounts".
  */
+
+const POST_LOGIN_PATH_KEY = "post_login_path";
+const LOGIN_PROVIDER_KEY = "login_provider";
 
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
+  const [isAuthStarting, setIsAuthStarting] = useState(false);
 
   const cfgPromiseRef = useRef(null);
   const pcaRef = useRef(null);
   const pcaInitPromiseRef = useRef(null);
-  const redirectHandledRef = useRef(false);
 
   const loadRuntimeConfig = () => {
     if (cfgPromiseRef.current) return cfgPromiseRef.current;
@@ -42,43 +44,22 @@ export default function AuthModal({ open, onClose, onComplete }) {
         return res.json();
       })
       .then((cfg) => {
-        const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
         const clientId = cfg.CLIENT_ID || cfg.clientId || "";
-        const authority =
-          cfg.AUTHORITY ||
-          cfg.authority ||
-          (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
-
-        const redirectUri =
-          cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
+        const authority = cfg.AUTHORITY || cfg.authority || "";
+        const redirectUri = cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        const idpGoogle = cfg.IDP_GOOGLE || cfg.idpGoogle || "google";
-        const idpMicrosoft = cfg.IDP_MICROSOFT || cfg.idpMicrosoft || "microsoft";
-
-        return {
-          tenantId,
-          clientId,
-          authority,
-          redirectUri,
-          scopes,
-          idpGoogle,
-          idpMicrosoft,
-          raw: cfg,
-        };
+        return { clientId, authority, redirectUri, scopes, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
         return {
-          tenantId: "",
           clientId: "",
           authority: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
-          idpGoogle: "google",
-          idpMicrosoft: "microsoft",
           raw: null,
         };
       });
@@ -94,7 +75,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       if (!clientId || !authority) {
         console.error(
-          "[AuthModal] Missing External ID config. /config.json must include CLIENT_ID and AUTHORITY (or TENANT_ID)."
+          "[AuthModal] Missing config. /config.json must include CLIENT_ID and AUTHORITY."
         );
         alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY).");
         return null;
@@ -103,7 +84,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
       if (!pcaRef.current) {
         pcaRef.current = new PublicClientApplication({
           auth: { clientId, authority, redirectUri },
-          cache: { cacheLocation: "localStorage" },
+          cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
         });
       }
 
@@ -120,62 +101,76 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return pcaInitPromiseRef.current;
   };
 
-  // Handle redirect result ONCE, then run onComplete AFTER sign-in is actually finished.
+  // ✅ Handle redirect result ONCE, and only then close/navigate
   useEffect(() => {
     (async () => {
-      if (redirectHandledRef.current) return;
-      redirectHandledRef.current = true;
-
       const pca = await getInitializedPca();
       if (!pca) return;
 
       try {
         const result = await pca.handleRedirectPromise();
 
-        // Only call onComplete if there *was* a redirect response
-        if (result) {
-          // If you stored a "return to" route, you can read it here
-          // const returnTo = sessionStorage.getItem("postLoginPath");
-          // sessionStorage.removeItem("postLoginPath");
+        if (result?.account) {
+          // set active account so later token calls work
+          pca.setActiveAccount(result.account);
 
-          onComplete?.(result);
-          onClose?.();
+          // NOW it's safe to close modal / continue app flow
+          onComplete?.();
+
+          const postPath = sessionStorage.getItem(POST_LOGIN_PATH_KEY);
+          sessionStorage.removeItem(POST_LOGIN_PATH_KEY);
+          sessionStorage.removeItem(LOGIN_PROVIDER_KEY);
+
+          if (postPath && window.location.pathname !== postPath) {
+            window.location.assign(postPath);
+          }
         }
       } catch (e) {
         console.error("[AuthModal] handleRedirectPromise error:", e);
+      } finally {
+        setIsAuthStarting(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleAuth = async (provider) => {
+  const startLogin = async (provider) => {
     const pca = await getInitializedPca();
     if (!pca) return;
 
-    const { scopes, idpGoogle, idpMicrosoft } = await loadRuntimeConfig();
+    const { scopes } = await loadRuntimeConfig();
 
-    // Prevent the “go to pricing before login finishes” behavior:
-    // DO NOT call onComplete here. We call it only after handleRedirectPromise gets a result.
-    // Also, store current path so you can return after auth if you want.
-    // sessionStorage.setItem("postLoginPath", window.location.pathname + window.location.search);
+    // 👇 IMPORTANT: store where you want to land AFTER login
+    // If you always want Pricing after sign-up click, set it here:
+    sessionStorage.setItem(POST_LOGIN_PATH_KEY, "/Pricing");
+    sessionStorage.setItem(LOGIN_PROVIDER_KEY, provider);
 
-    const loginHint = provider === "email" && email ? email.trim() : undefined;
+    // Best-effort hints (Entra doesn't guarantee "force Google")
+    const loginHint =
+      provider === "email" && email.trim() ? email.trim() : undefined;
 
-    // Try to force the provider directly (works only if your External ID setup supports it)
-    // If ignored by the tenant, it will just show the normal provider picker.
-    let extraQueryParameters = undefined;
-    if (provider === "google") extraQueryParameters = { idp: idpGoogle };
-    if (provider === "microsoft") extraQueryParameters = { idp: idpMicrosoft };
+    // If user clicks "Google" but you don't have their gmail, you still can't truly force Google
+    // (Entra often requires user to pick "Sign-in options"). This hint sometimes helps.
+    const extraQueryParameters =
+      provider === "google"
+        ? {
+            // best-effort only; may be ignored depending on your tenant/provider config
+            domain_hint: "gmail.com",
+          }
+        : undefined;
+
+    setIsAuthStarting(true);
 
     try {
       await pca.loginRedirect({
         scopes,
-        prompt: "login", // prefer going straight to sign-in
+        prompt: "login", // forces fresh auth so you don't bounce weirdly
         ...(loginHint ? { loginHint } : {}),
         ...(extraQueryParameters ? { extraQueryParameters } : {}),
       });
     } catch (e) {
       console.error("[AuthModal] loginRedirect error:", e);
+      setIsAuthStarting(false);
       alert("Login failed to start. Check console for details.");
     }
   };
@@ -188,7 +183,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={isAuthStarting ? undefined : onClose}
             className="fixed inset-0 bg-black/80 backdrop-blur-md z-50"
           />
           <motion.div
@@ -199,25 +194,30 @@ export default function AuthModal({ open, onClose, onComplete }) {
           >
             <div className="bg-[#0E0E12] rounded-2xl p-8 max-w-md w-full border border-white/20 relative shadow-2xl">
               <button
-                onClick={onClose}
-                className="absolute top-4 right-4 text-white/40 hover:text-white/70 transition-colors"
+                onClick={isAuthStarting ? undefined : onClose}
+                className="absolute top-4 right-4 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
+                disabled={isAuthStarting}
               >
                 <X className="w-5 h-5" />
               </button>
 
               <h2 className="text-2xl font-bold text-white mb-2">Get Started</h2>
-              <p className="text-white/40 mb-8">Sign up to access your dashboard</p>
+              <p className="text-white/40 mb-8">
+                Sign up to access your dashboard
+              </p>
 
               <div className="space-y-3 mb-6">
                 <Button
-                  onClick={() => handleAuth("google")}
+                  onClick={() => startLogin("google")}
+                  disabled={isAuthStarting}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
                   Continue with Google
                 </Button>
 
                 <Button
-                  onClick={() => handleAuth("microsoft")}
+                  onClick={() => startLogin("microsoft")}
+                  disabled={isAuthStarting}
                   className="w-full py-6 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white rounded-xl font-semibold flex items-center justify-center gap-3"
                 >
                   Continue with Microsoft
@@ -244,13 +244,20 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   className="bg-white/[0.05] border-white/10 text-white placeholder:text-white/40 py-5 rounded-xl focus:border-purple-500/50"
                 />
                 <Button
-                  onClick={() => handleAuth("email")}
+                  onClick={() => startLogin("email")}
+                  disabled={isAuthStarting}
                   className="w-full py-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-semibold"
                 >
                   <Mail className="w-4 h-4 mr-2" />
                   Continue with Email
                 </Button>
               </div>
+
+              {isAuthStarting && (
+                <p className="text-xs text-white/40 text-center mt-4">
+                  Redirecting to sign-in…
+                </p>
+              )}
             </div>
           </motion.div>
         </>
