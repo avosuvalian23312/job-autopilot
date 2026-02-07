@@ -18,7 +18,7 @@ function getContainer() {
 async function updateJobStatus(request, context) {
   // catch absolutely everything (including weird runtime errors)
   try {
-    const jobId = context?.bindingData?.id;
+    const jobId = context?.bindingData?.jobId;
     context.log("updateJobStatus called", { jobId, method: request.method });
 
     if (!jobId) {

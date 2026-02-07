@@ -21,7 +21,7 @@ app.http("listJobs", {
 // Update job status (THIS WAS THE PROBLEM)
 app.http("updateJobStatus", {
   methods: ["PUT"],
-  route: "jobs/{id}/status",
+  route: "jobs/{jobId}/status",
   authLevel: "anonymous",
   handler: updateJobStatus
 });
