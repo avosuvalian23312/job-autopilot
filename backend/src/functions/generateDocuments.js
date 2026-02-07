@@ -1,216 +1,80 @@
-// src/functions/generateDocuments.js
-
+const { CosmosClient } = require("@azure/cosmos");
 const OpenAI = require("openai");
-const fs = require("fs");
-const path = require("path");
+const crypto = require("crypto");
 
-const JOBS_PATH = path.join(process.cwd(), "data", "jobs.json");
-
-function readJobs() {
-  try {
-    const raw = fs.readFileSync(JOBS_PATH, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function writeJobs(jobs) {
-  fs.writeFileSync(JOBS_PATH, JSON.stringify(jobs, null, 2), "utf8");
-}
-
-// Create client once (re-used across invocations)
-const client = new OpenAI({
-  apiKey: process.env.AZURE_OPENAI_API_KEY,
-  baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
-  defaultQuery: { "api-version": "2024-02-15-preview" },
-  defaultHeaders: { "api-key": process.env.AZURE_OPENAI_API_KEY }
-});
-
-function normalizeString(v) {
-  return typeof v === "string" ? v.trim() : "";
-}
-
-function ensureArray(v) {
-  if (Array.isArray(v)) return v.filter(Boolean).map(String);
-  if (typeof v === "string" && v.trim()) return [v.trim()];
-  return [];
-}
-
-async function safeJson(request) {
-  try {
-    return await request.json();
-  } catch {
-    return {};
-  }
-}
+const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+const container = cosmos
+  .database(process.env.COSMOS_DB_NAME)
+  .container(process.env.COSMOS_CONTAINER_NAME);
 
 async function generateDocuments(request, context) {
-  // ---- 0) Basic config validation ----
-  const endpoint = normalizeString(process.env.AZURE_OPENAI_ENDPOINT);
-  const key = normalizeString(process.env.AZURE_OPENAI_API_KEY);
-  const deployment = normalizeString(process.env.AZURE_OPENAI_DEPLOYMENT);
-
-  if (!endpoint || !key || !deployment) {
-    return {
-      status: 500,
-      jsonBody: {
-        error:
-          "Server misconfigured. Missing AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_DEPLOYMENT."
-      }
-    };
-  }
-
-  // ---- 1) Read and validate input ----
-  const body = await safeJson(request);
-  const jobDescription = normalizeString(body.jobDescription);
-
-  const userProfile = body.userProfile || {};
-  const name = normalizeString(userProfile.name);
-  const experience = ensureArray(userProfile.experience);
-  const skills = ensureArray(userProfile.skills);
-
-  if (!jobDescription) {
-    return { status: 400, jsonBody: { error: "Missing jobDescription" } };
-  }
-  if (!name) {
-    return { status: 400, jsonBody: { error: "Missing userProfile.name" } };
-  }
-
-  // ---- 2) Cover letter prompt (no placeholders) ----
-  const coverPrompt = `
-Write a concise, professional cover letter (150–220 words).
-
-Rules:
-- Start with: "Dear Hiring Manager,"
-- End with: "Sincerely, ${name}"
-- Do NOT include addresses, phone numbers, or placeholders like [Your Address]
-- Do NOT invent experience, education, or certifications
-- Focus on matching the candidate's real experience/skills to the job
-
-JOB DESCRIPTION:
-${jobDescription}
-
-CANDIDATE INFO:
-Name: ${name}
-Experience: ${experience.length ? experience.join("; ") : "Not provided"}
-Skills: ${skills.length ? skills.join(", ") : "Not provided"}
-`.trim();
-
-  // ---- 3) Resume bullets prompt (structured JSON) ----
-  const bulletsPrompt = `
-Create ATS-friendly resume bullets tailored to the job using ONLY the candidate info.
-
-Return STRICT JSON ONLY in this exact shape:
-{
-  "jobTitle": "string (best guess from job description)",
-  "bullets": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"]
-}
-
-Rules:
-- Exactly 4 bullets
-- Use strong action verbs
-- No fake metrics unless provided
-- No invented tools/certs/experience
-- Each bullet 1 line (no paragraphs)
-
-JOB DESCRIPTION:
-${jobDescription}
-
-CANDIDATE INFO:
-Name: ${name}
-Experience: ${experience.length ? experience.join("; ") : "Not provided"}
-Skills: ${skills.length ? skills.join(", ") : "Not provided"}
-`.trim();
-
+  let body = {};
   try {
-    // ---- 4) Call Azure OpenAI (cover letter) ----
-    const coverResp = await client.chat.completions.create({
-      model: deployment,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You write clear, honest cover letters. Follow instructions strictly and do not invent experience."
-        },
-        { role: "user", content: coverPrompt }
-      ],
-      temperature: 0.4
-    });
+    body = await request.json();
+  } catch {}
 
-    const coverLetter =
-      coverResp.choices?.[0]?.message?.content?.trim() || "";
+  const { jobDescription, userProfile } = body;
 
-    // ---- 5) Call Azure OpenAI (resume bullets JSON) ----
-    const bulletsResp = await client.chat.completions.create({
-      model: deployment,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an ATS resume writer. Output STRICT JSON only. No markdown. No extra text."
-        },
-        { role: "user", content: bulletsPrompt }
-      ],
-      temperature: 0.2
-    });
-
-    const bulletsRaw =
-      bulletsResp.choices?.[0]?.message?.content?.trim() || "";
-
-    let jobTitle = "";
-    let resumeBullets = [];
-
-    // Try to parse strict JSON; fallback safely if model returns extra text
-    try {
-      const parsed = JSON.parse(bulletsRaw);
-      jobTitle = normalizeString(parsed.jobTitle);
-      resumeBullets = ensureArray(parsed.bullets).slice(0, 4);
-    } catch {
-      // fallback: treat as text, split lines into bullets
-      resumeBullets = bulletsRaw
-        .split("\n")
-        .map((l) => l.replace(/^[-•\d.\)\s]+/, "").trim())
-        .filter(Boolean)
-        .slice(0, 4);
-    }
-const jobs = readJobs();
-
-const newJob = {
-  id: crypto.randomUUID(),
-  createdAt: new Date().toISOString(),
-  jobTitle,
-  status: "generated", // generated | applied | interview | rejected | offer
-  jobDescription,
-  coverLetter,
-  resumeBullets
-};
-
-jobs.unshift(newJob);
-writeJobs(jobs);
-
-    // ---- 6) Return ----
-   return {
-  status: 200,
-  jsonBody: {
-    id: newJob.id,
-    jobTitle,
-    coverLetter,
-    resumeBullets
-  }
-};
-
-  } catch (err) {
-    // Keep errors clean (no secret leakage)
-    context.log("OpenAI call failed:", err?.message || err);
+  if (!jobDescription || !userProfile) {
     return {
-      status: 500,
-      jsonBody: {
-        error: "AI generation failed",
-        details: err?.message || "Unknown error"
-      }
+      status: 400,
+      jsonBody: { error: "Missing jobDescription or userProfile" }
     };
   }
+
+  const client = new OpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
+    defaultQuery: { "api-version": "2024-02-15-preview" },
+    defaultHeaders: { "api-key": process.env.AZURE_OPENAI_API_KEY }
+  });
+
+  const prompt = `
+Write a professional cover letter and 4 resume bullet points.
+Do not invent experience.
+
+JOB DESCRIPTION:
+${jobDescription}
+
+CANDIDATE:
+Name: ${userProfile.name}
+Experience: ${userProfile.experience.join(", ")}
+Skills: ${userProfile.skills.join(", ")}
+`;
+
+  const aiResp = await client.chat.completions.create({
+    model: process.env.AZURE_OPENAI_DEPLOYMENT,
+    messages: [
+      { role: "system", content: "You are a professional resume assistant." },
+      { role: "user", content: prompt }
+    ],
+    temperature: 0.4
+  });
+
+  const content = aiResp.choices?.[0]?.message?.content || "";
+
+  const jobDoc = {
+    id: crypto.randomUUID(),
+    userId: "demo",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    jobTitle: jobDescription.split("\n")[0].slice(0, 80),
+    status: "generated",
+    jobDescription,
+    coverLetter: content,
+    resumeBullets: content
+      .split("\n")
+      .filter(l => l.startsWith("-"))
+      .map(l => l.replace(/^- /, ""))
+      .slice(0, 4)
+  };
+
+  await container.items.create(jobDoc);
+
+  return {
+    status: 200,
+    jsonBody: jobDoc
+  };
 }
 
 module.exports = { generateDocuments };

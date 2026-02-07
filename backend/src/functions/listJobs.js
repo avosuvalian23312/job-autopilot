@@ -1,21 +1,23 @@
-const fs = require("fs");
-const path = require("path");
+const { CosmosClient } = require("@azure/cosmos");
 
-const JOBS_PATH = path.join(process.cwd(), "data", "jobs.json");
-
-function readJobs() {
-  try {
-    const raw = fs.readFileSync(JOBS_PATH, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
+const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+const container = cosmos
+  .database(process.env.COSMOS_DB_NAME)
+  .container(process.env.COSMOS_CONTAINER_NAME);
 
 async function listJobs(request, context) {
+  const query = {
+    query: "SELECT * FROM c WHERE c.userId = @uid ORDER BY c.createdAt DESC",
+    parameters: [{ name: "@uid", value: "demo" }]
+  };
+
+  const { resources } = await container.items
+    .query(query)
+    .fetchAll();
+
   return {
     status: 200,
-    jsonBody: { jobs: readJobs() }
+    jsonBody: { jobs: resources }
   };
 }
 

@@ -7,6 +7,7 @@
     "test": "echo \"No tests yet...\""
   },
   "dependencies": {
+    "@azure/cosmos": "^4.9.1",
     "@azure/functions": "^4.0.0",
     "openai": "^6.18.0"
   },
