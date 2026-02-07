@@ -1,0 +1,6 @@
+{
+  "B2C_TENANT_NAME": "jobautopilot",
+  "B2C_CLIENT_ID": "9c269af2-3635-47fc-88e4-e90099797541",
+  "B2C_SIGNIN_POLICY": "B2C_1_signupsignin",
+  "B2C_REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net"
+}

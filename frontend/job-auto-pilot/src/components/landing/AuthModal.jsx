@@ -6,53 +6,96 @@ import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 
+/**
+ * IMPORTANT:
+ * Put your config file at:
+ *   frontend/job-auto-pilot/public/config.json
+ *
+ * So it is served at runtime as:
+ *   https://<your-site>/config.json
+ *
+ * If you keep config.json in the project root (next to src), it will NOT be served by Vite.
+ */
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [continueWithFree, setContinueWithFree] = useState(false);
   const navigate = useNavigate();
 
-  /**
-   * These values come from Azure Static Web Apps → Environment variables (Production)
-   * NOT from a local .env file.
-   *
-   * Create these in Azure:
-   *  - VITE_B2C_TENANT_NAME   (example: jobautopilot)
-   *  - VITE_B2C_CLIENT_ID     (your app client id)
-   *  - VITE_B2C_POLICY        (example: B2C_1_signupsignin)
-   *  - VITE_B2C_REDIRECT_URI  (your site URL, e.g. https://xxx.azurestaticapps.net)
-   */
-  const getB2CConfig = () => {
-    const tenantName = import.meta.env.VITE_B2C_TENANT_NAME;
-    const clientId = import.meta.env.VITE_B2C_CLIENT_ID;
-    const policy = import.meta.env.VITE_B2C_POLICY || "B2C_1_signupsignin";
-    const redirectUri =
-      import.meta.env.VITE_B2C_REDIRECT_URI || window.location.origin;
+  // Cache config so we only fetch once per page load
+  let _cfgPromise = null;
 
-    return { tenantName, clientId, policy, redirectUri };
+  const loadRuntimeConfig = () => {
+    if (_cfgPromise) return _cfgPromise;
+
+    _cfgPromise = fetch("/config.json", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
+        return res.json();
+      })
+      .then((cfg) => {
+        // Support multiple key spellings to avoid headaches
+        const tenantName =
+          cfg.VITE_B2C_TENANT_NAME ||
+          cfg.B2C_TENANT_NAME ||
+          cfg.TENANT_NAME ||
+          "";
+
+        const clientId =
+          cfg.VITE_B2C_CLIENT_ID ||
+          cfg.B2C_CLIENT_ID ||
+          cfg.CLIENT_ID ||
+          "";
+
+        const policy =
+          cfg.VITE_B2C_SIGNIN_POLICY ||
+          cfg.B2C_SIGNIN_POLICY ||
+          cfg.VITE_B2C_POLICY ||
+          cfg.B2C_POLICY ||
+          "B2C_1_signupsignin";
+
+        const redirectUri =
+          cfg.VITE_B2C_REDIRECT_URI ||
+          cfg.B2C_REDIRECT_URI ||
+          window.location.origin;
+
+        return { tenantName, clientId, policy, redirectUri, raw: cfg };
+      })
+      .catch((err) => {
+        console.error("[AuthModal] Failed to load /config.json:", err);
+        return { tenantName: "", clientId: "", policy: "", redirectUri: window.location.origin, raw: null };
+      });
+
+    return _cfgPromise;
   };
 
-  const buildB2CAuthorizeUrl = (provider) => {
-    const { tenantName, clientId, policy, redirectUri } = getB2CConfig();
+  const buildB2CAuthorizeUrl = async (provider) => {
+    const { tenantName, clientId, policy, redirectUri, raw } = await loadRuntimeConfig();
+
+    console.log("B2C RUNTIME CONFIG", {
+      tenantName,
+      clientId,
+      policy,
+      redirectUri,
+      hasConfigJson: !!raw,
+      origin: window.location.origin,
+    });
 
     if (!tenantName || !clientId) {
       console.error(
-        "[AuthModal] Missing B2C config. Set these in Azure Static Web App env vars:\n" +
-          "VITE_B2C_TENANT_NAME, VITE_B2C_CLIENT_ID (and optionally VITE_B2C_POLICY, VITE_B2C_REDIRECT_URI)."
+        "[AuthModal] Missing B2C config. Fix /public/config.json so it is served at /config.json.\n" +
+          "Required: VITE_B2C_TENANT_NAME (or B2C_TENANT_NAME) and VITE_B2C_CLIENT_ID (or B2C_CLIENT_ID)."
       );
       alert(
-        "Login is not configured yet. Missing Azure env vars (VITE_B2C_TENANT_NAME / VITE_B2C_CLIENT_ID)."
+        "Login is not configured yet. Missing config in /config.json (TENANT_NAME / CLIENT_ID)."
       );
       return null;
     }
 
-    // Optional: You can set these to match your B2C setup
     const scope = encodeURIComponent("openid profile email");
     const responseType = "id_token";
     const responseMode = "fragment";
     const nonce = "defaultNonce";
 
-    // B2C IdP hint (works only if you configured Google/Microsoft as IdPs in the policy)
-    // If your policy uses different IdP names, adjust these values.
     let idp = "";
     if (provider === "google") idp = "Google";
     if (provider === "microsoft") idp = "Microsoft";
@@ -74,12 +117,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return base + params;
   };
 
-  const handleAuth = (provider) => {
-    // Keep your existing behavior hook
+  const handleAuth = async (provider) => {
     onComplete?.();
 
-    // Redirect user to your B2C tenant authorization endpoint
-    const url = buildB2CAuthorizeUrl(provider);
+    const url = await buildB2CAuthorizeUrl(provider);
     if (!url) return;
 
     window.location.assign(url);
