@@ -8,17 +8,14 @@ import { PublicClientApplication } from "@azure/msal-browser";
 /**
  * Runtime config at /public/config.json
  *
- * ✅ For Microsoft Entra External ID (customers / CIAM) you MUST use *.ciamlogin.com (or your custom domain)
- * as the authority host — NOT login.microsoftonline.com.
- *
- * Example /public/config.json:
+ * Recommended config.json:
  * {
- *   "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
- *   "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
- *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1/v2.0",
+ *   "TENANT_ID": "...",
+ *   "CLIENT_ID": "...",
+ *   "AUTHORITY": "https://jobautopilotext.ciamlogin.com",   // OR full authority
  *   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
  *   "USER_FLOW": "signup_signin",
- *   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
+ *   "REDIRECT_URI": "https://<your-static-app>",
  *   "SCOPES": ["openid","profile","email"]
  * }
  */
@@ -32,6 +29,27 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const pcaInitPromiseRef = useRef(null);
   const didHandleRedirectRef = useRef(false);
 
+  const normalizeAuthority = ({ authorityBase, tenantId, userFlow }) => {
+    // If user provided a full authority that already contains /TENANT/FLOW, keep it.
+    // Otherwise build: https://<host>/<TENANT_ID>/<USER_FLOW>
+    try {
+      const url = new URL(authorityBase);
+      const path = (url.pathname || "").replace(/\/+$/, ""); // trim trailing /
+      const looksLikeFull =
+        path.split("/").filter(Boolean).length >= 2 && !path.endsWith("/v2.0");
+
+      if (looksLikeFull) return `${url.origin}${path}`;
+
+      const tid = tenantId?.trim();
+      const flow = userFlow?.trim();
+      if (!tid || !flow) return `${url.origin}${path || ""}`.replace(/\/+$/, "");
+
+      return `${url.origin}/${tid}/${flow}`;
+    } catch {
+      return authorityBase;
+    }
+  };
+
   const loadRuntimeConfig = () => {
     if (cfgPromiseRef.current) return cfgPromiseRef.current;
 
@@ -43,26 +61,47 @@ export default function AuthModal({ open, onClose, onComplete }) {
       .then((cfg) => {
         const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
         const clientId = cfg.CLIENT_ID || cfg.clientId || "";
-        const authority = cfg.AUTHORITY || cfg.authority || "";
-        const redirectUri = cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
+
+        // Accept either a full AUTHORITY or a base host.
+        // If you pass "https://.../v2.0" that is NOT what we want for user flows.
+        const rawAuthority = cfg.AUTHORITY || cfg.authority || "";
+        const userFlow = cfg.USER_FLOW || cfg.userFlow || "";
+
+        const redirectUri =
+          cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
         let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
         if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
 
-        // User flow name you created in External ID (ex: signup_signin)
-        const userFlow = cfg.USER_FLOW || cfg.userFlow || cfg.user_flow || "signup_signin";
-
-        // CIAM/custom domains require knownAuthorities so MSAL trusts the host.
         let knownAuthorities = cfg.KNOWN_AUTHORITIES || cfg.knownAuthorities || null;
-        if (!knownAuthorities && authority) {
+        if (!knownAuthorities && rawAuthority) {
           try {
-            knownAuthorities = [new URL(authority).host];
+            const host = new URL(rawAuthority).host;
+            knownAuthorities = [host];
           } catch {
             knownAuthorities = null;
           }
         }
 
-        return { tenantId, clientId, authority, redirectUri, scopes, userFlow, knownAuthorities, raw: cfg };
+        // If rawAuthority ends with /v2.0, strip it (user flows are not /v2.0 endpoints)
+        let authorityBase = rawAuthority;
+        if (authorityBase.endsWith("/v2.0")) {
+          authorityBase = authorityBase.replace(/\/v2\.0$/, "");
+        }
+
+        const authority = normalizeAuthority({ authorityBase, tenantId, userFlow });
+
+        return {
+          tenantId,
+          clientId,
+          authority,
+          authorityBase,
+          userFlow,
+          redirectUri,
+          scopes,
+          knownAuthorities,
+          raw: cfg,
+        };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
@@ -70,9 +109,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
           tenantId: "",
           clientId: "",
           authority: "",
+          authorityBase: "",
+          userFlow: "",
           redirectUri: window.location.origin,
           scopes: ["openid", "profile", "email"],
-          userFlow: "signup_signin",
           knownAuthorities: null,
           raw: null,
         };
@@ -85,17 +125,18 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (pcaInitPromiseRef.current) return pcaInitPromiseRef.current;
 
     pcaInitPromiseRef.current = (async () => {
-      const { clientId, authority, redirectUri, knownAuthorities } = await loadRuntimeConfig();
+      const { clientId, authority, knownAuthorities, redirectUri } =
+        await loadRuntimeConfig();
 
       if (!clientId || !authority) {
-        console.error("[AuthModal] Missing config: CLIENT_ID or AUTHORITY in /config.json");
-        alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY).");
+        console.error("[AuthModal] Missing config: CLIENT_ID or AUTHORITY/USER_FLOW");
+        alert("Login not configured. Fix /config.json (CLIENT_ID / AUTHORITY / USER_FLOW).");
         return null;
       }
 
       if (authority.includes("login.microsoftonline.com")) {
         console.error(
-          "[AuthModal] AUTHORITY is login.microsoftonline.com. For External ID (customers) use *.ciamlogin.com (or custom domain)."
+          "[AuthModal] Wrong authority for External ID. Use *.ciamlogin.com"
         );
         alert("AUTHORITY is wrong. Use YOUR_TENANT.ciamlogin.com in /config.json.");
         return null;
@@ -149,6 +190,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const startRedirect = async (pca, request) => {
+    await pca.loginRedirect(request);
+  };
+
   const handleAuth = async (provider) => {
     setStartingAuth(true);
 
@@ -158,53 +203,77 @@ export default function AuthModal({ open, onClose, onComplete }) {
       return;
     }
 
-    const { scopes, redirectUri, userFlow } = await loadRuntimeConfig();
+    const { scopes } = await loadRuntimeConfig();
 
-    // IMPORTANT: avoids AADSTS1002014-like conflicts (domain_hint + opaque login_hint)
+    // Clear active account so we don't get "pick an account" / stale hints
     try {
       pca.setActiveAccount(null);
     } catch {
       // ignore
     }
 
-    // We force prompt="login" so Google shows the email/phone screen (not the account picker)
-    // and to reduce extra account-selection screens.
-    const request = {
+    const baseRequest = {
       scopes,
-      redirectUri,
-      prompt: "login",
-      extraQueryParameters: {
-        // CIAM user flow
-        p: userFlow,
-      },
+      // Google: "login" tends to go straight to provider, less account-picker UX.
+      // Microsoft/email: "select_account" is usually fine.
+      prompt: provider === "google" ? "login" : provider === "email" ? "login" : "select_account",
     };
 
-    if (provider === "google") {
-      // Best-effort to immediately route into Google.
-      // If your tenant/user-flow has Google enabled, CIAM will bounce to Google.
-      request.extraQueryParameters = {
-        ...request.extraQueryParameters,
-        domain_hint: "google.com",
-      };
-    } else if (provider === "microsoft") {
-      // Route to Microsoft (work/school or Microsoft account depending on your tenant settings)
-      request.extraQueryParameters = {
-        ...request.extraQueryParameters,
-        domain_hint: "microsoft.com",
-      };
-    } else if (provider === "email") {
-      const loginHint = email?.trim();
-      if (loginHint) request.loginHint = loginHint;
-      // NOTE: do NOT set domain_hint here.
+    try {
+      if (provider === "google") {
+        // Try provider hint first
+        await startRedirect(pca, {
+          ...baseRequest,
+          extraQueryParameters: { provider: "google" },
+        });
+        return;
+      }
+
+      if (provider === "microsoft") {
+        await startRedirect(pca, {
+          ...baseRequest,
+          extraQueryParameters: { provider: "microsoft" },
+        });
+        return;
+      }
+
+      if (provider === "email") {
+        const loginHint = email?.trim();
+        await startRedirect(pca, {
+          ...baseRequest,
+          ...(loginHint ? { loginHint } : {}),
+        });
+        return;
+      }
+    } catch (e1) {
+      // Fallback for Google/Microsoft hint param name differences
+      if (provider === "google") {
+        try {
+          await startRedirect(pca, {
+            ...baseRequest,
+            extraQueryParameters: { idp: "google" },
+          });
+          return;
+        } catch (e2) {
+          console.error("[AuthModal] google redirect failed:", e1, e2);
+        }
+      } else if (provider === "microsoft") {
+        try {
+          await startRedirect(pca, {
+            ...baseRequest,
+            extraQueryParameters: { idp: "microsoft" },
+          });
+          return;
+        } catch (e2) {
+          console.error("[AuthModal] microsoft redirect failed:", e1, e2);
+        }
+      } else {
+        console.error("[AuthModal] loginRedirect error:", e1);
+      }
     }
 
-    try {
-      await pca.loginRedirect(request);
-    } catch (e) {
-      console.error("[AuthModal] loginRedirect error:", e);
-      setStartingAuth(false);
-      alert("Login failed to start. Check console for details.");
-    }
+    setStartingAuth(false);
+    alert("Login failed to start. Check console for details.");
   };
 
   return (
@@ -259,7 +328,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   <div className="w-full border-t border-white/10"></div>
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-[#0E0E12] text-white/30">Or continue with email</span>
+                  <span className="px-2 bg-[#0E0E12] text-white/30">
+                    Or continue with email
+                  </span>
                 </div>
               </div>
 
