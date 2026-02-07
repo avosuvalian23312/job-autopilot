@@ -1,6 +1,7 @@
 {
-  "B2C_TENANT_NAME": "jobautopilot",
-  "B2C_CLIENT_ID": "9c269af2-3635-47fc-88e4-e90099797541",
-  "B2C_SIGNIN_POLICY": "B2C_1_signupsignin",
-  "B2C_REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net"
+  "TENANT_ID": "65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
+  "CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
+  "AUTHORITY": "https://login.microsoftonline.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
+  "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
+  "SCOPES": ["openid", "profile", "email"]
 }

@@ -1,129 +1,144 @@
-import React, { useState } from "react";
+// AuthModal.jsx
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { PublicClientApplication } from "@azure/msal-browser";
 
 /**
- * IMPORTANT:
- * Put your config file at:
- *   frontend/job-auto-pilot/public/config.json
+ * External ID (Entra) runtime config:
+ * Put config at:  frontend/job-auto-pilot/public/config.json
+ * It will be served at: https://<your-site>/config.json
  *
- * So it is served at runtime as:
- *   https://<your-site>/config.json
- *
- * If you keep config.json in the project root (next to src), it will NOT be served by Vite.
+ * Expected config.json (example):
+ * {
+ *   "TENANT_ID": "....",
+ *   "CLIENT_ID": "....",
+ *   "AUTHORITY": "https://login.microsoftonline.com/<TENANT_ID>",
+ *   "REDIRECT_URI": "https://<your-site>",
+ *   "SCOPES": ["openid","profile","email"]
+ * }
  */
+
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
-  const [continueWithFree, setContinueWithFree] = useState(false);
-  const navigate = useNavigate();
-
-  // Cache config so we only fetch once per page load
-  let _cfgPromise = null;
+  const cfgPromiseRef = useRef(null);
+  const msalPromiseRef = useRef(null);
 
   const loadRuntimeConfig = () => {
-    if (_cfgPromise) return _cfgPromise;
+    if (cfgPromiseRef.current) return cfgPromiseRef.current;
 
-    _cfgPromise = fetch("/config.json", { cache: "no-store" })
+    cfgPromiseRef.current = fetch("/config.json", { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
         return res.json();
       })
       .then((cfg) => {
-        // Support multiple key spellings to avoid headaches
-        const tenantName =
-          cfg.VITE_B2C_TENANT_NAME ||
-          cfg.B2C_TENANT_NAME ||
-          cfg.TENANT_NAME ||
-          "";
+        const tenantId = cfg.TENANT_ID || cfg.tenantId || "";
+        const clientId = cfg.CLIENT_ID || cfg.clientId || "";
 
-        const clientId =
-          cfg.VITE_B2C_CLIENT_ID ||
-          cfg.B2C_CLIENT_ID ||
-          cfg.CLIENT_ID ||
-          "";
-
-        const policy =
-          cfg.VITE_B2C_SIGNIN_POLICY ||
-          cfg.B2C_SIGNIN_POLICY ||
-          cfg.VITE_B2C_POLICY ||
-          cfg.B2C_POLICY ||
-          "B2C_1_signupsignin";
+        // Prefer explicit authority; otherwise build from tenantId
+        const authority =
+          cfg.AUTHORITY ||
+          cfg.authority ||
+          (tenantId ? `https://login.microsoftonline.com/${tenantId}` : "");
 
         const redirectUri =
-          cfg.VITE_B2C_REDIRECT_URI ||
-          cfg.B2C_REDIRECT_URI ||
-          window.location.origin;
+          cfg.REDIRECT_URI || cfg.redirectUri || window.location.origin;
 
-        return { tenantName, clientId, policy, redirectUri, raw: cfg };
+        let scopes = cfg.SCOPES || cfg.scopes || ["openid", "profile", "email"];
+        if (typeof scopes === "string") scopes = scopes.split(/\s+/).filter(Boolean);
+
+        return { tenantId, clientId, authority, redirectUri, scopes, raw: cfg };
       })
       .catch((err) => {
         console.error("[AuthModal] Failed to load /config.json:", err);
-        return { tenantName: "", clientId: "", policy: "", redirectUri: window.location.origin, raw: null };
+        return {
+          tenantId: "",
+          clientId: "",
+          authority: "",
+          redirectUri: window.location.origin,
+          scopes: ["openid", "profile", "email"],
+          raw: null,
+        };
       });
 
-    return _cfgPromise;
+    return cfgPromiseRef.current;
   };
 
-  const buildB2CAuthorizeUrl = async (provider) => {
-    const { tenantName, clientId, policy, redirectUri, raw } = await loadRuntimeConfig();
+  const getMsal = async () => {
+    if (msalPromiseRef.current) return msalPromiseRef.current;
 
-    console.log("B2C RUNTIME CONFIG", {
-      tenantName,
-      clientId,
-      policy,
-      redirectUri,
-      hasConfigJson: !!raw,
-      origin: window.location.origin,
-    });
+    msalPromiseRef.current = (async () => {
+      const { clientId, authority, redirectUri } = await loadRuntimeConfig();
 
-    if (!tenantName || !clientId) {
-      console.error(
-        "[AuthModal] Missing B2C config. Fix /public/config.json so it is served at /config.json.\n" +
-          "Required: VITE_B2C_TENANT_NAME (or B2C_TENANT_NAME) and VITE_B2C_CLIENT_ID (or B2C_CLIENT_ID)."
-      );
-      alert(
-        "Login is not configured yet. Missing config in /config.json (TENANT_NAME / CLIENT_ID)."
-      );
-      return null;
-    }
+      if (!clientId || !authority) {
+        console.error(
+          "[AuthModal] Missing External ID config. Ensure /public/config.json contains CLIENT_ID and AUTHORITY (or TENANT_ID)."
+        );
+        alert(
+          "Login is not configured yet. Missing External ID config in /config.json (CLIENT_ID / AUTHORITY or TENANT_ID)."
+        );
+        return null;
+      }
 
-    const scope = encodeURIComponent("openid profile email");
-    const responseType = "id_token";
-    const responseMode = "fragment";
-    const nonce = "defaultNonce";
+      const pca = new PublicClientApplication({
+        auth: {
+          clientId,
+          authority,
+          redirectUri,
+        },
+        cache: {
+          cacheLocation: "localStorage",
+          storeAuthStateInCookie: false,
+        },
+      });
 
-    let idp = "";
-    if (provider === "google") idp = "Google";
-    if (provider === "microsoft") idp = "Microsoft";
+      return pca;
+    })();
 
-    const base =
-      `https://${tenantName}.b2clogin.com/` +
-      `${tenantName}.onmicrosoft.com/` +
-      `${policy}/oauth2/v2.0/authorize`;
-
-    const params =
-      `?client_id=${encodeURIComponent(clientId)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=${scope}` +
-      `&response_type=${encodeURIComponent(responseType)}` +
-      `&response_mode=${encodeURIComponent(responseMode)}` +
-      `&nonce=${encodeURIComponent(nonce)}` +
-      (idp ? `&idp=${encodeURIComponent(idp)}` : "");
-
-    return base + params;
+    return msalPromiseRef.current;
   };
+
+  // Complete redirect flow if we got sent back with tokens
+  useEffect(() => {
+    (async () => {
+      const pca = await getMsal();
+      if (!pca) return;
+
+      try {
+        await pca.handleRedirectPromise();
+      } catch (e) {
+        console.error("[AuthModal] handleRedirectPromise error:", e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAuth = async (provider) => {
     onComplete?.();
 
-    const url = await buildB2CAuthorizeUrl(provider);
-    if (!url) return;
+    const pca = await getMsal();
+    if (!pca) return;
 
-    window.location.assign(url);
+    const { scopes } = await loadRuntimeConfig();
+
+    // External ID does NOT support B2C-style "idp=Google/Microsoft" forcing from the client.
+    // Users choose provider on the Microsoft sign-in page based on the providers you enabled in External ID.
+    // We'll still use the email field as a loginHint for the Email button.
+    const loginHint = provider === "email" && email ? email.trim() : undefined;
+
+    try {
+      await pca.loginRedirect({
+        scopes,
+        prompt: "select_account",
+        ...(loginHint ? { loginHint } : {}),
+      });
+    } catch (e) {
+      console.error("[AuthModal] loginRedirect error:", e);
+      alert("Login failed to start. Check console for details.");
+    }
   };
 
   return (
@@ -151,14 +166,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 <X className="w-5 h-5" />
               </button>
 
-              <h2 className="text-2xl font-bold text-white mb-2">
-                {continueWithFree ? "Continue with Free Plan" : "Get Started"}
-              </h2>
-              <p className="text-white/40 mb-8">
-                {continueWithFree
-                  ? "Create your account to start with 3 free generations"
-                  : "Sign up to access your dashboard"}
-              </p>
+              <h2 className="text-2xl font-bold text-white mb-2">Get Started</h2>
+              <p className="text-white/40 mb-8">Sign up to access your dashboard</p>
 
               <div className="space-y-3 mb-6">
                 <Button
