@@ -55,8 +55,9 @@ app.http("verifyEmailLogin", {
 
 // Provider token → app JWT
 app.http("authExchange", {
-  methods: ["POST"],
+  methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
   authLevel: "anonymous",
- handler: require("./functions/authExchange").authExchange
+  handler: require("./functions/authExchange").authExchange,
 });
+

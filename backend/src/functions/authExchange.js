@@ -3,50 +3,12 @@ const jwt = require("jsonwebtoken");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
 
 // ------------------------
-// Helpers: runtime compatibility
+// Helpers
 // ------------------------
-function isContext(obj) {
-  // classic model has context.log + bindings
-  return !!obj && (typeof obj.log === "function" || obj.bindings);
-}
-
-function isRequest(obj) {
-  // could be classic req (has body/method) or new HttpRequest (has json()/method/url)
-  return !!obj && (typeof obj.method === "string" || typeof obj.json === "function" || obj.body !== undefined);
-}
-
-async function readJsonBody(req) {
-  try {
-    // Classic model: req.body already parsed
-    if (req && typeof req === "object" && req.body && typeof req.body === "object") return req.body;
-
-    // Some setups provide rawBody
-    if (req && typeof req.rawBody === "string") {
-      return JSON.parse(req.rawBody);
-    }
-
-    // New model: request.json()
-    if (req && typeof req.json === "function") {
-      const j = await req.json();
-      return (j && typeof j === "object") ? j : {};
-    }
-
-    // New model might expose text()
-    if (req && typeof req.text === "function") {
-      const t = await req.text();
-      return t ? JSON.parse(t) : {};
-    }
-  } catch (_) {
-    // ignore parse error and fall through
-  }
-  return {};
-}
-
 function withCommonHeaders(extra = {}) {
   return {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
-    // CORS: SWA usually handles, but this prevents weird browser cases
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -54,26 +16,25 @@ function withCommonHeaders(extra = {}) {
   };
 }
 
-function makeResponse(status, obj) {
-  return {
-    status,
-    headers: withCommonHeaders(),
-    jsonBody: obj,
-    body: JSON.stringify(obj),
-  };
+function jsonString(obj) {
+  return JSON.stringify(obj);
 }
 
-function send(context, status, obj) {
-  // Classic model
+function setClassicResponse(context, status, obj) {
   context.res = {
     status,
     headers: withCommonHeaders(),
-    body: obj,
+    body: jsonString(obj),
   };
 }
 
+function isClassicContext(x) {
+  // classic model typically has bindings + res usage; v4 context does not use context.res
+  return !!x && ("bindings" in x) && ("log" in x);
+}
+
 // ------------------------
-// Cosmos connection string parsing (SDK-version-safe)
+// Cosmos connection string parsing
 // ------------------------
 function parseCosmosConnectionString(connStr) {
   if (!connStr) throw new Error("Missing COSMOS_CONNECTION_STRING");
@@ -101,6 +62,8 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
   const COSMOS_DB = process.env.COSMOS_DB_NAME;
   const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
 
+  if (!COSMOS_DB) throw new Error("Missing COSMOS_DB_NAME");
+
   const db = cosmos.database(COSMOS_DB);
   const users = db.container(USERS_CONTAINER);
 
@@ -121,19 +84,17 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
 }
 
 function signAppToken(user) {
+  if (!process.env.APP_JWT_SECRET) throw new Error("Missing APP_JWT_SECRET");
+
   return jwt.sign(
-    {
-      uid: user.userId,
-      email: user.email,
-      provider: user.provider,
-    },
+    { uid: user.userId, email: user.email, provider: user.provider },
     process.env.APP_JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
 
 // ------------------------
-// Optional idToken verification (only if you send idToken)
+// OPTIONAL: verify idToken if you send it (recommended for real auth)
 // ------------------------
 let microsoftJWKS = null;
 let googleJWKS = null;
@@ -156,7 +117,7 @@ function getGoogleJWKS() {
 
 async function verifyMicrosoftIdToken(idToken) {
   const audience = process.env.ENTRA_CLIENT_ID;
-  if (!audience) throw new Error("Missing ENTRA_CLIENT_ID env var on backend.");
+  if (!audience) throw new Error("Missing ENTRA_CLIENT_ID on backend.");
 
   const { payload } = await jwtVerify(idToken, getMicrosoftJWKS(), { audience });
 
@@ -170,7 +131,7 @@ async function verifyMicrosoftIdToken(idToken) {
 
 async function verifyGoogleIdToken(idToken) {
   const audience = process.env.GOOGLE_CLIENT_ID;
-  if (!audience) throw new Error("Missing GOOGLE_CLIENT_ID env var on backend.");
+  if (!audience) throw new Error("Missing GOOGLE_CLIENT_ID on backend.");
 
   const { payload } = await jwtVerify(idToken, getGoogleJWKS(), {
     audience,
@@ -180,42 +141,65 @@ async function verifyGoogleIdToken(idToken) {
   return { sub: payload.sub, email: payload.email, name: payload.name || "" };
 }
 
-// ------------------------
-// MAIN HANDLER (supports both Azure Functions models)
-// ------------------------
-module.exports.authExchange = async function handler(a, b) {
-  // Detect which arg is context/request in whichever order the runtime passes
-  const context = isContext(a) ? a : isContext(b) ? b : null;
-  const req = isRequest(a) && !isContext(a) ? a : isRequest(b) && !isContext(b) ? b : null;
+async function readBody(req) {
+  // v4 HttpRequest has json()
+  if (req && typeof req.json === "function") {
+    try {
+      const j = await req.json();
+      return j && typeof j === "object" ? j : {};
+    } catch {
+      return {};
+    }
+  }
 
-  const VERSION = "authExchange-v4-compat";
+  // classic: req.body already parsed
+  if (req && typeof req === "object" && req.body && typeof req.body === "object") return req.body;
+  if (req && typeof req.rawBody === "string") {
+    try { return JSON.parse(req.rawBody); } catch { return {}; }
+  }
+
+  return {};
+}
+
+// ------------------------
+// MAIN HANDLER
+// Works for BOTH:
+// - v4: (request, context) => MUST return response object
+// - classic: (context, req) => MUST set context.res
+// ------------------------
+async function handler(arg1, arg2) {
+  const VERSION = "authExchange-v4-fixed";
+
+  const classic = isClassicContext(arg1) ? { context: arg1, req: arg2 } : null;
+  const modern = !classic ? { req: arg1, context: arg2 } : null;
+
+  const context = classic?.context || modern?.context || null;
+  const req = classic?.req || modern?.req || null;
+
+  const reply = (status, obj) => {
+    if (classic?.context) {
+      setClassicResponse(classic.context, status, obj);
+      return; // classic returns undefined intentionally
+    }
+    // v4 MUST return a value
+    return { status, headers: withCommonHeaders(), body: jsonString(obj) };
+  };
 
   try {
-    // Handle preflight
-    const method = (req?.method || "").toUpperCase();
+    const method = String(req?.method || "").toUpperCase();
+
     if (method === "OPTIONS") {
-      const ok = { ok: true, version: VERSION };
-      if (context) {
-        send(context, 200, ok);
-        return;
-      }
-      return makeResponse(200, ok);
+      return reply(200, { ok: true, version: VERSION });
     }
 
-    // Strong env checks with visible errors (this is the #1 cause of 500s)
     const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
     for (const k of required) {
       if (!process.env[k]) {
-        const out = { ok: false, version: VERSION, error: `Missing env var: ${k}` };
-        if (context) {
-          send(context, 500, out);
-          return;
-        }
-        return makeResponse(500, out);
+        return reply(500, { ok: false, version: VERSION, error: `Missing env var: ${k}` });
       }
     }
 
-    const body = await readJsonBody(req);
+    const body = await readBody(req);
 
     const provider = String(body?.provider || "").toLowerCase().trim();
     const providerId = String(body?.providerId || "").trim();
@@ -224,48 +208,21 @@ module.exports.authExchange = async function handler(a, b) {
     const idToken = String(body?.idToken || "").trim();
 
     if (!provider) {
-      const out = { ok: false, version: VERSION, error: "Missing provider" };
-      if (context) {
-        send(context, 400, out);
-        return;
-      }
-      return makeResponse(400, out);
+      return reply(400, { ok: false, version: VERSION, error: "Missing provider" });
     }
 
     const cosmos = getCosmosClient();
 
-    let info = null;
-
+    let info;
     if (idToken) {
       if (provider === "microsoft") info = await verifyMicrosoftIdToken(idToken);
       else if (provider === "google") info = await verifyGoogleIdToken(idToken);
-      else {
-        const out = { ok: false, version: VERSION, error: "Invalid provider (google|microsoft)" };
-        if (context) {
-          send(context, 400, out);
-          return;
-        }
-        return makeResponse(400, out);
-      }
+      else return reply(400, { ok: false, version: VERSION, error: "Invalid provider (google|microsoft)" });
     } else {
       if (!providerId) {
-        const out = { ok: false, version: VERSION, error: "Missing providerId (or send idToken)" };
-        if (context) {
-          send(context, 400, out);
-          return;
-        }
-        return makeResponse(400, out);
+        return reply(400, { ok: false, version: VERSION, error: "Missing providerId (or send idToken)" });
       }
       info = { sub: providerId, email, name };
-    }
-
-    if (!info?.sub) {
-      const out = { ok: false, version: VERSION, error: "Invalid auth info (missing sub/providerId)" };
-      if (context) {
-        send(context, 401, out);
-        return;
-      }
-      return makeResponse(401, out);
     }
 
     const user = await upsertUser(cosmos, {
@@ -277,32 +234,18 @@ module.exports.authExchange = async function handler(a, b) {
 
     const appToken = signAppToken(user);
 
-    // IMPORTANT: return BOTH names so your frontend works without changes
-    const out = {
+    return reply(200, {
       ok: true,
       version: VERSION,
       token: appToken,
       appToken,
       user: { id: user.userId, email: user.email, provider: user.provider, name: user.name },
-    };
-
-    if (context) {
-      send(context, 200, out);
-      return;
-    }
-    return makeResponse(200, out);
+    });
   } catch (e) {
-    const msg = e?.message || "Auth exchange failed";
-    const out = { ok: false, version: VERSION, error: msg };
-
-    try {
-      context?.log?.("authExchange error:", e);
-    } catch (_) {}
-
-    if (context) {
-      send(context, 500, out);
-      return;
-    }
-    return makeResponse(500, out);
+    try { context?.log?.("authExchange error:", e); } catch {}
+    return reply(500, { ok: false, version: VERSION, error: e?.message || "Auth exchange failed" });
   }
-};
+}
+
+module.exports = handler;
+module.exports.authExchange = handler;
