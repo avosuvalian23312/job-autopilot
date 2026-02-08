@@ -1,212 +1,439 @@
-// backend/src/functions/authExchange.js
-const { CosmosClient } = require("@azure/cosmos");
-const jwt = require("jsonwebtoken");
-const { createRemoteJWKSet, jwtVerify } = require("jose");
+import React, { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PublicClientApplication } from "@azure/msal-browser";
 
-// ------------------------
-// Response helpers (NEW MODEL friendly)
-// ------------------------
-function headers(extra = {}) {
-  return {
-    "Content-Type": "application/json",
-    "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    ...extra,
-  };
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) return resolve(true);
+
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve(true);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
 }
 
-function json(status, obj) {
-  return {
-    status,
-    headers: headers(),
-    jsonBody: obj, // Azure Functions v4 supports jsonBody
-    body: JSON.stringify(obj), // also include body for compatibility
-  };
-}
+export default function AuthModal({ open, onClose, onComplete }) {
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState("start"); // "start" | "email_code"
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
-// ------------------------
-// Cosmos connection string parsing
-// ------------------------
-function parseCosmosConnectionString(connStr) {
-  if (!connStr) throw new Error("Missing COSMOS_CONNECTION_STRING");
+  const cfgRef = useRef(null);
+  const apiBaseRef = useRef("/api");
 
-  const parts = connStr.split(";").reduce((acc, part) => {
-    const [k, ...rest] = part.split("=");
-    const v = rest.join("=");
-    if (k && v) acc[k] = v;
-    return acc;
-  }, {});
+  // Google GIS popup
+  const googleReadyRef = useRef(false);
+  const googleTokenClientRef = useRef(null);
 
-  if (!parts.AccountEndpoint || !parts.AccountKey) {
-    throw new Error("Invalid COSMOS_CONNECTION_STRING (needs AccountEndpoint and AccountKey)");
-  }
+  // Microsoft MSAL popup
+  const msalReadyRef = useRef(false);
+  const msalRef = useRef(null);
 
-  return { endpoint: parts.AccountEndpoint, key: parts.AccountKey };
-}
-
-function getCosmosClient() {
-  const { endpoint, key } = parseCosmosConnectionString(process.env.COSMOS_CONNECTION_STRING);
-  return new CosmosClient({ endpoint, key });
-}
-
-async function upsertUser(cosmos, { provider, sub, email, name }) {
-  const COSMOS_DB = process.env.COSMOS_DB_NAME;
-  const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
-  if (!COSMOS_DB) throw new Error("Missing COSMOS_DB_NAME");
-
-  const db = cosmos.database(COSMOS_DB);
-  const users = db.container(USERS_CONTAINER);
-
-  const userId = `${provider}:${sub}`;
-
-  const doc = {
-    id: userId,
-    userId,
-    provider,
-    providerSub: sub,
-    email: email || null,
-    name: name || null,
-    updatedAt: Date.now(),
+  const loadConfig = async () => {
+    if (cfgRef.current) return cfgRef.current;
+    const res = await fetch("/config.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("Missing /config.json");
+    cfgRef.current = await res.json();
+    apiBaseRef.current = cfgRef.current?.API_BASE || "/api";
+    return cfgRef.current;
   };
 
-  await users.items.upsert(doc);
-  return doc;
-}
+  // ---------------------------
+  // APP TOKEN EXCHANGE (YOUR backend)
+  // ---------------------------
+  const exchangeWithBackend = async (payload) => {
+    await loadConfig();
 
-function signAppToken(user) {
-  const secret = process.env.APP_JWT_SECRET;
-  if (!secret) throw new Error("Missing APP_JWT_SECRET");
+    const r = await fetch(`${apiBaseRef.current}/auth/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
 
-  return jwt.sign(
-    { uid: user.userId, email: user.email, provider: user.provider },
-    secret,
-    { expiresIn: "7d" }
+    const data = await r.json().catch(() => null);
+
+    if (!r.ok || !data?.ok) {
+      const msg =
+        data?.error ||
+        `Auth exchange failed (${r.status})`;
+      throw new Error(msg);
+    }
+
+    // If backend returns a token in JSON, store it (cookie-based auth is also fine)
+    if (data.token) {
+      localStorage.setItem("APP_TOKEN", data.token);
+    }
+
+    return data; // { ok, token?, user? ... }
+  };
+
+  // ---------------------------
+  // GOOGLE: GIS token popup
+  // ---------------------------
+  const preloadGoogle = async () => {
+    if (googleReadyRef.current) return;
+
+    const cfg = await loadConfig();
+    const clientId = (cfg?.GOOGLE_CLIENT_ID || "").trim();
+
+    if (!clientId || clientId.includes("...")) {
+      throw new Error("Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...').");
+    }
+
+    await loadScriptOnce("https://accounts.google.com/gsi/client");
+
+    if (!window.google?.accounts?.oauth2?.initTokenClient) {
+      throw new Error("Google Identity Services failed to load.");
+    }
+
+    googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "openid profile email",
+      callback: async (resp) => {
+        try {
+          setErr("");
+          setBusy(true);
+
+          if (!resp?.access_token) {
+            throw new Error(resp?.error_description || "Google sign-in failed");
+          }
+
+          // Get profile (email/name/picture/sub) using the access token
+          const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: `Bearer ${resp.access_token}` },
+          });
+
+          if (!u.ok) throw new Error("Failed to fetch Google profile");
+
+          const profile = await u.json();
+
+          // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+          const exchanged = await exchangeWithBackend({
+            provider: "google",
+            email: profile.email,
+            providerId: profile.sub || profile.email, // stable unique ID preferred
+            // optional: send provider token for server-side verification if you implement it
+            providerAccessToken: resp.access_token,
+          });
+
+          onComplete?.({
+            ok: true,
+            provider: "google",
+            user: {
+              email: profile.email,
+              name: profile.name,
+              picture: profile.picture,
+            },
+            exchange: exchanged,
+          });
+
+          onClose?.();
+        } catch (e) {
+          setErr(e?.message || "Google sign-in failed");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+
+    googleReadyRef.current = true;
+  };
+
+  const startGoogle = () => {
+    try {
+      setErr("");
+      const tc = googleTokenClientRef.current;
+      if (!tc) {
+        setErr("Google sign-in not ready yet. Refresh and try again.");
+        return;
+      }
+      // Must be called directly from click handler to avoid popup blocking
+      tc.requestAccessToken({ prompt: "select_account" });
+    } catch (e) {
+      setErr(e?.message || "Google sign-in failed");
+    }
+  };
+
+  // ---------------------------
+  // MICROSOFT: MSAL popup
+  // ---------------------------
+  const preloadMicrosoft = async () => {
+    if (msalReadyRef.current) return;
+
+    const cfg = await loadConfig();
+
+    const clientId = (cfg?.ENTRA_CLIENT_ID || "").trim();
+    const authority = (cfg?.ENTRA_AUTHORITY || "https://login.microsoftonline.com/common").trim();
+    const redirectUri = (cfg?.ENTRA_REDIRECT_URI || window.location.origin + "/").trim();
+
+    if (!clientId) throw new Error("Missing ENTRA_CLIENT_ID in /config.json");
+    if (!authority.startsWith("https://login.microsoftonline.com/")) {
+      throw new Error("ENTRA_AUTHORITY must be a login.microsoftonline.com URL");
+    }
+
+    const msalInstance = new PublicClientApplication({
+      auth: { clientId, authority, redirectUri },
+      cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+    });
+
+    await msalInstance.initialize();
+
+    msalRef.current = msalInstance;
+    msalReadyRef.current = true;
+  };
+
+  const startMicrosoft = async () => {
+    try {
+      setErr("");
+      setBusy(true);
+
+      const msal = msalRef.current;
+      if (!msal) throw new Error("Microsoft sign-in not ready yet.");
+
+      const loginResp = await msal.loginPopup({
+        scopes: ["openid", "profile", "email"],
+        prompt: "select_account",
+      });
+
+      const account = loginResp?.account || msal.getAllAccounts()?.[0];
+      if (!account) throw new Error("No Microsoft account returned.");
+
+      const claims = account.idTokenClaims || {};
+      const email =
+        account.username ||
+        claims.preferred_username ||
+        claims.email ||
+        "";
+
+      const providerId =
+        // AAD usually provides oid (object id) which is stable per tenant
+        claims.oid ||
+        claims.sub ||
+        account.homeAccountId ||
+        account.localAccountId ||
+        email;
+
+      // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+      const exchanged = await exchangeWithBackend({
+        provider: "microsoft",
+        email,
+        providerId,
+        tenantId: claims.tid || account.tenantId || "",
+      });
+
+      onComplete?.({
+        ok: true,
+        provider: "microsoft",
+        user: {
+          email,
+          name: account.name || "",
+          tenantId: claims.tid || account.tenantId || "",
+        },
+        microsoft: {
+          homeAccountId: account.homeAccountId,
+          localAccountId: account.localAccountId,
+        },
+        exchange: exchanged,
+      });
+
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Microsoft sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Preload both providers when modal opens so popup won’t be blocked
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!open) return;
+      try {
+        setErr("");
+        await Promise.all([preloadGoogle(), preloadMicrosoft()]);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Auth setup failed");
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setEmail("");
+      setCode("");
+      setStep("start");
+      setBusy(false);
+      setErr("");
+    }
+  }, [open]);
+
+  // ---------------------------
+  // EMAIL OTP flow
+  // ---------------------------
+  const startEmail = async () => {
+    try {
+      setErr("");
+      setBusy(true);
+
+      const em = email.trim().toLowerCase();
+      if (!em) throw new Error("Enter your email");
+
+      await loadConfig();
+
+      const r = await fetch(`${apiBaseRef.current}/auth/email/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) throw new Error(data?.error || "Failed to send code");
+
+      setStep("email_code");
+    } catch (e) {
+      setErr(e?.message || "Email login failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyEmail = async () => {
+    try {
+      setErr("");
+      setBusy(true);
+
+      await loadConfig();
+
+      const em = email.trim().toLowerCase();
+      if (!em) throw new Error("Enter your email");
+      if (!code.trim()) throw new Error("Enter the code");
+
+      const r = await fetch(`${apiBaseRef.current}/auth/email/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em, code: code.trim() }),
+      });
+
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) throw new Error(data?.error || "Invalid code");
+
+      // If verify endpoint already returns a token, keep it
+      if (data?.token) {
+        localStorage.setItem("APP_TOKEN", data.token);
+        onComplete?.(data);
+        onClose?.();
+        return;
+      }
+
+      // Otherwise, exchange to get YOUR token
+      const exchanged = await exchangeWithBackend({
+        provider: "email",
+        email: em,
+        providerId: em, // stable enough for email auth
+      });
+
+      onComplete?.({ ok: true, provider: "email", exchange: exchanged });
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Verification failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            className="fixed inset-0 bg-black/80 z-50"
+            onClick={busy ? undefined : onClose}
+          />
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="bg-[#0E0E12] p-8 rounded-2xl max-w-md w-full relative">
+              <button
+                className="absolute top-4 right-4"
+                onClick={onClose}
+                disabled={busy}
+                aria-label="Close"
+              >
+                <X />
+              </button>
+
+              <h2 className="text-2xl text-white mb-4">Get Started</h2>
+
+              <div className="space-y-3">
+                <Button
+                  onClick={startMicrosoft}
+                  disabled={busy}
+                  className="w-full bg-[#1f2937] text-white hover:bg-[#111827]"
+                >
+                  Continue with Microsoft
+                </Button>
+
+                <Button
+                  onClick={startGoogle}
+                  disabled={busy}
+                  className="w-full bg-white text-black hover:bg-white/90"
+                >
+                  Continue with Google
+                </Button>
+              </div>
+
+              {/* Optional: keep your email-code login */}
+              <div className="mt-4">
+                <Input
+                  placeholder="Enter your email"
+                  value={email}
+                  disabled={busy || step === "email_code"}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+
+                {step === "start" && (
+                  <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send Login Code
+                  </Button>
+                )}
+
+                {step === "email_code" && (
+                  <>
+                    <Input
+                      placeholder="Enter code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="mt-3"
+                    />
+                    <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
+                      Verify Code
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
-
-// ------------------------
-// Optional idToken verification (if you send idToken)
-// ------------------------
-let microsoftJWKS = null;
-let googleJWKS = null;
-
-function getMicrosoftJWKS() {
-  if (!microsoftJWKS) {
-    microsoftJWKS = createRemoteJWKSet(
-      new URL("https://login.microsoftonline.com/common/discovery/v2.0/keys")
-    );
-  }
-  return microsoftJWKS;
-}
-
-function getGoogleJWKS() {
-  if (!googleJWKS) {
-    googleJWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-  }
-  return googleJWKS;
-}
-
-async function verifyMicrosoftIdToken(idToken) {
-  const audience = process.env.ENTRA_CLIENT_ID;
-  if (!audience) throw new Error("Missing ENTRA_CLIENT_ID");
-
-  const { payload } = await jwtVerify(idToken, getMicrosoftJWKS(), { audience });
-
-  const email =
-    payload.email ||
-    payload.preferred_username ||
-    (Array.isArray(payload.emails) ? payload.emails[0] : undefined);
-
-  return { sub: payload.sub, email, name: payload.name || "" };
-}
-
-async function verifyGoogleIdToken(idToken) {
-  const audience = process.env.GOOGLE_CLIENT_ID;
-  if (!audience) throw new Error("Missing GOOGLE_CLIENT_ID");
-
-  const { payload } = await jwtVerify(idToken, getGoogleJWKS(), {
-    audience,
-    issuer: ["https://accounts.google.com", "accounts.google.com"],
-  });
-
-  return { sub: payload.sub, email: payload.email, name: payload.name || "" };
-}
-
-// ------------------------
-// MAIN HANDLER (NEW Functions model)
-// MUST return a response (or you'll get 204)
-// ------------------------
-async function authExchange(request, context) {
-  const VERSION = "authExchange-return-response";
-
-  try {
-    const method = (request?.method || "").toUpperCase();
-
-    if (method === "OPTIONS") {
-      return json(200, { ok: true, version: VERSION });
-    }
-
-    // Parse JSON body safely
-    let body = {};
-    try {
-      body = (await request.json()) || {};
-    } catch (_) {
-      // if request.json() fails, keep {}
-      body = {};
-    }
-
-    const provider = String(body?.provider || "").toLowerCase().trim();
-    const providerId = String(body?.providerId || "").trim();
-    const email = String(body?.email || "").trim() || null;
-    const name = String(body?.name || "").trim() || null;
-    const idToken = String(body?.idToken || "").trim();
-
-    if (!provider) return json(400, { ok: false, version: VERSION, error: "Missing provider" });
-
-    // Required envs
-    const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
-    for (const k of required) {
-      if (!process.env[k]) return json(500, { ok: false, version: VERSION, error: `Missing env var: ${k}` });
-    }
-
-    const cosmos = getCosmosClient();
-
-    let info;
-    if (idToken) {
-      if (provider === "microsoft") info = await verifyMicrosoftIdToken(idToken);
-      else if (provider === "google") info = await verifyGoogleIdToken(idToken);
-      else return json(400, { ok: false, version: VERSION, error: "Invalid provider (google|microsoft)" });
-    } else {
-      if (!providerId) return json(400, { ok: false, version: VERSION, error: "Missing providerId (or send idToken)" });
-      info = { sub: providerId, email, name };
-    }
-
-    if (!info?.sub) return json(401, { ok: false, version: VERSION, error: "Invalid auth info (missing sub/providerId)" });
-
-    const user = await upsertUser(cosmos, {
-      provider,
-      sub: info.sub,
-      email: info.email,
-      name: info.name,
-    });
-
-    const appToken = signAppToken(user);
-
-    return json(200, {
-      ok: true,
-      version: VERSION,
-      token: appToken,      // keep both for frontend compatibility
-      appToken,
-      user: { id: user.userId, email: user.email, provider: user.provider, name: user.name },
-    });
-  } catch (e) {
-    context?.log?.("authExchange error:", e);
-    return json(500, { ok: false, version: VERSION, error: e?.message || "Auth exchange failed" });
-  }
-}
-
-// Export BOTH ways so your index.js handler works no matter what
-module.exports = authExchange;
-module.exports.authExchange = authExchange;
