@@ -5,12 +5,6 @@ const { createRemoteJWKSet, jwtVerify } = require("jose");
 const COSMOS_DB = process.env.COSMOS_DB_NAME;
 const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
 
-// Remote JWKS (cached by jose internally) - optional if you use idToken verification
-const microsoftJWKS = createRemoteJWKSet(
-  new URL("https://login.microsoftonline.com/common/discovery/v2.0/keys")
-);
-const googleJWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-
 function bad(status, msg) {
   return {
     status,
@@ -46,11 +40,10 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
   const db = cosmos.database(COSMOS_DB);
   const users = db.container(USERS_CONTAINER);
 
-  // stable per provider
   const userId = `${provider}:${sub}`;
 
   const doc = {
-    id: userId, // if your container uses /id as partition key, this is perfect
+    id: userId,
     userId,
     provider,
     providerSub: sub,
@@ -75,14 +68,33 @@ function signAppToken(user) {
   );
 }
 
+// ---- Lazy-initialized JWKS (prevents cold-start crashes)
+let microsoftJWKS = null;
+let googleJWKS = null;
+
+function getMicrosoftJWKS() {
+  if (!microsoftJWKS) {
+    microsoftJWKS = createRemoteJWKSet(
+      new URL("https://login.microsoftonline.com/common/discovery/v2.0/keys")
+    );
+  }
+  return microsoftJWKS;
+}
+
+function getGoogleJWKS() {
+  if (!googleJWKS) {
+    googleJWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+  }
+  return googleJWKS;
+}
+
 // ---- Optional: verify idTokens (only used if frontend sends idToken)
 async function verifyMicrosoftIdToken(idToken) {
   const audience = process.env.ENTRA_CLIENT_ID;
   if (!audience) throw new Error("Missing ENTRA_CLIENT_ID env var on backend.");
 
-  const { payload } = await jwtVerify(idToken, microsoftJWKS, {
+  const { payload } = await jwtVerify(idToken, getMicrosoftJWKS(), {
     audience
-    // issuer varies; omit strict issuer to avoid tenant issues for now
   });
 
   const email =
@@ -97,7 +109,7 @@ async function verifyGoogleIdToken(idToken) {
   const audience = process.env.GOOGLE_CLIENT_ID;
   if (!audience) throw new Error("Missing GOOGLE_CLIENT_ID env var on backend.");
 
-  const { payload } = await jwtVerify(idToken, googleJWKS, {
+  const { payload } = await jwtVerify(idToken, getGoogleJWKS(), {
     audience,
     issuer: ["https://accounts.google.com", "accounts.google.com"]
   });
@@ -107,24 +119,26 @@ async function verifyGoogleIdToken(idToken) {
 
 module.exports.authExchange = async (req, context) => {
   try {
+    // IMPORTANT: include version so you can confirm deploy actually updated
+    const VERSION = "authExchange-v3";
+
     // ✅ Force visibility into missing production settings
     const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
     for (const k of required) {
-      if (!process.env[k]) return bad(500, `Missing env var: ${k}`);
+      if (!process.env[k]) return bad(500, `${VERSION} Missing env var: ${k}`);
     }
 
     const provider = String(req.body?.provider || "").toLowerCase().trim();
 
-    // Two supported input modes:
-    // A) SWA / client-side exchange: provider + providerId (+ email/name)
+    // A) client-side exchange: provider + providerId (+ email/name)
     const providerId = String(req.body?.providerId || "").trim();
     const email = String(req.body?.email || "").trim() || null;
     const name = String(req.body?.name || "").trim() || null;
 
-    // B) Token verification mode: provider + idToken (optional)
+    // B) Token verification mode (optional)
     const idToken = String(req.body?.idToken || "").trim();
 
-    if (!provider) return bad(400, "Missing provider");
+    if (!provider) return bad(400, `${VERSION} Missing provider`);
 
     // Create cosmos client (safe for all SDK versions)
     const cosmos = getCosmosClient();
@@ -132,19 +146,17 @@ module.exports.authExchange = async (req, context) => {
     let info = null;
 
     if (idToken) {
-      // If you choose to send idToken later, we can verify it here
       if (provider === "microsoft") info = await verifyMicrosoftIdToken(idToken);
       else if (provider === "google") info = await verifyGoogleIdToken(idToken);
-      else return bad(400, "Invalid provider (use 'google' or 'microsoft')");
+      else return bad(400, `${VERSION} Invalid provider (use 'google' or 'microsoft')`);
     } else {
-      // Current frontend path (what you’re doing now)
-      if (!providerId) return bad(400, "Missing providerId (or send idToken)");
+      if (!providerId) return bad(400, `${VERSION} Missing providerId (or send idToken)`);
       info = { sub: providerId, email, name };
     }
 
-    if (!COSMOS_DB) return bad(500, "Missing COSMOS_DB_NAME env var");
-    if (!process.env.APP_JWT_SECRET) return bad(500, "Missing APP_JWT_SECRET env var");
-    if (!info?.sub) return bad(401, "Invalid auth info (missing sub/providerId)");
+    if (!COSMOS_DB) return bad(500, `${VERSION} Missing COSMOS_DB_NAME env var`);
+    if (!process.env.APP_JWT_SECRET) return bad(500, `${VERSION} Missing APP_JWT_SECRET env var`);
+    if (!info?.sub) return bad(401, `${VERSION} Invalid auth info (missing sub/providerId)`);
 
     const user = await upsertUser(cosmos, {
       provider,
@@ -160,12 +172,12 @@ module.exports.authExchange = async (req, context) => {
       headers: { "Content-Type": "application/json" },
       jsonBody: {
         ok: true,
+        version: VERSION,
         appToken,
         user: { id: user.userId, email: user.email, provider: user.provider, name: user.name }
       }
     };
   } catch (e) {
-    // ✅ IMPORTANT: return JSON so the browser shows the real error
     context?.log?.("authExchange error:", e);
     return bad(500, e?.message || "Auth exchange failed");
   }
