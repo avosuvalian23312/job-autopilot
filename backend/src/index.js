@@ -58,5 +58,5 @@ app.http("authExchange", {
   methods: ["POST"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: require("./functions/authExchange"),
+ handler: require("./functions/authExchange").authExchange
 });
