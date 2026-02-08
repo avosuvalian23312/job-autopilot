@@ -2,18 +2,79 @@ const { CosmosClient } = require("@azure/cosmos");
 const jwt = require("jsonwebtoken");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
 
-const COSMOS_DB = process.env.COSMOS_DB_NAME;
-const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
+// ------------------------
+// Helpers: runtime compatibility
+// ------------------------
+function isContext(obj) {
+  // classic model has context.log + bindings
+  return !!obj && (typeof obj.log === "function" || obj.bindings);
+}
 
-function bad(status, msg) {
+function isRequest(obj) {
+  // could be classic req (has body/method) or new HttpRequest (has json()/method/url)
+  return !!obj && (typeof obj.method === "string" || typeof obj.json === "function" || obj.body !== undefined);
+}
+
+async function readJsonBody(req) {
+  try {
+    // Classic model: req.body already parsed
+    if (req && typeof req === "object" && req.body && typeof req.body === "object") return req.body;
+
+    // Some setups provide rawBody
+    if (req && typeof req.rawBody === "string") {
+      return JSON.parse(req.rawBody);
+    }
+
+    // New model: request.json()
+    if (req && typeof req.json === "function") {
+      const j = await req.json();
+      return (j && typeof j === "object") ? j : {};
+    }
+
+    // New model might expose text()
+    if (req && typeof req.text === "function") {
+      const t = await req.text();
+      return t ? JSON.parse(t) : {};
+    }
+  } catch (_) {
+    // ignore parse error and fall through
+  }
+  return {};
+}
+
+function withCommonHeaders(extra = {}) {
   return {
-    status,
-    headers: { "Content-Type": "application/json" },
-    jsonBody: { ok: false, error: msg }
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    // CORS: SWA usually handles, but this prevents weird browser cases
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    ...extra,
   };
 }
 
-// ---- Cosmos connection string parsing (works with ALL @azure/cosmos versions)
+function makeResponse(status, obj) {
+  return {
+    status,
+    headers: withCommonHeaders(),
+    jsonBody: obj,
+    body: JSON.stringify(obj),
+  };
+}
+
+function send(context, status, obj) {
+  // Classic model
+  context.res = {
+    status,
+    headers: withCommonHeaders(),
+    body: obj,
+  };
+}
+
+// ------------------------
+// Cosmos connection string parsing (SDK-version-safe)
+// ------------------------
 function parseCosmosConnectionString(connStr) {
   if (!connStr) throw new Error("Missing COSMOS_CONNECTION_STRING");
 
@@ -25,7 +86,7 @@ function parseCosmosConnectionString(connStr) {
   }, {});
 
   if (!parts.AccountEndpoint || !parts.AccountKey) {
-    throw new Error("Invalid COSMOS_CONNECTION_STRING format (needs AccountEndpoint and AccountKey)");
+    throw new Error("Invalid COSMOS_CONNECTION_STRING (needs AccountEndpoint and AccountKey)");
   }
 
   return { endpoint: parts.AccountEndpoint, key: parts.AccountKey };
@@ -37,6 +98,9 @@ function getCosmosClient() {
 }
 
 async function upsertUser(cosmos, { provider, sub, email, name }) {
+  const COSMOS_DB = process.env.COSMOS_DB_NAME;
+  const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
+
   const db = cosmos.database(COSMOS_DB);
   const users = db.container(USERS_CONTAINER);
 
@@ -49,7 +113,7 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
     providerSub: sub,
     email: email || null,
     name: name || null,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
   };
 
   await users.items.upsert(doc);
@@ -61,14 +125,16 @@ function signAppToken(user) {
     {
       uid: user.userId,
       email: user.email,
-      provider: user.provider
+      provider: user.provider,
     },
     process.env.APP_JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
 
-// ---- Lazy-initialized JWKS (prevents cold-start crashes)
+// ------------------------
+// Optional idToken verification (only if you send idToken)
+// ------------------------
 let microsoftJWKS = null;
 let googleJWKS = null;
 
@@ -88,14 +154,11 @@ function getGoogleJWKS() {
   return googleJWKS;
 }
 
-// ---- Optional: verify idTokens (only used if frontend sends idToken)
 async function verifyMicrosoftIdToken(idToken) {
   const audience = process.env.ENTRA_CLIENT_ID;
   if (!audience) throw new Error("Missing ENTRA_CLIENT_ID env var on backend.");
 
-  const { payload } = await jwtVerify(idToken, getMicrosoftJWKS(), {
-    audience
-  });
+  const { payload } = await jwtVerify(idToken, getMicrosoftJWKS(), { audience });
 
   const email =
     payload.email ||
@@ -111,36 +174,64 @@ async function verifyGoogleIdToken(idToken) {
 
   const { payload } = await jwtVerify(idToken, getGoogleJWKS(), {
     audience,
-    issuer: ["https://accounts.google.com", "accounts.google.com"]
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
   });
 
   return { sub: payload.sub, email: payload.email, name: payload.name || "" };
 }
 
-module.exports.authExchange = async (req, context) => {
-  try {
-    // IMPORTANT: include version so you can confirm deploy actually updated
-    const VERSION = "authExchange-v3";
+// ------------------------
+// MAIN HANDLER (supports both Azure Functions models)
+// ------------------------
+module.exports.authExchange = async function handler(a, b) {
+  // Detect which arg is context/request in whichever order the runtime passes
+  const context = isContext(a) ? a : isContext(b) ? b : null;
+  const req = isRequest(a) && !isContext(a) ? a : isRequest(b) && !isContext(b) ? b : null;
 
-    // ✅ Force visibility into missing production settings
-    const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
-    for (const k of required) {
-      if (!process.env[k]) return bad(500, `${VERSION} Missing env var: ${k}`);
+  const VERSION = "authExchange-v4-compat";
+
+  try {
+    // Handle preflight
+    const method = (req?.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      const ok = { ok: true, version: VERSION };
+      if (context) {
+        send(context, 200, ok);
+        return;
+      }
+      return makeResponse(200, ok);
     }
 
-    const provider = String(req.body?.provider || "").toLowerCase().trim();
+    // Strong env checks with visible errors (this is the #1 cause of 500s)
+    const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
+    for (const k of required) {
+      if (!process.env[k]) {
+        const out = { ok: false, version: VERSION, error: `Missing env var: ${k}` };
+        if (context) {
+          send(context, 500, out);
+          return;
+        }
+        return makeResponse(500, out);
+      }
+    }
 
-    // A) client-side exchange: provider + providerId (+ email/name)
-    const providerId = String(req.body?.providerId || "").trim();
-    const email = String(req.body?.email || "").trim() || null;
-    const name = String(req.body?.name || "").trim() || null;
+    const body = await readJsonBody(req);
 
-    // B) Token verification mode (optional)
-    const idToken = String(req.body?.idToken || "").trim();
+    const provider = String(body?.provider || "").toLowerCase().trim();
+    const providerId = String(body?.providerId || "").trim();
+    const email = String(body?.email || "").trim() || null;
+    const name = String(body?.name || "").trim() || null;
+    const idToken = String(body?.idToken || "").trim();
 
-    if (!provider) return bad(400, `${VERSION} Missing provider`);
+    if (!provider) {
+      const out = { ok: false, version: VERSION, error: "Missing provider" };
+      if (context) {
+        send(context, 400, out);
+        return;
+      }
+      return makeResponse(400, out);
+    }
 
-    // Create cosmos client (safe for all SDK versions)
     const cosmos = getCosmosClient();
 
     let info = null;
@@ -148,37 +239,70 @@ module.exports.authExchange = async (req, context) => {
     if (idToken) {
       if (provider === "microsoft") info = await verifyMicrosoftIdToken(idToken);
       else if (provider === "google") info = await verifyGoogleIdToken(idToken);
-      else return bad(400, `${VERSION} Invalid provider (use 'google' or 'microsoft')`);
+      else {
+        const out = { ok: false, version: VERSION, error: "Invalid provider (google|microsoft)" };
+        if (context) {
+          send(context, 400, out);
+          return;
+        }
+        return makeResponse(400, out);
+      }
     } else {
-      if (!providerId) return bad(400, `${VERSION} Missing providerId (or send idToken)`);
+      if (!providerId) {
+        const out = { ok: false, version: VERSION, error: "Missing providerId (or send idToken)" };
+        if (context) {
+          send(context, 400, out);
+          return;
+        }
+        return makeResponse(400, out);
+      }
       info = { sub: providerId, email, name };
     }
 
-    if (!COSMOS_DB) return bad(500, `${VERSION} Missing COSMOS_DB_NAME env var`);
-    if (!process.env.APP_JWT_SECRET) return bad(500, `${VERSION} Missing APP_JWT_SECRET env var`);
-    if (!info?.sub) return bad(401, `${VERSION} Invalid auth info (missing sub/providerId)`);
+    if (!info?.sub) {
+      const out = { ok: false, version: VERSION, error: "Invalid auth info (missing sub/providerId)" };
+      if (context) {
+        send(context, 401, out);
+        return;
+      }
+      return makeResponse(401, out);
+    }
 
     const user = await upsertUser(cosmos, {
       provider,
       sub: info.sub,
       email: info.email,
-      name: info.name
+      name: info.name,
     });
 
     const appToken = signAppToken(user);
 
-    return {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      jsonBody: {
-        ok: true,
-        version: VERSION,
-        appToken,
-        user: { id: user.userId, email: user.email, provider: user.provider, name: user.name }
-      }
+    // IMPORTANT: return BOTH names so your frontend works without changes
+    const out = {
+      ok: true,
+      version: VERSION,
+      token: appToken,
+      appToken,
+      user: { id: user.userId, email: user.email, provider: user.provider, name: user.name },
     };
+
+    if (context) {
+      send(context, 200, out);
+      return;
+    }
+    return makeResponse(200, out);
   } catch (e) {
-    context?.log?.("authExchange error:", e);
-    return bad(500, e?.message || "Auth exchange failed");
+    const msg = e?.message || "Auth exchange failed";
+    const out = { ok: false, version: VERSION, error: msg };
+
+    try {
+      context?.log?.("authExchange error:", e);
+    } catch (_) {}
+
+    if (context) {
+      send(context, 500, out);
+      return;
+    }
+    return makeResponse(500, out);
   }
 };
