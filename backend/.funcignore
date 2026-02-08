@@ -1,10 +1,7 @@
-*.js.map
-*.ts
-.git*
+node_modules
+.git
 .vscode
-__azurite_db*__.json
-__blobstorage__
-__queuestorage__
+data
+*.log
+.env
 local.settings.json
-test
-tsconfig.json
