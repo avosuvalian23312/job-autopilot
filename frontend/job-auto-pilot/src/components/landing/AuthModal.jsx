@@ -4,176 +4,150 @@ import { X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+function loadGoogleScript() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.accounts?.id) return resolve(true);
+
+    const existing = document.querySelector('script[data-google-gis="true"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => reject(new Error("Google GIS failed to load")));
+      return;
+    }
+
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.defer = true;
+    s.dataset.googleGis = "true";
+    s.onload = () => resolve(true);
+    s.onerror = () => reject(new Error("Google GIS failed to load"));
+    document.head.appendChild(s);
+  });
+}
+
+async function loadConfig() {
+  const res = await fetch("/config.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Could not load /config.json (HTTP ${res.status})`);
+  const cfg = await res.json();
+
+  if (!cfg.GOOGLE_CLIENT_ID || typeof cfg.GOOGLE_CLIENT_ID !== "string") {
+    throw new Error("config.json missing GOOGLE_CLIENT_ID");
+  }
+
+  // Guard against hidden whitespace/newlines
+  const cleaned = cfg.GOOGLE_CLIENT_ID.trim();
+  if (!cleaned.endsWith(".apps.googleusercontent.com")) {
+    throw new Error("GOOGLE_CLIENT_ID looks wrong (must end with .apps.googleusercontent.com)");
+  }
+
+  return { GOOGLE_CLIENT_ID: cleaned };
+}
+
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [startingAuth, setStartingAuth] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleError, setGoogleError] = useState("");
+  const [error, setError] = useState("");
 
-  const cfgRef = useRef(null);
-  const googleInitRef = useRef(false);
   const googleClientIdRef = useRef("");
-  const hiddenGoogleBtnHostRef = useRef(null);
+  const googleInitRef = useRef(false);
 
-  async function loadConfig() {
-    if (cfgRef.current) return cfgRef.current;
-
-    const res = await fetch("/config.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
-    const cfg = await res.json();
-
-    const GOOGLE_CLIENT_ID = cfg.GOOGLE_CLIENT_ID;
-    if (!GOOGLE_CLIENT_ID) {
-      throw new Error(
-        "config.json missing GOOGLE_CLIENT_ID. Add it to /public/config.json."
-      );
-    }
-
-    cfgRef.current = { GOOGLE_CLIENT_ID };
-    return cfgRef.current;
-  }
-
-  function ensureGoogleScriptLoaded() {
-    return new Promise((resolve, reject) => {
-      if (window.google?.accounts?.id) return resolve();
-
-      // avoid adding multiple scripts
-      const existing = document.querySelector('script[data-gis="true"]');
-      if (existing) {
-        existing.addEventListener("load", () => resolve());
-        existing.addEventListener("error", () =>
-          reject(new Error("Failed to load Google Identity script"))
-        );
-        return;
-      }
-
-      const s = document.createElement("script");
-      s.src = "https://accounts.google.com/gsi/client";
-      s.async = true;
-      s.defer = true;
-      s.dataset.gis = "true";
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("Failed to load Google Identity script"));
-      document.head.appendChild(s);
-    });
-  }
-
-  async function initGoogle() {
-    if (googleInitRef.current) return;
-    googleInitRef.current = true;
-
-    try {
-      setGoogleError("");
-
-      const cfg = await loadConfig();
-      googleClientIdRef.current = cfg.GOOGLE_CLIENT_ID;
-
-      await ensureGoogleScriptLoaded();
-
-      // Initialize Google Sign-In (returns an ID token in response.credential)
-      window.google.accounts.id.initialize({
-        client_id: cfg.GOOGLE_CLIENT_ID,
-        callback: (response) => {
-          // This is the Google ID token (JWT)
-          // For now we just pass it to onComplete so you can wire backend later.
-          // You do NOT store passwords anywhere.
-          try {
-            const token = response?.credential;
-            if (!token) throw new Error("No credential returned from Google.");
-
-            onComplete?.({
-              provider: "google",
-              idToken: token,
-            });
-          } catch (e) {
-            console.error("[AuthModal] Google callback error:", e);
-            setGoogleError("Google sign-in failed. Check console.");
-          } finally {
-            setStartingAuth(false);
-          }
-        },
-        // Helps the picker behavior in many browsers
-        use_fedcm_for_prompt: true,
-      });
-
-      // Render a real Google button off-screen; we will “click” it when user presses your button.
-      if (hiddenGoogleBtnHostRef.current) {
-        hiddenGoogleBtnHostRef.current.innerHTML = "";
-        window.google.accounts.id.renderButton(hiddenGoogleBtnHostRef.current, {
-          type: "standard",
-          theme: "outline",
-          size: "large",
-          text: "signin_with",
-          shape: "pill",
-          width: 360, // Google controls the internal button width
-        });
-      }
-
-      setGoogleReady(true);
-    } catch (e) {
-      console.error("[AuthModal] initGoogle error:", e);
-      setGoogleError(e?.message || "Google init failed");
-      setGoogleReady(false);
-      setStartingAuth(false);
-    }
-  }
-
-  // Initialize Google only when modal opens (saves load time)
   useEffect(() => {
     if (!open) return;
-    initGoogle();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
-  async function signInWithGoogle() {
+    (async () => {
+      try {
+        setError("");
+        setGoogleReady(false);
+
+        const cfg = await loadConfig();
+        googleClientIdRef.current = cfg.GOOGLE_CLIENT_ID;
+
+        await loadGoogleScript();
+
+        // Initialize ONLY the GIS ID-token flow (no OAuth redirect windows)
+        if (!googleInitRef.current) {
+          googleInitRef.current = true;
+
+          window.google.accounts.id.initialize({
+            client_id: cfg.GOOGLE_CLIENT_ID,
+            callback: (response) => {
+              try {
+                const idToken = response?.credential;
+                if (!idToken) throw new Error("No ID token returned from Google");
+
+                // Send token to parent (later we wire backend)
+                onComplete?.({
+                  provider: "google",
+                  idToken,
+                });
+
+                setStartingAuth(false);
+              } catch (e) {
+                console.error("[Google callback error]", e);
+                setError(e?.message || "Google sign-in failed");
+                setStartingAuth(false);
+              }
+            },
+            // Helps in Chrome with federated credential management
+            use_fedcm_for_prompt: true,
+          });
+        }
+
+        setGoogleReady(true);
+      } catch (e) {
+        console.error("[AuthModal init error]", e);
+        setError(e?.message || "Failed to initialize Google sign-in");
+        setGoogleReady(false);
+        setStartingAuth(false);
+      }
+    })();
+  }, [open, onComplete]);
+
+  const signInWithGoogle = () => {
+    setError("");
     setStartingAuth(true);
-    setGoogleError("");
 
     try {
-      if (!googleReady) {
-        await initGoogle();
-      }
-
-      // Try to click the hidden rendered Google button (most reliable picker)
-      const host = hiddenGoogleBtnHostRef.current;
-      const clickable =
-        host?.querySelector('div[role="button"]') ||
-        host?.querySelector("iframe") ||
-        host?.firstElementChild;
-
-      if (clickable && clickable.click) {
-        clickable.click();
+      if (!googleReady || !window.google?.accounts?.id) {
+        setStartingAuth(false);
+        setError("Google not ready yet — refresh and try again.");
         return;
       }
 
-      // Fallback: prompt (may show One Tap / account chooser depending on browser)
+      // This should show Google account chooser / one-tap style UX.
+      // If it’s blocked, we show a useful error.
       window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.warn("[AuthModal] Google prompt not displayed:", notification);
-          setGoogleError(
-            "Google prompt was blocked (pop-up/3rd party cookies). Try again or allow popups."
+        // If user dismissed or browser blocked it, we handle it.
+        if (notification.isNotDisplayed()) {
+          console.warn("Google prompt not displayed:", notification.getNotDisplayedReason?.());
+          setError(
+            "Google prompt blocked. Try allowing popups, disabling strict tracking prevention, or use a different browser."
           );
           setStartingAuth(false);
+        } else if (notification.isSkippedMoment()) {
+          console.warn("Google prompt skipped:", notification.getSkippedReason?.());
+          setError("Google prompt was skipped. Try again.");
+          setStartingAuth(false);
         }
+        // If it displays, Google will call our callback and we stop loading there.
       });
     } catch (e) {
-      console.error("[AuthModal] signInWithGoogle error:", e);
-      setGoogleError(e?.message || "Google sign-in failed");
+      console.error("[signInWithGoogle error]", e);
+      setError(e?.message || "Google sign-in failed");
       setStartingAuth(false);
     }
-  }
+  };
 
-  function signInWithMicrosoft() {
-    // You asked to remove External ID/Microsoft redirect flow for this approach.
-    // Keeping the button but making it explicit.
-    alert("Microsoft sign-in is disabled in the Google-only auth mode.");
-  }
+  const signInWithMicrosoft = () => {
+    alert("Microsoft sign-in disabled in Google-only mode.");
+  };
 
-  function signInWithEmail() {
-    // In this approach we do NOT store passwords.
-    // If you want “email login” later, we can implement magic-link (no password).
-    alert("Email sign-in not implemented yet (we can do passwordless magic-link next).");
-  }
+  const signInWithEmail = () => {
+    // We can do passwordless magic-link later (still no passwords stored)
+    alert("Email sign-in not implemented yet. Next we can add passwordless magic-link.");
+  };
 
   return (
     <AnimatePresence>
@@ -203,18 +177,18 @@ export default function AuthModal({ open, onClose, onComplete }) {
               </button>
 
               <h2 className="text-2xl font-bold text-white mb-2">Get Started</h2>
-              <p className="text-white/40 mb-8">Sign up to access your dashboard</p>
+              <p className="text-white/40 mb-6">Sign up to access your dashboard</p>
 
-              {googleError ? (
+              {error ? (
                 <div className="mb-4 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                  {googleError}
+                  {error}
                 </div>
               ) : null}
 
               <div className="space-y-3 mb-6">
                 <Button
                   onClick={signInWithGoogle}
-                  disabled={startingAuth}
+                  disabled={startingAuth || !googleReady}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold"
                 >
                   {startingAuth ? "Opening Google..." : "Continue with Google"}
@@ -261,18 +235,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   </Button>
                 </div>
 
-                {/* Off-screen real Google button host (used to trigger true account picker) */}
-                <div
-                  ref={hiddenGoogleBtnHostRef}
-                  style={{
-                    position: "absolute",
-                    left: "-9999px",
-                    top: "-9999px",
-                    width: "400px",
-                    height: "80px",
-                    overflow: "hidden",
-                  }}
-                />
+                {/* Debug helper (remove later) */}
+                <div className="text-xs text-white/30 pt-2">
+                  Google ready: {googleReady ? "yes" : "no"} | client:{" "}
+                  {googleClientIdRef.current ? "loaded" : "missing"}
+                </div>
               </div>
             </div>
           </motion.div>
