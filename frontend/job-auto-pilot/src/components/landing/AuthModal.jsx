@@ -3,155 +3,177 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PublicClientApplication } from "@azure/msal-browser";
 
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [startingAuth, setStartingAuth] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [googleError, setGoogleError] = useState("");
 
   const cfgRef = useRef(null);
-  const pcaRef = useRef(null);
-  const handledRedirectRef = useRef(false);
+  const googleInitRef = useRef(false);
+  const googleClientIdRef = useRef("");
+  const hiddenGoogleBtnHostRef = useRef(null);
 
-  const loadConfig = async () => {
+  async function loadConfig() {
     if (cfgRef.current) return cfgRef.current;
 
     const res = await fetch("/config.json", { cache: "no-store" });
     if (!res.ok) throw new Error(`Missing /config.json (HTTP ${res.status})`);
     const cfg = await res.json();
 
-    const CLIENT_ID = cfg.CLIENT_ID;
-    const AUTHORITY = (cfg.AUTHORITY || "").replace(/\/v2\.0$/, ""); // should include /<TENANT_GUID>
-    const REDIRECT_URI = cfg.REDIRECT_URI || window.location.origin;
-    const SCOPES = cfg.SCOPES || ["openid", "profile", "email"];
-
-    const KNOWN_AUTHORITIES =
-      cfg.KNOWN_AUTHORITIES ||
-      (AUTHORITY ? [new URL(AUTHORITY).host] : []);
-
-    if (!CLIENT_ID || !AUTHORITY) {
-      throw new Error("config.json missing CLIENT_ID or AUTHORITY");
+    const GOOGLE_CLIENT_ID = cfg.GOOGLE_CLIENT_ID;
+    if (!GOOGLE_CLIENT_ID) {
+      throw new Error(
+        "config.json missing GOOGLE_CLIENT_ID. Add it to /public/config.json."
+      );
     }
 
-    // Guard: prevent accidental Microsoft login authority
-    if (AUTHORITY.includes("login.microsoftonline.com")) {
-      throw new Error("AUTHORITY must be *.ciamlogin.com/<TENANT_GUID> for your setup");
-    }
-
-    cfgRef.current = {
-      CLIENT_ID,
-      AUTHORITY,
-      REDIRECT_URI,
-      SCOPES,
-      KNOWN_AUTHORITIES,
-    };
+    cfgRef.current = { GOOGLE_CLIENT_ID };
     return cfgRef.current;
-  };
+  }
 
-  const getPca = async () => {
-    if (pcaRef.current) return pcaRef.current;
+  function ensureGoogleScriptLoaded() {
+    return new Promise((resolve, reject) => {
+      if (window.google?.accounts?.id) return resolve();
 
-    const cfg = await loadConfig();
-
-    pcaRef.current = new PublicClientApplication({
-      auth: {
-        clientId: cfg.CLIENT_ID,
-        authority: cfg.AUTHORITY,
-        redirectUri: cfg.REDIRECT_URI,
-        knownAuthorities: cfg.KNOWN_AUTHORITIES,
-      },
-      cache: { cacheLocation: "localStorage" },
-    });
-
-    await pcaRef.current.initialize();
-    return pcaRef.current;
-  };
-
-  useEffect(() => {
-    if (handledRedirectRef.current) return;
-    handledRedirectRef.current = true;
-
-    (async () => {
-      try {
-        const pca = await getPca();
-        const result = await pca.handleRedirectPromise();
-        if (result?.account) {
-          pca.setActiveAccount(result.account);
-          onComplete?.(result);
-        }
-      } catch (e) {
-        console.error("[AuthModal] handleRedirectPromise error:", e);
-      } finally {
-        setStartingAuth(false);
+      // avoid adding multiple scripts
+      const existing = document.querySelector('script[data-gis="true"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve());
+        existing.addEventListener("error", () =>
+          reject(new Error("Failed to load Google Identity script"))
+        );
+        return;
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const login = async (provider) => {
-    setStartingAuth(true);
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.defer = true;
+      s.dataset.gis = "true";
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Failed to load Google Identity script"));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function initGoogle() {
+    if (googleInitRef.current) return;
+    googleInitRef.current = true;
 
     try {
-      const pca = await getPca();
+      setGoogleError("");
+
       const cfg = await loadConfig();
+      googleClientIdRef.current = cfg.GOOGLE_CLIENT_ID;
 
-      // Clear any active account so hints don’t get ignored
-      try {
-        pca.setActiveAccount(null);
-      } catch {
-        // ignore
-      }
+      await ensureGoogleScriptLoaded();
 
-      const baseRequest = {
-        scopes: cfg.SCOPES,
-        // For “go straight to provider” UX, login is better than select_account
-        prompt: provider === "google" ? "login" : "select_account",
-      };
+      // Initialize Google Sign-In (returns an ID token in response.credential)
+      window.google.accounts.id.initialize({
+        client_id: cfg.GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          // This is the Google ID token (JWT)
+          // For now we just pass it to onComplete so you can wire backend later.
+          // You do NOT store passwords anywhere.
+          try {
+            const token = response?.credential;
+            if (!token) throw new Error("No credential returned from Google.");
 
-      if (provider === "google") {
-        /**
-         * Try to FORCE Google:
-         * - idp=google.com (commonly used in B2C-style federation)
-         * - domain_hint=google.com (AAD/CIAM sometimes honors)
-         *
-         * If CIAM ignores these, the fallback is it will still land on the CIAM page,
-         * but in many tenants this does jump directly to Google.
-         */
-        await pca.loginRedirect({
-          ...baseRequest,
-          extraQueryParameters: {
-            idp: "google.com",
-            domain_hint: "google.com",
-          },
+            onComplete?.({
+              provider: "google",
+              idToken: token,
+            });
+          } catch (e) {
+            console.error("[AuthModal] Google callback error:", e);
+            setGoogleError("Google sign-in failed. Check console.");
+          } finally {
+            setStartingAuth(false);
+          }
+        },
+        // Helps the picker behavior in many browsers
+        use_fedcm_for_prompt: true,
+      });
+
+      // Render a real Google button off-screen; we will “click” it when user presses your button.
+      if (hiddenGoogleBtnHostRef.current) {
+        hiddenGoogleBtnHostRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(hiddenGoogleBtnHostRef.current, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          text: "signin_with",
+          shape: "pill",
+          width: 360, // Google controls the internal button width
         });
-        return;
       }
 
-      if (provider === "microsoft") {
-        await pca.loginRedirect({
-          ...baseRequest,
-          extraQueryParameters: {
-            domain_hint: "organizations",
-          },
-        });
-        return;
-      }
-
-      if (provider === "email") {
-        const hint = email.trim();
-        await pca.loginRedirect({
-          ...baseRequest,
-          prompt: "login",
-          ...(hint ? { loginHint: hint } : {}),
-        });
-        return;
-      }
+      setGoogleReady(true);
     } catch (e) {
-      console.error("[AuthModal] loginRedirect error:", e);
-      alert("Login failed to start. Check console errors.");
+      console.error("[AuthModal] initGoogle error:", e);
+      setGoogleError(e?.message || "Google init failed");
+      setGoogleReady(false);
       setStartingAuth(false);
     }
-  };
+  }
+
+  // Initialize Google only when modal opens (saves load time)
+  useEffect(() => {
+    if (!open) return;
+    initGoogle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  async function signInWithGoogle() {
+    setStartingAuth(true);
+    setGoogleError("");
+
+    try {
+      if (!googleReady) {
+        await initGoogle();
+      }
+
+      // Try to click the hidden rendered Google button (most reliable picker)
+      const host = hiddenGoogleBtnHostRef.current;
+      const clickable =
+        host?.querySelector('div[role="button"]') ||
+        host?.querySelector("iframe") ||
+        host?.firstElementChild;
+
+      if (clickable && clickable.click) {
+        clickable.click();
+        return;
+      }
+
+      // Fallback: prompt (may show One Tap / account chooser depending on browser)
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          console.warn("[AuthModal] Google prompt not displayed:", notification);
+          setGoogleError(
+            "Google prompt was blocked (pop-up/3rd party cookies). Try again or allow popups."
+          );
+          setStartingAuth(false);
+        }
+      });
+    } catch (e) {
+      console.error("[AuthModal] signInWithGoogle error:", e);
+      setGoogleError(e?.message || "Google sign-in failed");
+      setStartingAuth(false);
+    }
+  }
+
+  function signInWithMicrosoft() {
+    // You asked to remove External ID/Microsoft redirect flow for this approach.
+    // Keeping the button but making it explicit.
+    alert("Microsoft sign-in is disabled in the Google-only auth mode.");
+  }
+
+  function signInWithEmail() {
+    // In this approach we do NOT store passwords.
+    // If you want “email login” later, we can implement magic-link (no password).
+    alert("Email sign-in not implemented yet (we can do passwordless magic-link next).");
+  }
 
   return (
     <AnimatePresence>
@@ -183,49 +205,74 @@ export default function AuthModal({ open, onClose, onComplete }) {
               <h2 className="text-2xl font-bold text-white mb-2">Get Started</h2>
               <p className="text-white/40 mb-8">Sign up to access your dashboard</p>
 
+              {googleError ? (
+                <div className="mb-4 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                  {googleError}
+                </div>
+              ) : null}
+
               <div className="space-y-3 mb-6">
                 <Button
-                  onClick={() => login("google")}
+                  onClick={signInWithGoogle}
                   disabled={startingAuth}
                   className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold"
                 >
-                  Continue with Google
+                  {startingAuth ? "Opening Google..." : "Continue with Google"}
                 </Button>
 
                 <Button
-                  onClick={() => login("microsoft")}
+                  onClick={signInWithMicrosoft}
                   disabled={startingAuth}
                   className="w-full py-6 bg-white/10 hover:bg-white/15 text-white rounded-xl font-semibold border border-white/20"
                 >
                   Continue with Microsoft
                 </Button>
-              </div>
 
-              <div className="flex items-center gap-3 my-6">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="text-white/30 text-sm">Or continue with email</span>
-                <div className="h-px flex-1 bg-white/10" />
-              </div>
-
-              <div className="space-y-3">
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-white/30 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <Input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    className="pl-10 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl"
-                    disabled={startingAuth}
-                  />
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/10"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="bg-[#0E0E12] px-4 text-white/30">
+                      Or continue with email
+                    </span>
+                  </div>
                 </div>
 
-                <Button
-                  onClick={() => login("email")}
-                  disabled={startingAuth}
-                  className="w-full py-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold"
-                >
-                  Continue with Email
-                </Button>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/30 w-5 h-5" />
+                    <Input
+                      type="email"
+                      placeholder="Enter your email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-12 py-6 bg-white/5 border border-white/10 text-white placeholder:text-white/30 rounded-xl focus:border-purple-500/50"
+                      disabled={startingAuth}
+                    />
+                  </div>
+
+                  <Button
+                    onClick={signInWithEmail}
+                    disabled={startingAuth}
+                    className="w-full py-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold"
+                  >
+                    Continue with Email
+                  </Button>
+                </div>
+
+                {/* Off-screen real Google button host (used to trigger true account picker) */}
+                <div
+                  ref={hiddenGoogleBtnHostRef}
+                  style={{
+                    position: "absolute",
+                    left: "-9999px",
+                    top: "-9999px",
+                    width: "400px",
+                    height: "80px",
+                    overflow: "hidden",
+                  }}
+                />
               </div>
             </div>
           </motion.div>
