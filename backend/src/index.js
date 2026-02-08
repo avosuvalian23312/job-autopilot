@@ -1,26 +1,25 @@
 const { app } = require("@azure/functions");
 
-const { generateDocuments } = require("./functions/generateDocuments");
-const { listJobs } = require("./functions/listJobs");
-const { updateJobStatus } = require("./functions/updateJobStatus");
+/*
+  IMPORTANT RULE:
+  - Do NOT destructure imports
+  - Each function file must export the handler directly
+*/
 
-const { startEmailLogin } = require("./functions/startEmailLogin");
-const { verifyEmailLogin } = require("./functions/verifyEmailLogin");
+// ===== Core app APIs =====
 
-const { authExchange } = require("./functions/authExchange");
-
-// Generate docs
+// Generate documents
 app.http("generateDocuments", {
   methods: ["POST"],
   authLevel: "anonymous",
-  handler: generateDocuments
+  handler: require("./functions/generateDocuments")
 });
 
 // List jobs
 app.http("listJobs", {
   methods: ["GET"],
   authLevel: "anonymous",
-  handler: listJobs
+  handler: require("./functions/listJobs")
 });
 
 // Update job status
@@ -28,29 +27,31 @@ app.http("updateJobStatus", {
   methods: ["PUT", "PATCH"],
   route: "jobs/{jobId}/status",
   authLevel: "anonymous",
-  handler: updateJobStatus
+  handler: require("./functions/updateJobStatus")
 });
 
-// Email auth: send code
+// ===== Auth APIs =====
+
+// Email login: send code
 app.http("startEmailLogin", {
   methods: ["POST"],
   route: "auth/email/start",
   authLevel: "anonymous",
-  handler: startEmailLogin
+  handler: require("./functions/startEmailLogin")
 });
 
-// Email auth: verify code
+// Email login: verify code
 app.http("verifyEmailLogin", {
   methods: ["POST"],
   route: "auth/email/verify",
   authLevel: "anonymous",
-  handler: verifyEmailLogin
+  handler: require("./functions/verifyEmailLogin")
 });
 
-// NEW: Provider token -> App token
+// Provider token -> app JWT
 app.http("authExchange", {
   methods: ["POST"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: authExchange
+  handler: require("./functions/authExchange")
 });
