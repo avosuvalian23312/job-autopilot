@@ -1,8 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+/**
+ * IMPORTANT:
+ * In /config.json, GOOGLE_CLIENT_ID MUST be the FULL value (no "..." anywhere),
+ * e.g. "811442229724-xxxxx.apps.googleusercontent.com"
+ * If it's truncated/has "...", Google will throw "The given client ID is not found."
+ */
 
 function loadScriptOnce(src) {
   return new Promise((resolve, reject) => {
@@ -27,63 +34,99 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const [err, setErr] = useState("");
 
   const cfgRef = useRef(null);
-  const googleReadyRef = useRef(false);
+  const apiBaseRef = useRef("/api");
 
-  const apiBase = useMemo(() => cfgRef.current?.API_BASE || "/api", []);
+  // Google popup (OAuth token client)
+  const googleReadyRef = useRef(false);
+  const tokenClientRef = useRef(null);
 
   const loadConfig = async () => {
     if (cfgRef.current) return cfgRef.current;
     const res = await fetch("/config.json", { cache: "no-store" });
     if (!res.ok) throw new Error("Missing /config.json");
     cfgRef.current = await res.json();
+    apiBaseRef.current = cfgRef.current?.API_BASE || "/api";
     return cfgRef.current;
   };
 
-  const ensureGoogleReady = async () => {
+  const preloadGoogle = async () => {
     if (googleReadyRef.current) return;
 
     const cfg = await loadConfig();
-    if (!cfg.GOOGLE_CLIENT_ID) {
-      throw new Error("Missing GOOGLE_CLIENT_ID");
+    const clientId = (cfg?.GOOGLE_CLIENT_ID || "").trim();
+
+    if (!clientId || clientId.includes("...")) {
+      throw new Error(
+        "Invalid GOOGLE_CLIENT_ID in /config.json. Paste the full client ID (no '...')."
+      );
     }
 
     await loadScriptOnce("https://accounts.google.com/gsi/client");
 
-    if (!window.google?.accounts?.id) {
+    if (!window.google?.accounts?.oauth2?.initTokenClient) {
       throw new Error("Google Identity Services failed to load");
     }
 
-    window.google.accounts.id.initialize({
-      client_id: cfg.GOOGLE_CLIENT_ID,
-      ux_mode: "popup",
-
-      // 🔴 FIX: Disable FedCM to stop popup rejection
-      use_fedcm_for_prompt: false,
-
+    tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      // Keep this minimal; we fetch userinfo after token is returned
+      scope: "openid profile email",
       callback: async (resp) => {
         try {
           setErr("");
           setBusy(true);
 
-          const r = await fetch(`${apiBase}/auth/google`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ credential: resp.credential })
+          if (!resp?.access_token) {
+            throw new Error(resp?.error_description || "Google sign-in failed");
+          }
+
+          // Get profile (email/name/picture) using the access token
+          const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: `Bearer ${resp.access_token}` }
           });
 
-          const data = await r.json();
-          if (!r.ok || !data?.ok) {
-            throw new Error(data?.error || "Google login failed");
+          if (!u.ok) {
+            throw new Error("Failed to fetch Google profile");
           }
 
-          if (data.token) {
-            localStorage.setItem("APP_TOKEN", data.token);
+          const profile = await u.json();
+
+          // If you have a backend that issues your own app token, try to exchange:
+          // (Optional: if endpoint doesn't exist, we still proceed with profile)
+          let appData = null;
+          try {
+            const r = await fetch(`${apiBaseRef.current}/auth/google/token`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                access_token: resp.access_token,
+                profile
+              })
+            });
+            const data = await r.json().catch(() => null);
+            if (r.ok && data?.ok) appData = data;
+          } catch {
+            // ignore
           }
 
-          onComplete?.(data);
+          const payload =
+            appData ||
+            ({
+              ok: true,
+              provider: "google",
+              user: profile,
+              access_token: resp.access_token
+            });
+
+          // If your backend returned a token, store it
+          if (payload?.token) {
+            localStorage.setItem("APP_TOKEN", payload.token);
+          }
+
+          onComplete?.(payload);
           onClose?.();
         } catch (e) {
-          setErr(e.message || "Google login failed");
+          setErr(e?.message || "Google sign-in failed");
         } finally {
           setBusy(false);
         }
@@ -92,6 +135,27 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     googleReadyRef.current = true;
   };
+
+  // Preload GIS so the click can open a popup immediately (avoids popup blockers)
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!open) return;
+      try {
+        setErr("");
+        await preloadGoogle();
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Google sign-in setup failed");
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -103,18 +167,22 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
   }, [open]);
 
-  const startGoogle = async () => {
+  const startGoogle = () => {
     try {
       setErr("");
-      await ensureGoogleReady();
 
-      window.google.accounts.id.prompt((n) => {
-        if (n.isNotDisplayed() || n.isSkippedMoment()) {
-          setErr("Google popup was blocked. Allow popups and try again.");
-        }
+      const tc = tokenClientRef.current;
+      if (!tc) {
+        setErr("Google sign-in is not ready yet. Refresh and try again.");
+        return;
+      }
+
+      // MUST be called directly from the click handler to avoid popup blocking
+      tc.requestAccessToken({
+        prompt: "select_account" // change to "consent" if you always want consent screen
       });
     } catch (e) {
-      setErr(e.message || "Google sign-in failed");
+      setErr(e?.message || "Google sign-in failed");
     }
   };
 
@@ -126,7 +194,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
       const em = email.trim().toLowerCase();
       if (!em) throw new Error("Enter your email");
 
-      const r = await fetch(`${apiBase}/auth/email/start`, {
+      await loadConfig();
+
+      const r = await fetch(`${apiBaseRef.current}/auth/email/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: em })
@@ -139,7 +209,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       setStep("email_code");
     } catch (e) {
-      setErr(e.message || "Email login failed");
+      setErr(e?.message || "Email login failed");
     } finally {
       setBusy(false);
     }
@@ -150,7 +220,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
       setErr("");
       setBusy(true);
 
-      const r = await fetch(`${apiBase}/auth/email/verify`, {
+      await loadConfig();
+
+      const r = await fetch(`${apiBaseRef.current}/auth/email/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code })
@@ -168,7 +240,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
       onComplete?.(data);
       onClose?.();
     } catch (e) {
-      setErr(e.message || "Verification failed");
+      setErr(e?.message || "Verification failed");
     } finally {
       setBusy(false);
     }
@@ -188,6 +260,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 className="absolute top-4 right-4"
                 onClick={onClose}
                 disabled={busy}
+                aria-label="Close"
               >
                 <X />
               </button>
@@ -197,7 +270,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
               <Button
                 onClick={startGoogle}
                 disabled={busy}
-                className="w-full mb-4 bg-white text-black"
+                className="w-full mb-4 bg-white text-black hover:bg-white/90"
               >
                 Continue with Google
               </Button>
@@ -228,15 +301,13 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     onChange={(e) => setCode(e.target.value)}
                     className="mt-3"
                   />
-                  <Button onClick={verifyEmail} className="w-full mt-3">
+                  <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
                     Verify Code
                   </Button>
                 </>
               )}
 
-              {err && (
-                <div className="mt-4 text-red-400 text-sm">{err}</div>
-              )}
+              {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
             </div>
           </motion.div>
         </>
