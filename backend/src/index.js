@@ -58,6 +58,29 @@ app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: require("./functions/authExchange").authExchange,
+  handler: require("./functions/authExchange"),
+});
+// Resume upload SAS
+app.http("resumeUploadUrl", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/upload-url",
+  authLevel: "anonymous",
+  handler: require("./functions/resumeUploadUrl"),
+});
+
+// Save resume metadata to Cosmos user doc
+app.http("resumeSave", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/save",
+  authLevel: "anonymous",
+  handler: require("./functions/resumeSave"),
+});
+
+// User info (requires Authorization Bearer token)
+app.http("userinfo", {
+  methods: ["GET", "OPTIONS"],
+  route: "userinfo",
+  authLevel: "anonymous",
+  handler: require("./functions/userinfo"),
 });
 
