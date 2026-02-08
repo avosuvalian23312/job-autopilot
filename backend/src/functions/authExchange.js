@@ -5,29 +5,52 @@ const { createRemoteJWKSet, jwtVerify } = require("jose");
 const COSMOS_DB = process.env.COSMOS_DB_NAME;
 const USERS_CONTAINER = process.env.USERS_CONTAINER_NAME || "users";
 
-const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
-
-// Remote JWKS (cached by jose internally)
+// Remote JWKS (cached by jose internally) - optional if you use idToken verification
 const microsoftJWKS = createRemoteJWKSet(
   new URL("https://login.microsoftonline.com/common/discovery/v2.0/keys")
 );
-const googleJWKS = createRemoteJWKSet(
-  new URL("https://www.googleapis.com/oauth2/v3/certs")
-);
+const googleJWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
 function bad(status, msg) {
-  return { status, jsonBody: { ok: false, error: msg } };
+  return {
+    status,
+    headers: { "Content-Type": "application/json" },
+    jsonBody: { ok: false, error: msg }
+  };
 }
 
-async function upsertUser({ provider, sub, email, name }) {
+// ---- Cosmos connection string parsing (works with ALL @azure/cosmos versions)
+function parseCosmosConnectionString(connStr) {
+  if (!connStr) throw new Error("Missing COSMOS_CONNECTION_STRING");
+
+  const parts = connStr.split(";").reduce((acc, part) => {
+    const [k, ...rest] = part.split("=");
+    const v = rest.join("=");
+    if (k && v) acc[k] = v;
+    return acc;
+  }, {});
+
+  if (!parts.AccountEndpoint || !parts.AccountKey) {
+    throw new Error("Invalid COSMOS_CONNECTION_STRING format (needs AccountEndpoint and AccountKey)");
+  }
+
+  return { endpoint: parts.AccountEndpoint, key: parts.AccountKey };
+}
+
+function getCosmosClient() {
+  const { endpoint, key } = parseCosmosConnectionString(process.env.COSMOS_CONNECTION_STRING);
+  return new CosmosClient({ endpoint, key });
+}
+
+async function upsertUser(cosmos, { provider, sub, email, name }) {
   const db = cosmos.database(COSMOS_DB);
   const users = db.container(USERS_CONTAINER);
 
-  // User id stable per provider (later you can merge accounts by email)
+  // stable per provider
   const userId = `${provider}:${sub}`;
 
   const doc = {
-    id: userId,                 // partition key /id recommended
+    id: userId, // if your container uses /id as partition key, this is perfect
     userId,
     provider,
     providerSub: sub,
@@ -36,13 +59,11 @@ async function upsertUser({ provider, sub, email, name }) {
     updatedAt: Date.now()
   };
 
-  // Upsert
   await users.items.upsert(doc);
   return doc;
 }
 
 function signAppToken(user) {
-  // 7-day token
   return jwt.sign(
     {
       uid: user.userId,
@@ -54,29 +75,22 @@ function signAppToken(user) {
   );
 }
 
+// ---- Optional: verify idTokens (only used if frontend sends idToken)
 async function verifyMicrosoftIdToken(idToken) {
-  // Aud must be your Entra client id
-  const audience = process.env.ENTRA_CLIENT_ID || process.env.VITE_B2C_CLIENT_ID; // fallback if you use env
-  if (!audience) throw new Error("Missing ENTRA_CLIENT_ID env var on backend (set it to your Entra client id).");
+  const audience = process.env.ENTRA_CLIENT_ID;
+  if (!audience) throw new Error("Missing ENTRA_CLIENT_ID env var on backend.");
 
   const { payload } = await jwtVerify(idToken, microsoftJWKS, {
-    audience,
-    // issuer varies by tenant; allow v2 issuer pattern
-    issuer: undefined
+    audience
+    // issuer varies; omit strict issuer to avoid tenant issues for now
   });
 
-  // personal accounts can come with email in different claims
   const email =
     payload.email ||
     payload.preferred_username ||
     (Array.isArray(payload.emails) ? payload.emails[0] : undefined);
 
-  return {
-    sub: payload.sub,
-    email,
-    name: payload.name || "",
-    tid: payload.tid || ""
-  };
+  return { sub: payload.sub, email, name: payload.name || "" };
 }
 
 async function verifyGoogleIdToken(idToken) {
@@ -88,34 +102,51 @@ async function verifyGoogleIdToken(idToken) {
     issuer: ["https://accounts.google.com", "accounts.google.com"]
   });
 
-  return {
-    sub: payload.sub,
-    email: payload.email,
-    name: payload.name || ""
-  };
+  return { sub: payload.sub, email: payload.email, name: payload.name || "" };
 }
 
-module.exports.authExchange = async (req) => {
+module.exports.authExchange = async (req, context) => {
   try {
-    const provider = String(req.body?.provider || "").toLowerCase().trim();
-    const idToken = String(req.body?.idToken || "").trim();
-
-    if (!provider || !idToken) return bad(400, "Missing provider or idToken");
-    if (!COSMOS_DB) return bad(500, "Missing COSMOS_DB_NAME env var");
-    if (!process.env.APP_JWT_SECRET) return bad(500, "Missing APP_JWT_SECRET env var");
-
-    let info;
-    if (provider === "microsoft") {
-      info = await verifyMicrosoftIdToken(idToken);
-    } else if (provider === "google") {
-      info = await verifyGoogleIdToken(idToken);
-    } else {
-      return bad(400, "Invalid provider (use 'google' or 'microsoft')");
+    // ✅ Force visibility into missing production settings
+    const required = ["COSMOS_CONNECTION_STRING", "COSMOS_DB_NAME", "APP_JWT_SECRET"];
+    for (const k of required) {
+      if (!process.env[k]) return bad(500, `Missing env var: ${k}`);
     }
 
-    if (!info?.sub) return bad(401, "Invalid token (missing sub)");
+    const provider = String(req.body?.provider || "").toLowerCase().trim();
 
-    const user = await upsertUser({
+    // Two supported input modes:
+    // A) SWA / client-side exchange: provider + providerId (+ email/name)
+    const providerId = String(req.body?.providerId || "").trim();
+    const email = String(req.body?.email || "").trim() || null;
+    const name = String(req.body?.name || "").trim() || null;
+
+    // B) Token verification mode: provider + idToken (optional)
+    const idToken = String(req.body?.idToken || "").trim();
+
+    if (!provider) return bad(400, "Missing provider");
+
+    // Create cosmos client (safe for all SDK versions)
+    const cosmos = getCosmosClient();
+
+    let info = null;
+
+    if (idToken) {
+      // If you choose to send idToken later, we can verify it here
+      if (provider === "microsoft") info = await verifyMicrosoftIdToken(idToken);
+      else if (provider === "google") info = await verifyGoogleIdToken(idToken);
+      else return bad(400, "Invalid provider (use 'google' or 'microsoft')");
+    } else {
+      // Current frontend path (what you’re doing now)
+      if (!providerId) return bad(400, "Missing providerId (or send idToken)");
+      info = { sub: providerId, email, name };
+    }
+
+    if (!COSMOS_DB) return bad(500, "Missing COSMOS_DB_NAME env var");
+    if (!process.env.APP_JWT_SECRET) return bad(500, "Missing APP_JWT_SECRET env var");
+    if (!info?.sub) return bad(401, "Invalid auth info (missing sub/providerId)");
+
+    const user = await upsertUser(cosmos, {
       provider,
       sub: info.sub,
       email: info.email,
@@ -126,6 +157,7 @@ module.exports.authExchange = async (req) => {
 
     return {
       status: 200,
+      headers: { "Content-Type": "application/json" },
       jsonBody: {
         ok: true,
         appToken,
@@ -133,6 +165,8 @@ module.exports.authExchange = async (req) => {
       }
     };
   } catch (e) {
-    return bad(401, e?.message || "Auth exchange failed");
+    // ✅ IMPORTANT: return JSON so the browser shows the real error
+    context?.log?.("authExchange error:", e);
+    return bad(500, e?.message || "Auth exchange failed");
   }
 };
