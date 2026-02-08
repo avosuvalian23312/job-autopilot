@@ -2,8 +2,8 @@
   "API_BASE": "/api",
 
   "ENTRA_CLIENT_ID": "33ddc64c-6c22-4e43-9364-0186576992b4",
-  "ENTRA_AUTHORITY": "https://red-beach-033073710.4.azurestaticapps.net/",
+  "ENTRA_AUTHORITY": "https://login.microsoftonline.com/common",
   "ENTRA_REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net/",
 
-  "GOOGLE_CLIENT_ID": "811442229724-osgpqqmskqr8caiv45v03voobtsqj0bv.apps.googleusercontent.com"
+  "GOOGLE_CLIENT_ID": "811442229724-xxxxxxxxxxxx.apps.googleusercontent.com"
 }
