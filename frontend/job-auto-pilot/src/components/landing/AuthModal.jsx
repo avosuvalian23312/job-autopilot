@@ -1,250 +1,258 @@
-import React, { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useEffect, useMemo, useState } from "react";
 
-function loadGoogleScript() {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.id) return resolve(true);
+/**
+ * AuthModal.jsx
+ * - Google button: redirects directly to Google (skips the Microsoft email screen) using Entra External ID
+ *   by adding `idp=Google` (and domain_hint=google.com) on the /authorize URL.
+ * - Email button: starts the same Entra External ID user flow without forcing an IdP (so users can use Email).
+ *
+ * IMPORTANT:
+ * - This uses Entra External ID (CIAM). You do NOT put any Google client secret in the frontend.
+ * - This only starts the auth redirect. Your app still needs to handle the returned `code` and exchange it
+ *   for tokens (or use MSAL). This file focuses on fixing the “Google should go straight to Google picker” UX.
+ */
 
-    const existing = document.querySelector('script[data-google-gis="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(true));
-      existing.addEventListener("error", () => reject(new Error("Google GIS failed to load")));
+function base64UrlEncode(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function sha256Base64Url(input) {
+  const enc = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", enc);
+  return base64UrlEncode(hash);
+}
+
+function randomString(length = 64) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const arr = new Uint8Array(length);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (x) => chars[x % chars.length]).join("");
+}
+
+export default function AuthModal({ open, onClose }) {
+  const [config, setConfig] = useState(null);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  // Load config.json (served from the same origin)
+  useEffect(() => {
+    if (!open) return;
+    setError("");
+    setBusy(false);
+
+    fetch("/config.json", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((c) => setConfig(c))
+      .catch((e) => setError("Failed to load /config.json: " + (e?.message || String(e))));
+  }, [open]);
+
+  const scopes = useMemo(() => {
+    if (!config?.SCOPES?.length) return "openid profile email";
+    return config.SCOPES.join(" ");
+  }, [config]);
+
+  async function startAuth({ forceGoogle, loginHint } = {}) {
+    if (!config?.AUTHORITY || !config?.CLIENT_ID || !config?.REDIRECT_URI) {
+      setError("Missing AUTHORITY / CLIENT_ID / REDIRECT_URI in config.json");
       return;
     }
 
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.defer = true;
-    s.dataset.googleGis = "true";
-    s.onload = () => resolve(true);
-    s.onerror = () => reject(new Error("Google GIS failed to load"));
-    document.head.appendChild(s);
-  });
-}
-
-async function loadConfig() {
-  const res = await fetch("/config.json", { cache: "no-store" });
-  if (!res.ok) throw new Error(`Could not load /config.json (HTTP ${res.status})`);
-  const cfg = await res.json();
-
-  if (!cfg.GOOGLE_CLIENT_ID || typeof cfg.GOOGLE_CLIENT_ID !== "string") {
-    throw new Error("config.json missing GOOGLE_CLIENT_ID");
-  }
-
-  // Guard against hidden whitespace/newlines
-  const cleaned = cfg.GOOGLE_CLIENT_ID.trim();
-  if (!cleaned.endsWith(".apps.googleusercontent.com")) {
-    throw new Error("GOOGLE_CLIENT_ID looks wrong (must end with .apps.googleusercontent.com)");
-  }
-
-  return { GOOGLE_CLIENT_ID: cleaned };
-}
-
-export default function AuthModal({ open, onClose, onComplete }) {
-  const [email, setEmail] = useState("");
-  const [startingAuth, setStartingAuth] = useState(false);
-  const [googleReady, setGoogleReady] = useState(false);
-  const [error, setError] = useState("");
-
-  const googleClientIdRef = useRef("");
-  const googleInitRef = useRef(false);
-
-  useEffect(() => {
-    if (!open) return;
-
-    (async () => {
-      try {
-        setError("");
-        setGoogleReady(false);
-
-        const cfg = await loadConfig();
-        googleClientIdRef.current = cfg.GOOGLE_CLIENT_ID;
-
-        await loadGoogleScript();
-
-        // Initialize ONLY the GIS ID-token flow (no OAuth redirect windows)
-        if (!googleInitRef.current) {
-          googleInitRef.current = true;
-
-          window.google.accounts.id.initialize({
-            client_id: cfg.GOOGLE_CLIENT_ID,
-            callback: (response) => {
-              try {
-                const idToken = response?.credential;
-                if (!idToken) throw new Error("No ID token returned from Google");
-
-                // Send token to parent (later we wire backend)
-                onComplete?.({
-                  provider: "google",
-                  idToken,
-                });
-
-                setStartingAuth(false);
-              } catch (e) {
-                console.error("[Google callback error]", e);
-                setError(e?.message || "Google sign-in failed");
-                setStartingAuth(false);
-              }
-            },
-            // Helps in Chrome with federated credential management
-            use_fedcm_for_prompt: true,
-          });
-        }
-
-        setGoogleReady(true);
-      } catch (e) {
-        console.error("[AuthModal init error]", e);
-        setError(e?.message || "Failed to initialize Google sign-in");
-        setGoogleReady(false);
-        setStartingAuth(false);
-      }
-    })();
-  }, [open, onComplete]);
-
-  const signInWithGoogle = () => {
+    setBusy(true);
     setError("");
-    setStartingAuth(true);
 
     try {
-      if (!googleReady || !window.google?.accounts?.id) {
-        setStartingAuth(false);
-        setError("Google not ready yet — refresh and try again.");
-        return;
+      // PKCE
+      const verifier = randomString(64);
+      const challenge = await sha256Base64Url(verifier);
+
+      // store verifier for your token exchange step after redirect
+      sessionStorage.setItem("pkce_code_verifier", verifier);
+
+      const params = new URLSearchParams({
+        client_id: config.CLIENT_ID,
+        redirect_uri: config.REDIRECT_URI,
+        response_type: "code",
+        response_mode: "query",
+        scope: scopes,
+        nonce: randomString(16),
+        code_challenge_method: "S256",
+        code_challenge: challenge,
+        prompt: "login",
+      });
+
+      if (loginHint) params.set("login_hint", loginHint);
+
+      // Force direct Google redirect (skip the Microsoft email input screen)
+      // Source: idp parameter works for Entra External ID federated auth flows
+      // (commonly used as &idp=Google and optionally domain_hint=google.com)
+      if (forceGoogle) {
+        params.set("domain_hint", "google.com");
+        params.set("idp", "Google");
       }
 
-      // This should show Google account chooser / one-tap style UX.
-      // If it’s blocked, we show a useful error.
-      window.google.accounts.id.prompt((notification) => {
-        // If user dismissed or browser blocked it, we handle it.
-        if (notification.isNotDisplayed()) {
-          console.warn("Google prompt not displayed:", notification.getNotDisplayedReason?.());
-          setError(
-            "Google prompt blocked. Try allowing popups, disabling strict tracking prevention, or use a different browser."
-          );
-          setStartingAuth(false);
-        } else if (notification.isSkippedMoment()) {
-          console.warn("Google prompt skipped:", notification.getSkippedReason?.());
-          setError("Google prompt was skipped. Try again.");
-          setStartingAuth(false);
-        }
-        // If it displays, Google will call our callback and we stop loading there.
-      });
+      const authority = config.AUTHORITY.replace(/\/+$/, "");
+      const authUrl = `${authority}/oauth2/v2.0/authorize?${params.toString()}`;
+
+      window.location.assign(authUrl);
     } catch (e) {
-      console.error("[signInWithGoogle error]", e);
-      setError(e?.message || "Google sign-in failed");
-      setStartingAuth(false);
+      setError(e?.message || String(e));
+      setBusy(false);
     }
-  };
+  }
 
-  const signInWithMicrosoft = () => {
-    alert("Microsoft sign-in disabled in Google-only mode.");
-  };
+  function onGoogle() {
+    startAuth({ forceGoogle: true });
+  }
 
-  const signInWithEmail = () => {
-    // We can do passwordless magic-link later (still no passwords stored)
-    alert("Email sign-in not implemented yet. Next we can add passwordless magic-link.");
-  };
+  function onEmail() {
+    const hint = email?.trim() ? email.trim() : undefined;
+    startAuth({ forceGoogle: false, loginHint: hint });
+  }
+
+  if (!open) return null;
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={startingAuth ? undefined : onClose}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md z-50"
+    <div style={styles.backdrop} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.headerRow}>
+          <div>
+            <div style={styles.title}>Get Started</div>
+            <div style={styles.subTitle}>Sign up to access your dashboard</div>
+          </div>
+          <button style={styles.closeBtn} onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        <button style={{ ...styles.primaryBtn, opacity: busy ? 0.7 : 1 }} onClick={onGoogle} disabled={busy}>
+          {busy ? "Opening Google…" : "Continue with Google"}
+        </button>
+
+        <div style={styles.dividerRow}>
+          <div style={styles.divider} />
+          <div style={styles.dividerText}>Or continue with email</div>
+          <div style={styles.divider} />
+        </div>
+
+        <div style={styles.inputRow}>
+          <span style={styles.mailIcon}>✉</span>
+          <input
+            style={styles.input}
+            placeholder="Enter your email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={busy}
           />
+        </div>
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          >
-            <div className="bg-[#0E0E12] rounded-2xl p-8 max-w-md w-full border border-white/20 relative shadow-2xl">
-              <button
-                onClick={startingAuth ? undefined : onClose}
-                className="absolute top-4 right-4 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
-                disabled={startingAuth}
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <button style={{ ...styles.emailBtn, opacity: busy ? 0.7 : 1 }} onClick={onEmail} disabled={busy}>
+          Continue with Email
+        </button>
 
-              <h2 className="text-2xl font-bold text-white mb-2">Get Started</h2>
-              <p className="text-white/40 mb-6">Sign up to access your dashboard</p>
+        {error ? <div style={styles.errorBox}>{error}</div> : null}
 
-              {error ? (
-                <div className="mb-4 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                  {error}
-                </div>
-              ) : null}
-
-              <div className="space-y-3 mb-6">
-                <Button
-                  onClick={signInWithGoogle}
-                  disabled={startingAuth || !googleReady}
-                  className="w-full py-6 bg-white hover:bg-white/90 text-gray-900 rounded-xl font-semibold"
-                >
-                  {startingAuth ? "Opening Google..." : "Continue with Google"}
-                </Button>
-
-                <Button
-                  onClick={signInWithMicrosoft}
-                  disabled={startingAuth}
-                  className="w-full py-6 bg-white/10 hover:bg-white/15 text-white rounded-xl font-semibold border border-white/20"
-                >
-                  Continue with Microsoft
-                </Button>
-
-                <div className="relative my-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-white/10"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="bg-[#0E0E12] px-4 text-white/30">
-                      Or continue with email
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/30 w-5 h-5" />
-                    <Input
-                      type="email"
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-12 py-6 bg-white/5 border border-white/10 text-white placeholder:text-white/30 rounded-xl focus:border-purple-500/50"
-                      disabled={startingAuth}
-                    />
-                  </div>
-
-                  <Button
-                    onClick={signInWithEmail}
-                    disabled={startingAuth}
-                    className="w-full py-6 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold"
-                  >
-                    Continue with Email
-                  </Button>
-                </div>
-
-                {/* Debug helper (remove later) */}
-                <div className="text-xs text-white/30 pt-2">
-                  Google ready: {googleReady ? "yes" : "no"} | client:{" "}
-                  {googleClientIdRef.current ? "loaded" : "missing"}
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+        <div style={styles.hint}>
+          Tip: Google uses a small “account chooser” popup sometimes — that’s normal and controlled by Google/Chrome.
+        </div>
+      </div>
+    </div>
   );
 }
+
+const styles = {
+  backdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+    padding: 20,
+  },
+  modal: {
+    width: 420,
+    maxWidth: "100%",
+    background: "rgba(15, 17, 25, 0.92)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 16,
+    padding: 18,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.55)",
+    color: "#fff",
+    backdropFilter: "blur(14px)",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 14,
+  },
+  title: { fontSize: 22, fontWeight: 700 },
+  subTitle: { fontSize: 13, opacity: 0.75, marginTop: 4 },
+  closeBtn: {
+    border: "none",
+    background: "transparent",
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 22,
+    cursor: "pointer",
+    lineHeight: 1,
+    padding: "2px 8px",
+  },
+  primaryBtn: {
+    width: "100%",
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.10)",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 650,
+    marginBottom: 12,
+  },
+  dividerRow: { display: "flex", alignItems: "center", gap: 10, margin: "10px 0 12px" },
+  divider: { flex: 1, height: 1, background: "rgba(255,255,255,0.12)" },
+  dividerText: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap" },
+  inputRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+  },
+  mailIcon: { opacity: 0.7 },
+  input: {
+    width: "100%",
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    color: "#fff",
+    fontSize: 14,
+  },
+  emailBtn: {
+    width: "100%",
+    marginTop: 12,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "rgba(141, 53, 255, 0.85)",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+  errorBox: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(255, 60, 60, 0.14)",
+    border: "1px solid rgba(255, 60, 60, 0.28)",
+    fontSize: 12,
+    lineHeight: 1.35,
+  },
+  hint: { marginTop: 12, fontSize: 12, opacity: 0.65, lineHeight: 1.35 },
+};
