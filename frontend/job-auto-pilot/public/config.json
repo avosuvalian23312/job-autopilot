@@ -4,6 +4,6 @@
   "AUTHORITY": "https://jobautopilotext.ciamlogin.com/65d1cd83-3b5d-40db-84e2-c80f5bd5e2c1",
   "KNOWN_AUTHORITIES": ["jobautopilotext.ciamlogin.com"],
   "REDIRECT_URI": "https://red-beach-033073710.4.azurestaticapps.net",
-  "GOOGLE_CLIENT_ID": "811442229724-...apps.googleusercontent.com",
+  "GOOGLE_CLIENT_ID": "811442229724-osgpqqmskqr8caiv45v03voobtsqj0bv.apps.googleusercontent.com",
   "SCOPES": ["openid", "profile", "email"]
 }
