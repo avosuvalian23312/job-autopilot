@@ -1,7 +1,12 @@
 {
-  "name": "backend",
+  "name": "job-autopilot-backend",
   "version": "1.0.0",
-  "description": "",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/index.js",
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "start": "func start",
     "test": "echo \"No tests yet...\""
@@ -13,6 +18,5 @@
     "jose": "^5.9.6",
     "jsonwebtoken": "^9.0.2",
     "openai": "^6.18.0"
-  },
-  "main": "src/index.js"
+  }
 }
