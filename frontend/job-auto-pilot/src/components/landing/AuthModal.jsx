@@ -435,5 +435,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
         </>
       )}
     </AnimatePresence>
+    
   );
 }
