@@ -48,6 +48,36 @@ export default function AuthModal({ open, onClose, onComplete }) {
   };
 
   // ---------------------------
+  // APP TOKEN EXCHANGE (YOUR backend)
+  // ---------------------------
+  const exchangeWithBackend = async (payload) => {
+    await loadConfig();
+
+    const r = await fetch(`${apiBaseRef.current}/auth/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+    const data = await r.json().catch(() => null);
+
+    if (!r.ok || !data?.ok) {
+      const msg =
+        data?.error ||
+        `Auth exchange failed (${r.status})`;
+      throw new Error(msg);
+    }
+
+    // If backend returns a token in JSON, store it (cookie-based auth is also fine)
+    if (data.token) {
+      localStorage.setItem("APP_TOKEN", data.token);
+    }
+
+    return data; // { ok, token?, user? ... }
+  };
+
+  // ---------------------------
   // GOOGLE: GIS token popup
   // ---------------------------
   const preloadGoogle = async () => {
@@ -78,26 +108,33 @@ export default function AuthModal({ open, onClose, onComplete }) {
             throw new Error(resp?.error_description || "Google sign-in failed");
           }
 
-          // Get profile (email/name/picture) using the access token
+          // Get profile (email/name/picture/sub) using the access token
           const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${resp.access_token}` }
+            headers: { Authorization: `Bearer ${resp.access_token}` },
           });
 
           if (!u.ok) throw new Error("Failed to fetch Google profile");
 
           const profile = await u.json();
 
-          // Optional: exchange with backend if you want your own JWT/session
-          // Otherwise, just pass it to app state
+          // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+          const exchanged = await exchangeWithBackend({
+            provider: "google",
+            email: profile.email,
+            providerId: profile.sub || profile.email, // stable unique ID preferred
+            // optional: send provider token for server-side verification if you implement it
+            providerAccessToken: resp.access_token,
+          });
+
           onComplete?.({
             ok: true,
             provider: "google",
             user: {
               email: profile.email,
               name: profile.name,
-              picture: profile.picture
+              picture: profile.picture,
             },
-            google_access_token: resp.access_token
+            exchange: exchanged,
           });
 
           onClose?.();
@@ -106,7 +143,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
         } finally {
           setBusy(false);
         }
-      }
+      },
     });
 
     googleReadyRef.current = true;
@@ -145,15 +182,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
 
     const msalInstance = new PublicClientApplication({
-      auth: {
-        clientId,
-        authority,
-        redirectUri
-      },
-      cache: {
-        cacheLocation: "localStorage",
-        storeAuthStateInCookie: false
-      }
+      auth: { clientId, authority, redirectUri },
+      cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
     });
 
     await msalInstance.initialize();
@@ -170,21 +200,36 @@ export default function AuthModal({ open, onClose, onComplete }) {
       const msal = msalRef.current;
       if (!msal) throw new Error("Microsoft sign-in not ready yet.");
 
-      // Minimal scopes (no Graph required)
       const loginResp = await msal.loginPopup({
         scopes: ["openid", "profile", "email"],
-        prompt: "select_account"
+        prompt: "select_account",
       });
 
       const account = loginResp?.account || msal.getAllAccounts()?.[0];
       if (!account) throw new Error("No Microsoft account returned.");
 
-      // MSAL doesn’t always provide "email" directly; use preferred_username
+      const claims = account.idTokenClaims || {};
       const email =
         account.username ||
-        account.idTokenClaims?.preferred_username ||
-        account.idTokenClaims?.email ||
+        claims.preferred_username ||
+        claims.email ||
         "";
+
+      const providerId =
+        // AAD usually provides oid (object id) which is stable per tenant
+        claims.oid ||
+        claims.sub ||
+        account.homeAccountId ||
+        account.localAccountId ||
+        email;
+
+      // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+      const exchanged = await exchangeWithBackend({
+        provider: "microsoft",
+        email,
+        providerId,
+        tenantId: claims.tid || account.tenantId || "",
+      });
 
       onComplete?.({
         ok: true,
@@ -192,20 +237,17 @@ export default function AuthModal({ open, onClose, onComplete }) {
         user: {
           email,
           name: account.name || "",
-          tenantId: account.tenantId || ""
+          tenantId: claims.tid || account.tenantId || "",
         },
         microsoft: {
           homeAccountId: account.homeAccountId,
-          localAccountId: account.localAccountId
-        }
+          localAccountId: account.localAccountId,
+        },
+        exchange: exchanged,
       });
 
       onClose?.();
     } catch (e) {
-      // Common errors:
-      // - interaction_in_progress (double click)
-      // - popup_window_error / popup_blocked
-      // - AADSTS errors (misconfigured redirect URI / account types)
       setErr(e?.message || "Microsoft sign-in failed");
     } finally {
       setBusy(false);
@@ -243,7 +285,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
   }, [open]);
 
-  // (Optional) Keep your existing email-code flow as-is (if you still want it)
+  // ---------------------------
+  // EMAIL OTP flow
+  // ---------------------------
   const startEmail = async () => {
     try {
       setErr("");
@@ -257,10 +301,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
       const r = await fetch(`${apiBaseRef.current}/auth/email/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em })
+        body: JSON.stringify({ email: em }),
       });
 
-      const data = await r.json();
+      const data = await r.json().catch(() => null);
       if (!r.ok || !data?.ok) throw new Error(data?.error || "Failed to send code");
 
       setStep("email_code");
@@ -278,18 +322,35 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       await loadConfig();
 
+      const em = email.trim().toLowerCase();
+      if (!em) throw new Error("Enter your email");
+      if (!code.trim()) throw new Error("Enter the code");
+
       const r = await fetch(`${apiBaseRef.current}/auth/email/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code })
+        body: JSON.stringify({ email: em, code: code.trim() }),
       });
 
-      const data = await r.json();
+      const data = await r.json().catch(() => null);
       if (!r.ok || !data?.ok) throw new Error(data?.error || "Invalid code");
 
-      if (data.token) localStorage.setItem("APP_TOKEN", data.token);
+      // If verify endpoint already returns a token, keep it
+      if (data?.token) {
+        localStorage.setItem("APP_TOKEN", data.token);
+        onComplete?.(data);
+        onClose?.();
+        return;
+      }
 
-      onComplete?.(data);
+      // Otherwise, exchange to get YOUR token
+      const exchanged = await exchangeWithBackend({
+        provider: "email",
+        email: em,
+        providerId: em, // stable enough for email auth
+      });
+
+      onComplete?.({ ok: true, provider: "email", exchange: exchanged });
       onClose?.();
     } catch (e) {
       setErr(e?.message || "Verification failed");
@@ -302,10 +363,18 @@ export default function AuthModal({ open, onClose, onComplete }) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="fixed inset-0 bg-black/80 z-50" onClick={busy ? undefined : onClose} />
+          <motion.div
+            className="fixed inset-0 bg-black/80 z-50"
+            onClick={busy ? undefined : onClose}
+          />
           <motion.div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="bg-[#0E0E12] p-8 rounded-2xl max-w-md w-full relative">
-              <button className="absolute top-4 right-4" onClick={onClose} disabled={busy} aria-label="Close">
+              <button
+                className="absolute top-4 right-4"
+                onClick={onClose}
+                disabled={busy}
+                aria-label="Close"
+              >
                 <X />
               </button>
 
