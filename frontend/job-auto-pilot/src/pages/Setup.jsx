@@ -19,13 +19,15 @@ const tones = ["Professional", "Confident", "Concise"];
  * Supports multiple key names so it works with whatever your auth UI saved.
  */
 function getStoredAppToken() {
-  const keys = ["APP_TOKEN", "appToken", "app_token", "appJwt", "authToken", "token"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && typeof v === "string") return v.replace(/^"|"$/g, "");
-  }
-  return null;
+  // ONLY trust your backend-issued app token.
+  // Do NOT fall back to generic keys like "token" (MSAL/other libs use those).
+  const v =
+    localStorage.getItem("APP_TOKEN") ||
+    localStorage.getItem("appToken"); // optional compatibility
+
+  return v && typeof v === "string" ? v.replace(/^"|"$/g, "") : null;
 }
+
 
 
 /**

@@ -70,9 +70,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
 
     // If backend returns a token in JSON, store it (cookie-based auth is also fine)
-    if (data.token) {
-      localStorage.setItem("APP_TOKEN", data.token);
-    }
+   const t = data.appToken || data.token;
+if (t) {
+  localStorage.setItem("APP_TOKEN", t);
+}
+
 
     return data; // { ok, token?, user? ... }
   };

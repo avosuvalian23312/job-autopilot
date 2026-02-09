@@ -59,4 +59,5 @@ function requireAuth(req) {
   };
 }
 
+
 module.exports = { requireAuth };
