@@ -1,5 +1,21 @@
-// backend/src/functions/resumeSave.js
 const { CosmosClient } = require("@azure/cosmos");
+
+
+if (!process.env.COSMOS_CONNECTION_STRING) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_CONNECTION_STRING" } };
+  return;
+}
+if (!process.env.COSMOS_DB_NAME) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_DB_NAME" } };
+  return;
+}
+if (!process.env.COSMOS_RESUMES_CONTAINER_NAME) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_RESUMES_CONTAINER_NAME" } };
+  return;
+}
+
+
+
 
 function getSwaUser(req) {
   const header =
@@ -38,108 +54,56 @@ function stripQuery(url) {
   }
 }
 
-module.exports = async function resumeSave(req, context) {
-  // ✅ Always allow OPTIONS
-  if (req.method === "OPTIONS") {
-    return {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    };
-  }
-
+module.exports = async function (context, req) {
+  // Must be logged in via SWA
   const user = getSwaUser(req);
   if (!user) {
-    return {
-      status: 401,
-      jsonBody: { ok: false, error: "Not authenticated" },
-    };
+    context.res = { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
+    return;
   }
 
-  // normal logic continues...
-};
+  const body = req.body || {};
 
+  // ✅ Match your FRONTEND payload
+  const blobName = body.blobName || body.blobPath || "";
+  const originalName = body.originalName || body.fileName || "resume.pdf";
+  const contentType = body.contentType || "application/octet-stream";
+  const size = Number(body.size || 0);
 
-    // Validate env INSIDE the handler (context exists here)
-    if (!process.env.COSMOS_CONNECTION_STRING) {
-      return {
-        status: 500,
-        jsonBody: { ok: false, error: "Missing COSMOS_CONNECTION_STRING" },
-      };
-    }
-    if (!process.env.COSMOS_DB_NAME) {
-      return {
-        status: 500,
-        jsonBody: { ok: false, error: "Missing COSMOS_DB_NAME" },
-      };
-    }
-    if (!process.env.COSMOS_RESUMES_CONTAINER_NAME) {
-      return {
-        status: 500,
-        jsonBody: { ok: false, error: "Missing COSMOS_RESUMES_CONTAINER_NAME" },
-      };
-    }
-
-    // Must be logged in via SWA
-    const user = getSwaUser(req);
-    if (!user) {
-      return {
-        status: 401,
-        jsonBody: { ok: false, error: "Not authenticated" },
-      };
-    }
-
-    const body = req.body || {};
-
-    // Matches your FRONTEND payload (blobName/originalName/contentType/size)
-    const blobName = body.blobName || body.blobPath || "";
-    const originalName = body.originalName || body.fileName || "resume.pdf";
-    const contentType = body.contentType || "application/octet-stream";
-    const size = Number(body.size || 0);
-
-    if (!blobName) {
-      return {
-        status: 400,
-        jsonBody: { ok: false, error: "Missing blobName" },
-      };
-    }
-
-    const blobUrl = body.uploadUrl ? stripQuery(body.uploadUrl) : "";
-
-    const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
-    const container = cosmos
-      .database(process.env.COSMOS_DB_NAME)
-      .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
-
-    // Deterministic "current resume" id per user (upsert overwrites)
-    const doc = {
-      id: `resume:current:${safeUserId(user.userId)}`,
-      userId: user.userId, // PK is /userId
-      email: user.email,
-
-      blobName,
-      blobUrl,
-      originalName,
-      contentType,
-      size,
-
-      uploadedAt: new Date().toISOString(),
+  if (!blobName) {
+    context.res = {
+      status: 400,
+      jsonBody: { ok: false, error: "Missing blobName" },
     };
-
-    await container.items.upsert(doc, { partitionKey: user.userId });
-
-    return {
-      status: 200,
-      jsonBody: { ok: true, resume: doc },
-    };
-  } catch (err) {
-    context?.log?.("resumeSave error:", err);
-    return {
-      status: 500,
-      jsonBody: { ok: false, error: err?.message || String(err) },
-    };
+    return;
   }
+
+  // Optional: if you pass uploadUrl from step 1, store a clean blob URL (no SAS)
+  const blobUrl = body.uploadUrl ? stripQuery(body.uploadUrl) : "";
+
+  const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+  const container = cosmos
+    .database(process.env.COSMOS_DB_NAME)
+    .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
+
+  // One "current" resume per user, deterministic id per user
+  // (Upsert overwrites same user's current resume)
+  const doc = {
+    id: `resume:current:${safeUserId(user.userId)}`,
+    userId: user.userId, // PK is /userId
+    email: user.email,
+
+    blobName,      // <-- EXACT blob path you uploaded to (matches storage)
+    blobUrl,       // optional (no SAS)
+    originalName,
+    contentType,
+    size,
+
+    uploadedAt: new Date().toISOString(),
+  };
+
+  // ✅ IMPORTANT: pass partitionKey explicitly (PK = /userId)
+  await container.items.upsert(doc, { partitionKey: user.userId });
+
+  context.res = { status: 200, jsonBody: { ok: true, resume: doc } };
 };
