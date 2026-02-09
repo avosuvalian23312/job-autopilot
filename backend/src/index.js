@@ -37,21 +37,7 @@ app.http("updateJobStatus", {
 // Auth APIs
 // ========================
 
-// Email login start
-app.http("startEmailLogin", {
-  methods: ["POST"],
-  route: "auth/email/start",
-  authLevel: "anonymous",
-  handler: require("./functions/startEmailLogin"),
-});
 
-// Email login verify
-app.http("verifyEmailLogin", {
-  methods: ["POST"],
-  route: "auth/email/verify",
-  authLevel: "anonymous",
-  handler: require("./functions/verifyEmailLogin"),
-});
 
 // Provider token → app JWT
 app.http("authExchange", {

@@ -19,13 +19,14 @@ const tones = ["Professional", "Confident", "Concise"];
  * Supports multiple key names so it works with whatever your auth UI saved.
  */
 function getStoredAppToken() {
-  const keys = ["appToken", "app_token", "appJwt", "authToken", "token"];
+  const keys = ["APP_TOKEN", "appToken", "app_token", "appJwt", "authToken", "token"];
   for (const k of keys) {
     const v = localStorage.getItem(k);
     if (v && typeof v === "string") return v.replace(/^"|"$/g, "");
   }
   return null;
 }
+
 
 /**
  * Simple helper for calling your SWA API with JSON + Bearer token.

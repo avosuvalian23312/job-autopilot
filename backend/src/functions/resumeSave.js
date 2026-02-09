@@ -1,67 +1,61 @@
 // src/functions/resumeSave.js
+const { CosmosClient } = require("@azure/cosmos");
 const auth = require("../lib/auth");
-
-// EDIT HERE if your cosmos helper has different exports/names
-const cosmos = require("../lib/cosmosClient");
 
 // POST /api/resume/save
 // Body: { blobName, originalName, contentType, size }
-// Updates users container doc (id = userId)
+// Updates users container doc (id = userId, pk = /id)
 module.exports = async function resumeSave(req, context) {
-  // CORS / preflight
   if (req.method === "OPTIONS") {
-    return {
-      status: 204,
-      headers: corsHeaders(),
-    };
+    return { status: 204, headers: corsHeaders() };
   }
 
   try {
-    // 1) Require your APP JWT
     const user = auth.requireAuth(req);
     const userId = user.userId || user.uid;
-    if (!userId) {
-      return json(401, { ok: false, error: "Unauthorized (missing userId)" });
-    }
+    if (!userId) return json(401, { ok: false, error: "Unauthorized" });
 
-    // 2) Parse body
     const body = await safeJson(req);
     const blobName = (body?.blobName || "").trim();
     const originalName = (body?.originalName || "").trim();
     const contentType = (body?.contentType || "application/octet-stream").trim();
     const size = Number(body?.size || 0);
 
-    if (!blobName) {
-      return json(400, { ok: false, error: "blobName is required" });
+    if (!blobName) return json(400, { ok: false, error: "blobName is required" });
+
+    // ---- Cosmos env vars (must exist in your backend settings) ----
+    const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT;
+    const COSMOS_KEY = process.env.COSMOS_KEY;
+    const COSMOS_DATABASE = process.env.COSMOS_DATABASE || "jobautopilot";
+    const USERS_CONTAINER = process.env.USERS_CONTAINER || "users";
+    // --------------------------------------------------------------
+
+    if (!COSMOS_ENDPOINT || !COSMOS_KEY) {
+      return json(500, {
+        ok: false,
+        error: "Missing COSMOS_ENDPOINT or COSMOS_KEY in backend settings",
+      });
     }
 
-    // 3) Write to Cosmos users container
-    // Expect: users container partition key = /id
-    // We store resume metadata on the user doc.
-
-    // ---- EDIT HERE if your cosmosClient differs ----
-    // Assumed API: cosmos.container("users") -> container client
-    const usersContainer = cosmos.container("users");
-    // -----------------------------------------------
+    const client = new CosmosClient({ endpoint: COSMOS_ENDPOINT, key: COSMOS_KEY });
+    const users = client.database(COSMOS_DATABASE).container(USERS_CONTAINER);
 
     const now = Date.now();
-    const userDocId = userId; // your pattern: id === userId (e.g. google:sub)
+    const id = userId;
 
-    // Read existing (optional, but nice)
+    // Read existing user doc (optional)
     let existing = null;
     try {
-      const read = await usersContainer.item(userDocId, userDocId).read();
+      const read = await users.item(id, id).read();
       existing = read?.resource || null;
-    } catch {
-      existing = null;
-    }
+    } catch {}
 
     const updated = {
       ...(existing || {}),
-      id: userDocId,
-      userId: userDocId,
-      email: existing?.email || user.email || undefined,
-      provider: existing?.provider || user.provider || undefined,
+      id,
+      userId: id,
+      email: existing?.email || user.email || null,
+      provider: existing?.provider || user.provider || null,
       resume: {
         blobName,
         originalName: originalName || null,
@@ -72,14 +66,9 @@ module.exports = async function resumeSave(req, context) {
       updatedAt: now,
     };
 
-    // Upsert by id + partition key
-    await usersContainer.items.upsert(updated);
+    await users.items.upsert(updated);
 
-    return json(200, {
-      ok: true,
-      userId: userDocId,
-      resume: updated.resume,
-    });
+    return json(200, { ok: true, userId: id, resume: updated.resume });
   } catch (err) {
     context?.log?.("resumeSave error", err);
     return json(500, { ok: false, error: err?.message || "Server error" });
