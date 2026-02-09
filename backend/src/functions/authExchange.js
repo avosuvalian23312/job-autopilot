@@ -84,14 +84,24 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
 }
 
 function signAppToken(user) {
-  if (!process.env.APP_JWT_SECRET) throw new Error("Missing APP_JWT_SECRET");
+  if (!process.env.APP_JWT_SECRET) {
+    throw new Error("Missing APP_JWT_SECRET");
+  }
+
+  const userId = user.userId; // already like "google:123..." or "microsoft:abc..."
 
   return jwt.sign(
-    { uid: user.userId, email: user.email, provider: user.provider },
+    {
+      uid: userId,        // <-- REQUIRED
+      userId: userId,     // <-- REQUIRED (redundant on purpose)
+      email: user.email,
+      provider: user.provider,
+    },
     process.env.APP_JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
+
 
 // ------------------------
 // OPTIONAL: verify idToken if you send it (recommended for real auth)
