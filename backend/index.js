@@ -15,14 +15,14 @@ const { app } = require("@azure/functions");
 app.http("generateDocuments", {
   methods: ["POST"],
   authLevel: "anonymous",
-  handler: require("./functions/generateDocuments"),
+  handler: require("./src/functions/generateDocuments"),
 });
 
 // List jobs
 app.http("listJobs", {
   methods: ["GET"],
   authLevel: "anonymous",
-  handler: require("./functions/listJobs"),
+  handler: require("./src/functions/listJobs"),
 });
 
 // Update job status
@@ -30,7 +30,7 @@ app.http("updateJobStatus", {
   methods: ["PUT", "PATCH"],
   route: "jobs/{jobId}/status",
   authLevel: "anonymous",
-  handler: require("./functions/updateJobStatus"),
+  handler: require("./src/functions/updateJobStatus"),
 });
 
 // ========================
@@ -44,14 +44,14 @@ app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: require("./functions/authExchange"),
+  handler: require("./src/functions/authExchange"),
 });
 // Resume upload SAS
 app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
   route: "resume/upload-url",
   authLevel: "anonymous",
-  handler: require("./functions/resumeUploadUrl"),
+  handler: require("./src/functions/resumeUploadUrl"),
 });
 
 // Save resume metadata to Cosmos user doc
@@ -59,7 +59,7 @@ app.http("resumeSave", {
   methods: ["POST", "OPTIONS"],
   route: "resume/save",
   authLevel: "anonymous",
-  handler: require("./functions/resumeSave"),
+  handler: require("./src/functions/resumeSave"),
 });
 
 // User info (requires Authorization Bearer token)
@@ -67,6 +67,6 @@ app.http("userinfo", {
   methods: ["GET", "OPTIONS"],
   route: "userinfo",
   authLevel: "anonymous",
-  handler: require("./functions/userinfo"),
+  handler: require("./src/functions/userinfo"),
 });
 
