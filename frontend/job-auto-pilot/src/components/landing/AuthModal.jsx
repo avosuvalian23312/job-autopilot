@@ -20,6 +20,42 @@ function loadScriptOnce(src) {
   });
 }
 
+// ---------------------------
+// Token helpers (NO UI changes)
+// ---------------------------
+function decodeJwtPayload(token) {
+  try {
+    const t = String(token).replace(/^Bearer\s+/i, "").trim();
+    const parts = t.split(".");
+    if (parts.length !== 3) return null;
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function isOurAppToken(token) {
+  const p = decodeJwtPayload(token);
+  // Your app tokens contain uid/userId (from signAppToken)
+  return !!(p && (p.uid || p.userId));
+}
+
+function storeAppToken(token) {
+  const clean = String(token)
+    .replace(/^Bearer\s+/i, "")
+    .replace(/^"|"$/g, "")
+    .trim();
+
+  localStorage.setItem("APP_TOKEN", clean);
+  localStorage.setItem("appToken", clean);
+}
+
+function clearAppToken() {
+  localStorage.removeItem("APP_TOKEN");
+  localStorage.removeItem("appToken");
+}
+
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -63,28 +99,20 @@ export default function AuthModal({ open, onClose, onComplete }) {
     const data = await r.json().catch(() => null);
 
     if (!r.ok || !data?.ok) {
-      const msg =
-        data?.error ||
-        `Auth exchange failed (${r.status})`;
+      const msg = data?.error || `Auth exchange failed (${r.status})`;
       throw new Error(msg);
     }
 
-   // ✅ ONLY store your backend-issued app JWT.
-// Never store generic `data.token` (could be provider token / temp token).
-const t = data.appToken;
+    // ✅ ONLY store backend-issued appToken (must contain uid/userId claims)
+    const t = data.appToken;
+    if (t && isOurAppToken(t)) {
+      storeAppToken(t);
+    } else {
+      // prevent poisoning APP_TOKEN with non-app tokens
+      clearAppToken();
+    }
 
-if (t) {
-  // normalize accidental quotes / Bearer prefix
-  const clean = String(t).replace(/^Bearer\s+/i, "").replace(/^"|"$/g, "").trim();
-
-  // store under both keys for compatibility across your app
-  localStorage.setItem("APP_TOKEN", clean);
-  localStorage.setItem("appToken", clean);
-}
-
-
-
-    return data; // { ok, token?, user? ... }
+    return data; // { ok, appToken?, user? ... }
   };
 
   // ---------------------------
@@ -97,7 +125,9 @@ if (t) {
     const clientId = (cfg?.GOOGLE_CLIENT_ID || "").trim();
 
     if (!clientId || clientId.includes("...")) {
-      throw new Error("Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...').");
+      throw new Error(
+        "Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...')."
+      );
     }
 
     await loadScriptOnce("https://accounts.google.com/gsi/client");
@@ -127,12 +157,11 @@ if (t) {
 
           const profile = await u.json();
 
-          // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+          // ✅ EXCHANGE with your backend to get YOUR per-user token
           const exchanged = await exchangeWithBackend({
             provider: "google",
             email: profile.email,
-            providerId: profile.sub || profile.email, // stable unique ID preferred
-            // optional: send provider token for server-side verification if you implement it
+            providerId: profile.sub || profile.email,
             providerAccessToken: resp.access_token,
           });
 
@@ -226,14 +255,13 @@ if (t) {
         "";
 
       const providerId =
-        // AAD usually provides oid (object id) which is stable per tenant
         claims.oid ||
         claims.sub ||
         account.homeAccountId ||
         account.localAccountId ||
         email;
 
-      // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+      // ✅ EXCHANGE with your backend to get YOUR per-user token
       const exchanged = await exchangeWithBackend({
         provider: "microsoft",
         email,
@@ -345,23 +373,14 @@ if (t) {
       const data = await r.json().catch(() => null);
       if (!r.ok || !data?.ok) throw new Error(data?.error || "Invalid code");
 
-      // If verify endpoint already returns a token, keep it
-      // If backend returns a token in JSON, store it (cookie-based auth is also fine)
-if (data.token) {
-  // normalize accidental "Bearer " prefix
-  const clean = String(data.token).replace(/^Bearer\s+/i, "").trim();
+      // ✅ Do NOT store verify endpoint tokens here.
+      // Only /auth/exchange should produce the app token we store.
+      clearAppToken();
 
-  // store under both keys so all parts of the app (and your debugging snippet) can find it
-  localStorage.setItem("APP_TOKEN", clean);
-  localStorage.setItem("appToken", clean);
-}
-
-
-      // Otherwise, exchange to get YOUR token
       const exchanged = await exchangeWithBackend({
         provider: "email",
         email: em,
-        providerId: em, // stable enough for email auth
+        providerId: em,
       });
 
       onComplete?.({ ok: true, provider: "email", exchange: exchanged });
