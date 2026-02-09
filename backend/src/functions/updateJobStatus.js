@@ -45,6 +45,8 @@ async function updateJobStatus(request, context) {
     job.status = newStatus;
     job.updatedAt = new Date().toISOString();
 
+
+    
     // Replace using correct PK
     const pk = getPartitionKey(job);
     await container.item(job.id, pk).replace(job);
