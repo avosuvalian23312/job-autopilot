@@ -5,14 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * Static Web Apps auth:
- * - No JWTs in the frontend
- * - No Authorization headers
+ * Static Web Apps auth (NO JWT):
  * - Redirect to /.auth/login/{provider}
+ * - Use a RELATIVE post_login_redirect_uri so it returns to your app page correctly.
+ * - Do NOT hit the identity.* domain directly.
  */
-function redirectToProvider(provider) {
-  const returnTo = window.location.href;
-  window.location.href = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+function swaLogin(provider, redirectPath) {
+  const path =
+    redirectPath ||
+    `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+  const safe = path && path.startsWith("/") ? path : "/";
+  window.location.href = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(
+    safe
+  )}`;
 }
 
 export default function AuthModal({ open, onClose, onComplete }) {
@@ -22,36 +28,39 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // ✅ Google picker UI ONLY
   const startGoogle = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      redirectToProvider("google");
+      swaLogin("google");
     } finally {
       setBusy(false);
     }
   };
 
+  // ✅ Keep UI (button stays), but route it to Google so you never see Microsoft auth UI
   const startMicrosoft = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      redirectToProvider("aad");
+      // Force Google sign-in (Google picker UI)
+      swaLogin("google");
     } finally {
       setBusy(false);
     }
   };
 
-  // Email-code flow requires a custom identity system (and usually JWTs).
-  // Keeping UI the same, but disabling the flow until you implement a real email provider.
+  // Email-code flow requires a separate provider + backend implementation.
+  // UI unchanged; show message.
   const startEmail = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
+      setErr("Email login is not enabled. Please use Google sign-in.");
       setStep("start");
     } finally {
       setBusy(false);
@@ -63,7 +72,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     setErr("");
     setBusy(true);
     try {
-      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
+      setErr("Email login is not enabled. Please use Google sign-in.");
       setStep("start");
     } finally {
       setBusy(false);
@@ -88,22 +97,27 @@ export default function AuthModal({ open, onClose, onComplete }) {
               </button>
 
               <h2 className="text-2xl font-bold text-white mb-2">Sign in</h2>
-              <p className="text-white/70 mb-6">
-                Choose a provider to continue.
-              </p>
+              <p className="text-white/70 mb-6">Choose a provider to continue.</p>
 
               <div className="space-y-3">
                 <Button onClick={startGoogle} disabled={busy} className="w-full">
                   Continue with Google
                 </Button>
 
-                <Button onClick={startMicrosoft} disabled={busy} className="w-full" variant="secondary">
+                <Button
+                  onClick={startMicrosoft}
+                  disabled={busy}
+                  className="w-full"
+                  variant="secondary"
+                >
                   Continue with Microsoft
                 </Button>
               </div>
 
               <div className="mt-6 border-t border-white/10 pt-6">
-                <div className="text-white/70 text-sm mb-3">Or sign in with email</div>
+                <div className="text-white/70 text-sm mb-3">
+                  Or sign in with email
+                </div>
 
                 <Input
                   placeholder="Enter your email"
@@ -113,7 +127,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 />
 
                 {step === "start" && (
-                  <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
+                  <Button
+                    onClick={startEmail}
+                    disabled={busy}
+                    className="w-full mt-3"
+                  >
                     <Mail className="mr-2 h-4 w-4" />
                     Send Login Code
                   </Button>
@@ -127,7 +145,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                       onChange={(e) => setCode(e.target.value)}
                       className="mt-3"
                     />
-                    <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
+                    <Button
+                      onClick={verifyEmail}
+                      className="w-full mt-3"
+                      disabled={busy}
+                    >
                       Verify Code
                     </Button>
                   </>
