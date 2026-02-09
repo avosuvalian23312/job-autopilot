@@ -5,10 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * Static Web Apps auth (NO JWT):
+ * Azure Static Web Apps auth (NO JWT):
  * - Redirect to /.auth/login/{provider}
  * - Use a RELATIVE post_login_redirect_uri so it returns to your app page correctly.
  * - Do NOT hit the identity.* domain directly.
+ *
+ * Valid providers for SWA typically include:
+ * - "google"
+ * - "aad" (Microsoft Entra ID / Azure AD)
+ * - "github", etc.
  */
 function swaLogin(provider, redirectPath) {
   const path =
@@ -28,7 +33,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // ✅ Google picker UI ONLY
+  // ✅ Google button must go to Google provider
   const startGoogle = async () => {
     if (busy) return;
     setErr("");
@@ -40,14 +45,13 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
   };
 
-  // ✅ Keep UI (button stays), but route it to Google so you never see Microsoft auth UI
+  // ✅ Microsoft button must go to AAD provider (Microsoft UI)
   const startMicrosoft = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      // Force Google sign-in (Google picker UI)
-      swaLogin("google");
+      swaLogin("aad");
     } finally {
       setBusy(false);
     }
@@ -60,7 +64,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     setErr("");
     setBusy(true);
     try {
-      setErr("Email login is not enabled. Please use Google sign-in.");
+      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
       setStep("start");
     } finally {
       setBusy(false);
@@ -72,7 +76,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     setErr("");
     setBusy(true);
     try {
-      setErr("Email login is not enabled. Please use Google sign-in.");
+      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
       setStep("start");
     } finally {
       setBusy(false);
