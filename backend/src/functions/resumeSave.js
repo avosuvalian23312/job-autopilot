@@ -2,8 +2,7 @@ const { CosmosClient } = require("@azure/cosmos");
 
 function getSwaUser(req) {
   const header =
-    req.headers["x-ms-client-principal"] ||
-    req.headers["X-MS-CLIENT-PRINCIPAL"];
+    req.headers["x-ms-client-principal"] || req.headers["X-MS-CLIENT-PRINCIPAL"];
 
   if (!header) return null;
 
@@ -27,43 +26,67 @@ function safeUserId(userId) {
   return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+function stripQuery(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    u.search = "";
+    return u.toString();
+  } catch {
+    return String(url).split("?")[0];
+  }
+}
+
 module.exports = async function (context, req) {
-  // ✅ must be logged in via SWA
+  // Must be logged in via SWA
   const user = getSwaUser(req);
   if (!user) {
-    context.res = { status: 401, jsonBody: { error: "Not authenticated" } };
+    context.res = { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     return;
   }
 
   const body = req.body || {};
-  const fileName = body.fileName || "resume.pdf";
-  const contentType = body.contentType || "application/pdf";
+
+  // ✅ Match your FRONTEND payload
+  const blobName = body.blobName || body.blobPath || "";
+  const originalName = body.originalName || body.fileName || "resume.pdf";
+  const contentType = body.contentType || "application/octet-stream";
   const size = Number(body.size || 0);
 
-  // ✅ where the file is stored in blob
-  // you can also pass blobPath from client, but this keeps it consistent and safe
-  const blobPath =
-    body.blobPath ||
-    `resumes/${safeUserId(user.userId)}/current.pdf`;
+  if (!blobName) {
+    context.res = {
+      status: 400,
+      jsonBody: { ok: false, error: "Missing blobName" },
+    };
+    return;
+  }
+
+  // Optional: if you pass uploadUrl from step 1, store a clean blob URL (no SAS)
+  const blobUrl = body.uploadUrl ? stripQuery(body.uploadUrl) : "";
 
   const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
   const container = cosmos
     .database(process.env.COSMOS_DB_NAME)
     .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
 
-  // ✅ one resume per user (current)
+  // One "current" resume per user, deterministic id per user
+  // (Upsert overwrites same user's current resume)
   const doc = {
-    id: "resume:current",
-    userId: user.userId, // <-- partition key (/userId)
+    id: `resume:current:${safeUserId(user.userId)}`,
+    userId: user.userId, // PK is /userId
     email: user.email,
-    blobPath,
-    fileName,
+
+    blobName,      // <-- EXACT blob path you uploaded to (matches storage)
+    blobUrl,       // optional (no SAS)
+    originalName,
     contentType,
     size,
-    uploadedAt: new Date().toISOString()
+
+    uploadedAt: new Date().toISOString(),
   };
 
-  await container.items.upsert(doc);
+  // ✅ IMPORTANT: pass partitionKey explicitly (PK = /userId)
+  await container.items.upsert(doc, { partitionKey: user.userId });
 
   context.res = { status: 200, jsonBody: { ok: true, resume: doc } };
 };
