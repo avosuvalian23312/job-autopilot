@@ -39,11 +39,29 @@ function stripQuery(url) {
 }
 
 module.exports = async function resumeSave(req, context) {
-  try {
-    // Handle preflight (optional but safe)
-    if (req.method === "OPTIONS") {
-      return { status: 204, headers: { "Access-Control-Allow-Origin": "*" } };
-    }
+  // ✅ Always allow OPTIONS
+  if (req.method === "OPTIONS") {
+    return {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    };
+  }
+
+  const user = getSwaUser(req);
+  if (!user) {
+    return {
+      status: 401,
+      jsonBody: { ok: false, error: "Not authenticated" },
+    };
+  }
+
+  // normal logic continues...
+};
+
 
     // Validate env INSIDE the handler (context exists here)
     if (!process.env.COSMOS_CONNECTION_STRING) {
