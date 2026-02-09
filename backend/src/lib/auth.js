@@ -26,10 +26,11 @@ function requireAuth(req) {
     throw new Error("Missing bearer token");
   }
 
-  const secret = process.env.APP_JWT_SECRET;
-  if (!secret) {
-    throw new Error("Missing APP_JWT_SECRET");
-  }
+  const secret = String(process.env.APP_JWT_SECRET || "").trim();
+if (!secret) {
+  throw new Error("Missing APP_JWT_SECRET");
+}
+
 
   let payload;
   try {
