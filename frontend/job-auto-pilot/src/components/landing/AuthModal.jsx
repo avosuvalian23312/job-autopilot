@@ -336,12 +336,16 @@ export default function AuthModal({ open, onClose, onComplete }) {
       if (!r.ok || !data?.ok) throw new Error(data?.error || "Invalid code");
 
       // If verify endpoint already returns a token, keep it
-      if (data?.token) {
-        localStorage.setItem("APP_TOKEN", data.token);
-        onComplete?.(data);
-        onClose?.();
-        return;
-      }
+      // If backend returns a token in JSON, store it (cookie-based auth is also fine)
+if (data.token) {
+  // normalize accidental "Bearer " prefix
+  const clean = String(data.token).replace(/^Bearer\s+/i, "").trim();
+
+  // store under both keys so all parts of the app (and your debugging snippet) can find it
+  localStorage.setItem("APP_TOKEN", clean);
+  localStorage.setItem("appToken", clean);
+}
+
 
       // Otherwise, exchange to get YOUR token
       const exchanged = await exchangeWithBackend({
