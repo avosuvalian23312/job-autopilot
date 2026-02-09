@@ -83,24 +83,24 @@ async function upsertUser(cosmos, { provider, sub, email, name }) {
   return doc;
 }
 
-const secret = String(process.env.APP_JWT_SECRET || "").trim();
-if (!secret) {
-  throw new Error("Missing APP_JWT_SECRET");
+function signAppToken(user) {
+  if (!process.env.APP_JWT_SECRET) {
+    throw new Error("Missing APP_JWT_SECRET");
+  }
+
+  const userId = user.userId; // already like "google:123..." or "microsoft:abc..."
+
+  return jwt.sign(
+    {
+      uid: userId,        // <-- REQUIRED
+      userId: userId,     // <-- REQUIRED (redundant on purpose)
+      email: user.email,
+      provider: user.provider,
+    },
+    process.env.APP_JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
-
-const userId = user.userId; // already like "google:123..." or "microsoft:abc..."
-
-return jwt.sign(
-  {
-    uid: userId,        // <-- REQUIRED
-    userId: userId,     // <-- REQUIRED (redundant on purpose)
-    email: user.email,
-    provider: user.provider,
-  },
-  secret,
-  { expiresIn: "7d" }
-);
-
 
 
 // ------------------------
