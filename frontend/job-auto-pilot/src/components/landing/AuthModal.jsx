@@ -56,7 +56,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     const r = await fetch(`${apiBaseRef.current}/auth/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      credentials: "omit",
       body: JSON.stringify(payload),
     });
 
