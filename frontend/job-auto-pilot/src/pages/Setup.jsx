@@ -233,7 +233,7 @@ ${skills}`;
         }
 
         // 3) Save resume metadata into Cosmos (per-user, server derives userId)
-        const saveResp = await apiFetch("/api/resume/Save", {
+        const saveResp = await apiFetch("/api/resume/save", {
           method: "POST",
           body: {
             blobName,
