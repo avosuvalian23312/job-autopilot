@@ -1,33 +1,6 @@
 {
-  "auth": {
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "enabled": true
-      }
-    }
-  },
-  "routes": [
-    {
-      "route": "/.auth/*",
-      "allowedRoles": ["anonymous"]
-    },
-    {
-      "route": "/login",
-      "allowedRoles": ["anonymous"]
-    }
-  ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": [
-      "/assets/*",
-      "/*.css",
-      "/*.js",
-      "/*.ico",
-      "/*.png",
-      "/*.jpg",
-      "/*.svg",
-      "/config.json",
-      "/.auth/*"
-    ]
+    "exclude": ["/assets/*", "/*.css", "/*.js", "/*.ico", "/*.png", "/*.jpg", "/*.svg", "/config.json"]
   }
 }
