@@ -5,33 +5,48 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Rocket, Upload, FileText, Briefcase, Check, ChevronRight } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Rocket,
+  Upload,
+  FileText,
+  Briefcase,
+  Check,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 
-const targetRoles = ["Software Engineer", "Product Manager", "Designer", "Data Scientist", "Marketing Manager", "Sales", "Customer Success", "Other"];
+const targetRoles = [
+  "Software Engineer",
+  "Product Manager",
+  "Designer",
+  "Data Scientist",
+  "Marketing Manager",
+  "Sales",
+  "Customer Success",
+  "Other",
+];
 const seniorityLevels = ["Intern", "Junior", "Mid-Level", "Senior", "Lead", "Principal"];
 const locationPrefs = ["Remote", "Hybrid", "On-site"];
 const tones = ["Professional", "Confident", "Concise"];
 
 /**
- * Reads your stored app JWT from localStorage.
- * Supports multiple key names so it works with whatever your auth UI saved.
+ * ✅ SWA auth (NO JWT):
+ * Call your /api/* endpoints normally. SWA uses cookies and injects identity headers server-side.
  */
-
-
-
-
-/**
- * Simple helper for calling your SWA API with JSON + Bearer token.
- */
-async function apiFetch(path, { method = "GET", token, body } = {}) {
+async function apiFetch(path, { method = "GET", body } = {}) {
   const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(path, {
     method,
     headers,
+    credentials: "include", // ✅ important for SWA auth cookies
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -80,7 +95,9 @@ export default function Setup() {
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
   const [linkedin, setLinkedin] = useState("");
-  const [workExperience, setWorkExperience] = useState([{ company: "", role: "", dates: "", bullets: "" }]);
+  const [workExperience, setWorkExperience] = useState([
+    { company: "", role: "", dates: "", bullets: "" },
+  ]);
   const [education, setEducation] = useState([{ school: "", degree: "", dates: "" }]);
   const [skills, setSkills] = useState("");
 
@@ -93,13 +110,14 @@ export default function Setup() {
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFile(file);
-    }
+    if (file) setUploadedFile(file);
   };
 
   const addWorkExperience = () => {
-    setWorkExperience([...workExperience, { company: "", role: "", dates: "", bullets: "" }]);
+    setWorkExperience([
+      ...workExperience,
+      { company: "", role: "", dates: "", bullets: "" },
+    ]);
   };
 
   const updateWorkExperience = (index, field, value) => {
@@ -110,13 +128,13 @@ export default function Setup() {
 
   const generateResumeText = () => {
     const workSection = workExperience
-      .filter(w => w.company && w.role)
-      .map(w => `${w.role} at ${w.company} (${w.dates})\n${w.bullets}`)
+      .filter((w) => w.company && w.role)
+      .map((w) => `${w.role} at ${w.company} (${w.dates})\n${w.bullets}`)
       .join("\n\n");
 
     const eduSection = education
-      .filter(e => e.school && e.degree)
-      .map(e => `${e.degree}, ${e.school} (${e.dates})`)
+      .filter((e) => e.school && e.degree)
+      .map((e) => `${e.degree}, ${e.school} (${e.dates})`)
       .join("\n");
 
     return `${fullName}
@@ -157,8 +175,8 @@ ${skills}`;
   };
 
   const toggleRole = (role) => {
-    setSelectedRoles(prev =>
-      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+    setSelectedRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
     );
   };
 
@@ -169,7 +187,7 @@ ${skills}`;
         seniority,
         locationPreference: locationPref,
         preferredCity,
-        tone
+        tone,
       };
 
       // Store preferences + onboarding flag like before (UI expects these)
@@ -183,16 +201,9 @@ ${skills}`;
           return;
         }
 
-        const token = getStoredAppToken();
-        if (!token) {
-          toast.error("You're not logged in. Please sign in again.");
-          return;
-        }
-
-        // 1) Ask backend for SAS upload URL
-        const sasResp = await apiFetch("/api/resume/upload-url", {
+        // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
+        const sasResp = await apiFetch("/api/resumeUploadUrl", {
           method: "POST",
-          token,
           body: {
             fileName: uploadedFile.name,
             contentType: uploadedFile.type || "application/octet-stream",
@@ -200,7 +211,14 @@ ${skills}`;
         });
 
         if (!sasResp.ok || !sasResp.data?.ok) {
-          const msg = sasResp.data?.error || `Failed to get upload URL (HTTP ${sasResp.status})`;
+          // Common case: not logged in -> backend returns 401
+          if (sasResp.status === 401) {
+            toast.error("You're not logged in. Please sign in again.");
+            return;
+          }
+          const msg =
+            sasResp.data?.error ||
+            `Failed to get upload URL (HTTP ${sasResp.status})`;
           toast.error(msg);
           return;
         }
@@ -214,10 +232,9 @@ ${skills}`;
           return;
         }
 
-        // 3) Save resume metadata into user doc (Cosmos)
-        const saveResp = await apiFetch("/api/resume/save", {
+        // 3) Save resume metadata into Cosmos (per-user, server derives userId)
+        const saveResp = await apiFetch("/api/resumeSave", {
           method: "POST",
-          token,
           body: {
             blobName,
             originalName: uploadedFile.name,
@@ -227,7 +244,9 @@ ${skills}`;
         });
 
         if (!saveResp.ok || !saveResp.data?.ok) {
-          const msg = saveResp.data?.error || `Failed to save resume (HTTP ${saveResp.status})`;
+          const msg =
+            saveResp.data?.error ||
+            `Failed to save resume (HTTP ${saveResp.status})`;
           toast.error(msg);
           return;
         }
@@ -238,7 +257,7 @@ ${skills}`;
           name: uploadedFile.name,
           source: "upload",
           blobName,
-          created: new Date().toISOString()
+          created: new Date().toISOString(),
         };
 
         localStorage.setItem("resumes", JSON.stringify([resumeData]));
@@ -249,12 +268,11 @@ ${skills}`;
         // Paste/build are still local-only for now (no UI changes)
         const resumeData = {
           id: Date.now(),
-          name: resumeSource === "paste"
-            ? "Pasted Resume"
-            : `${fullName} Resume`,
+          name:
+            resumeSource === "paste" ? "Pasted Resume" : `${fullName} Resume`,
           content: resumeText,
           source: resumeSource,
-          created: new Date().toISOString()
+          created: new Date().toISOString(),
         };
 
         localStorage.setItem("resumes", JSON.stringify([resumeData]));
@@ -290,9 +308,9 @@ ${skills}`;
               <p className="text-xs text-amber-400">Testing Mode: Setup shown every login</p>
             </div>
             <div className="flex items-center gap-2 text-sm text-white/40">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 1 ? 'bg-purple-600 text-white' : 'bg-white/5'}`}>1</div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 1 ? "bg-purple-600 text-white" : "bg-white/5"}`}>1</div>
               <div className="w-8 h-0.5 bg-white/10" />
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 2 ? 'bg-purple-600 text-white' : 'bg-white/5'}`}>2</div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 2 ? "bg-purple-600 text-white" : "bg-white/5"}`}>2</div>
             </div>
           </div>
         </div>
@@ -437,7 +455,7 @@ ${skills}`;
               <div>
                 <h3 className="text-lg font-semibold text-white mb-3">Target roles</h3>
                 <div className="flex flex-wrap gap-2">
-                  {targetRoles.map(role => (
+                  {targetRoles.map((role) => (
                     <button
                       key={role}
                       onClick={() => toggleRole(role)}
@@ -461,8 +479,10 @@ ${skills}`;
                       <SelectValue placeholder="Select seniority" />
                     </SelectTrigger>
                     <SelectContent>
-                      {seniorityLevels.map(level => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
+                      {seniorityLevels.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {level}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -475,8 +495,10 @@ ${skills}`;
                       <SelectValue placeholder="Select preference" />
                     </SelectTrigger>
                     <SelectContent>
-                      {locationPrefs.map(pref => (
-                        <SelectItem key={pref} value={pref}>{pref}</SelectItem>
+                      {locationPrefs.map((pref) => (
+                        <SelectItem key={pref} value={pref}>
+                          {pref}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -499,8 +521,10 @@ ${skills}`;
                       <SelectValue placeholder="Select tone" />
                     </SelectTrigger>
                     <SelectContent>
-                      {tones.map(t => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      {tones.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

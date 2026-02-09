@@ -1,74 +1,69 @@
-// src/functions/resumeSave.js
 const { CosmosClient } = require("@azure/cosmos");
-const auth = require("../lib/auth");
 
-module.exports = async function resumeSave(req, context) {
-  if (req.method === "OPTIONS") {
-    return { status: 204, headers: cors() };
-  }
+function getSwaUser(req) {
+  const header =
+    req.headers["x-ms-client-principal"] ||
+    req.headers["X-MS-CLIENT-PRINCIPAL"];
 
-  let user;
-  try {
-    user = auth.requireAuth(req);
-  } catch (e) {
-    return json(401, { ok: false, error: e.message });
-  }
+  if (!header) return null;
 
   try {
-    const body = typeof req.json === "function" ? await req.json() : {};
-    if (!body.blobName) {
-      return json(400, { ok: false, error: "blobName required" });
-    }
+    const decoded = Buffer.from(header, "base64").toString("utf8");
+    const principal = JSON.parse(decoded);
+    if (!principal?.userId) return null;
 
-    const client = new CosmosClient({
-      endpoint: process.env.COSMOS_ENDPOINT,
-      key: process.env.COSMOS_KEY,
-    });
+    const email =
+      principal.claims?.find((c) => c.typ === "emails")?.val ||
+      principal.userDetails ||
+      "";
 
-    const db = client.database(process.env.COSMOS_DATABASE || "jobautopilot");
-    const users = db.container(process.env.USERS_CONTAINER || "users");
-
-    const id = user.userId;
-    const now = Date.now();
-
-    let existing = {};
-    try {
-      const r = await users.item(id, id).read();
-      existing = r.resource || {};
-    } catch {}
-
-    await users.items.upsert({
-      ...existing,
-      id,
-      userId: id,
-      resume: {
-        blobName: body.blobName,
-        originalName: body.originalName || null,
-        size: body.size || null,
-        uploadedAt: now,
-      },
-      updatedAt: now,
-    });
-
-    return json(200, { ok: true });
-  } catch (e) {
-    context.log("resumeSave error", e);
-    return json(500, { ok: false, error: e.message });
+    return { userId: principal.userId, email };
+  } catch {
+    return null;
   }
+}
+
+function safeUserId(userId) {
+  return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+module.exports = async function (context, req) {
+  // ✅ must be logged in via SWA
+  const user = getSwaUser(req);
+  if (!user) {
+    context.res = { status: 401, jsonBody: { error: "Not authenticated" } };
+    return;
+  }
+
+  const body = req.body || {};
+  const fileName = body.fileName || "resume.pdf";
+  const contentType = body.contentType || "application/pdf";
+  const size = Number(body.size || 0);
+
+  // ✅ where the file is stored in blob
+  // you can also pass blobPath from client, but this keeps it consistent and safe
+  const blobPath =
+    body.blobPath ||
+    `resumes/${safeUserId(user.userId)}/current.pdf`;
+
+  const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+  const container = cosmos
+    .database(process.env.COSMOS_DB_NAME)
+    .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
+
+  // ✅ one resume per user (current)
+  const doc = {
+    id: "resume:current",
+    userId: user.userId, // <-- partition key (/userId)
+    email: user.email,
+    blobPath,
+    fileName,
+    contentType,
+    size,
+    uploadedAt: new Date().toISOString()
+  };
+
+  await container.items.upsert(doc);
+
+  context.res = { status: 200, jsonBody: { ok: true, resume: doc } };
 };
-
-function cors() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-  };
-}
-
-function json(status, body) {
-  return {
-    status,
-    headers: { ...cors(), "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
-}
