@@ -63,9 +63,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     const data = await r.json().catch(() => null);
 
     if (!r.ok || !data?.ok) {
-      const msg =
-        data?.error ||
-        `Auth exchange failed (${r.status})`;
+      const msg = data?.error || `Auth exchange failed (${r.status})`;
       throw new Error(msg);
     }
 
@@ -87,7 +85,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
     const clientId = (cfg?.GOOGLE_CLIENT_ID || "").trim();
 
     if (!clientId || clientId.includes("...")) {
-      throw new Error("Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...').");
+      throw new Error(
+        "Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...')."
+      );
     }
 
     await loadScriptOnce("https://accounts.google.com/gsi/client");
@@ -96,55 +96,61 @@ export default function AuthModal({ open, onClose, onComplete }) {
       throw new Error("Google Identity Services failed to load.");
     }
 
-    googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: "openid profile email",
-      callback: async (resp) => {
-        try {
-          setErr("");
-          setBusy(true);
+    googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient(
+      {
+        client_id: clientId,
+        scope: "openid profile email",
+        callback: async (resp) => {
+          try {
+            setErr("");
+            setBusy(true);
 
-          if (!resp?.access_token) {
-            throw new Error(resp?.error_description || "Google sign-in failed");
-          }
+            if (!resp?.access_token) {
+              throw new Error(resp?.error_description || "Google sign-in failed");
+            }
 
-          // Get profile (email/name/picture/sub) using the access token
-          const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${resp.access_token}` },
-          });
+            // Get profile (email/name/picture/sub) using the access token
+            const u = await fetch(
+              "https://www.googleapis.com/oauth2/v3/userinfo",
+              {
+                headers: { Authorization: `Bearer ${resp.access_token}` },
+              }
+            );
 
-          if (!u.ok) throw new Error("Failed to fetch Google profile");
+            if (!u.ok) throw new Error("Failed to fetch Google profile");
 
-          const profile = await u.json();
+            const profile = await u.json();
 
-          // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
-          const exchanged = await exchangeWithBackend({
-            provider: "google",
-            email: profile.email,
-            providerId: profile.sub || profile.email, // stable unique ID preferred
-            // optional: send provider token for server-side verification if you implement it
-            providerAccessToken: resp.access_token,
-          });
-
-          onComplete?.({
-            ok: true,
-            provider: "google",
-            user: {
+            // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+            // Backend expects `idToken` if you want strict verification, but it can also accept providerId.
+            const exchanged = await exchangeWithBackend({
+              provider: "google",
               email: profile.email,
-              name: profile.name,
-              picture: profile.picture,
-            },
-            exchange: exchanged,
-          });
+              providerId: profile.sub || profile.email, // stable unique ID preferred
+              // NOTE: backend ignores providerAccessToken; keep it harmlessly for future server-side validation if you add it.
+              providerAccessToken: resp.access_token,
+            });
 
-          onClose?.();
-        } catch (e) {
-          setErr(e?.message || "Google sign-in failed");
-        } finally {
-          setBusy(false);
-        }
-      },
-    });
+            onComplete?.({
+              ok: true,
+              provider: "google",
+              user: {
+                email: profile.email,
+                name: profile.name,
+                picture: profile.picture,
+              },
+              exchange: exchanged,
+            });
+
+            onClose?.();
+          } catch (e) {
+            setErr(e?.message || "Google sign-in failed");
+          } finally {
+            setBusy(false);
+          }
+        },
+      }
+    );
 
     googleReadyRef.current = true;
   };
@@ -173,8 +179,12 @@ export default function AuthModal({ open, onClose, onComplete }) {
     const cfg = await loadConfig();
 
     const clientId = (cfg?.ENTRA_CLIENT_ID || "").trim();
-    const authority = (cfg?.ENTRA_AUTHORITY || "https://login.microsoftonline.com/common").trim();
-    const redirectUri = (cfg?.ENTRA_REDIRECT_URI || window.location.origin + "/").trim();
+    const authority = (
+      cfg?.ENTRA_AUTHORITY || "https://login.microsoftonline.com/common"
+    ).trim();
+    const redirectUri = (
+      cfg?.ENTRA_REDIRECT_URI || window.location.origin + "/"
+    ).trim();
 
     if (!clientId) throw new Error("Missing ENTRA_CLIENT_ID in /config.json");
     if (!authority.startsWith("https://login.microsoftonline.com/")) {
@@ -210,10 +220,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       const claims = account.idTokenClaims || {};
       const email =
-        account.username ||
-        claims.preferred_username ||
-        claims.email ||
-        "";
+        account.username || claims.preferred_username || claims.email || "";
 
       const providerId =
         // AAD usually provides oid (object id) which is stable per tenant
@@ -224,11 +231,12 @@ export default function AuthModal({ open, onClose, onComplete }) {
         email;
 
       // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+      // Backend expects `idToken` specifically (field name must be `idToken`).
       const exchanged = await exchangeWithBackend({
         provider: "microsoft",
         email,
         providerId,
-        tenantId: claims.tid || account.tenantId || "",
+        idToken: loginResp.idToken || "", // ✅ REQUIRED by backend for real verification
       });
 
       onComplete?.({
@@ -305,7 +313,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
       });
 
       const data = await r.json().catch(() => null);
-      if (!r.ok || !data?.ok) throw new Error(data?.error || "Failed to send code");
+      if (!r.ok || !data?.ok)
+        throw new Error(data?.error || "Failed to send code");
 
       setStep("email_code");
     } catch (e) {
@@ -398,43 +407,64 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 </Button>
               </div>
 
-              {/* Optional: keep your email-code login */}
-              <div className="mt-4">
-                <Input
-                  placeholder="Enter your email"
-                  value={email}
-                  disabled={busy || step === "email_code"}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-
-                {step === "start" && (
-                  <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
-                    <Mail className="mr-2 h-4 w-4" />
-                    Send Login Code
-                  </Button>
-                )}
-
-                {step === "email_code" && (
+              <div className="mt-6 border-t border-white/10 pt-6">
+                {step === "start" ? (
                   <>
-                    <Input
-                      placeholder="Enter code"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      className="mt-3"
-                    />
-                    <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
-                      Verify Code
-                    </Button>
+                    <div className="flex items-center gap-2 text-white/80 mb-2">
+                      <Mail className="h-4 w-4" />
+                      <span>Continue with email</span>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="bg-black/40 text-white border-white/10"
+                        disabled={busy}
+                      />
+                      <Button onClick={startEmail} disabled={busy}>
+                        Send
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-white/80 mb-2">
+                      Enter the code sent to <span className="text-white">{email}</span>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        placeholder="123456"
+                        className="bg-black/40 text-white border-white/10"
+                        disabled={busy}
+                      />
+                      <Button onClick={verifyEmail} disabled={busy}>
+                        Verify
+                      </Button>
+                    </div>
+
+                    <button
+                      className="mt-2 text-sm text-white/60 hover:text-white"
+                      disabled={busy}
+                      onClick={() => setStep("start")}
+                    >
+                      Use a different email
+                    </button>
                   </>
                 )}
               </div>
 
-              {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
+              {err ? (
+                <div className="mt-4 text-sm text-red-400">{err}</div>
+              ) : null}
             </div>
           </motion.div>
         </>
       )}
     </AnimatePresence>
-    
   );
 }
