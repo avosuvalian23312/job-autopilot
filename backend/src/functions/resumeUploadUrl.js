@@ -6,51 +6,27 @@ const {
   BlobSASPermissions,
 } = require("@azure/storage-blob");
 
-const jwt = require("jsonwebtoken");
-const auth = require("../lib/auth");
+const { requireUser } = require("../lib/auth");
 
 module.exports = async function resumeUploadUrl(req, context) {
   if (req.method === "OPTIONS") {
     return { status: 204, headers: cors() };
   }
 
-  // ---- AUTH (with TEMP debug) ----
+  // --- AUTH: SWA principal header (no JWT) ---
   let user;
   try {
-    user = auth.requireAuth(req);
+    user = requireUser(req);
   } catch (e) {
-    // TEMP DEBUG: helps confirm env mismatch (remove after fixing)
-    const rawAuth =
-      (req?.headers && typeof req.headers.get === "function"
-        ? req.headers.get("Authorization") || req.headers.get("authorization")
-        : (req?.headers?.Authorization || req?.headers?.authorization)) || "";
-
-    const token = String(rawAuth).replace(/^Bearer\s+/i, "").trim();
-
-    let alg = null;
-    let decodedPayload = null;
-    try {
-      const decoded = jwt.decode(token, { complete: true });
-      alg = decoded?.header?.alg || null;
-      decodedPayload = decoded?.payload || null;
-    } catch {}
-
     return json(401, {
       ok: false,
       error: e.message,
-      debug: {
-        hasAppJwtSecret: !!process.env.APP_JWT_SECRET,
-        appJwtSecretLen: (process.env.APP_JWT_SECRET || "").length,
-        authHeaderPresent: !!rawAuth,
-        tokenLooksJwt: token.split(".").length === 3,
-        alg,
-        // safe-ish: shows claims without verifying (remove after fixing)
-        payload: decodedPayload,
-      },
+      hint:
+        "Make sure you are logged in via Static Web Apps auth and call /api/* through the SWA site (not direct func host).",
     });
   }
 
-  // ---- MAIN LOGIC ----
+  // --- MAIN LOGIC ---
   try {
     const body = typeof req.json === "function" ? await req.json() : {};
     const fileName = body.fileName;
@@ -73,7 +49,8 @@ module.exports = async function resumeUploadUrl(req, context) {
     if (!accountName || !accountKey) {
       return json(500, {
         ok: false,
-        error: "Invalid AZURE_STORAGE_CONNECTION_STRING (missing AccountName/AccountKey)",
+        error:
+          "Invalid AZURE_STORAGE_CONNECTION_STRING (missing AccountName/AccountKey)",
       });
     }
 
@@ -86,8 +63,13 @@ module.exports = async function resumeUploadUrl(req, context) {
     const container = service.getContainerClient(containerName);
     await container.createIfNotExists();
 
+    // Safe naming
     const safeFile = String(fileName).replace(/[^\w.\-()+ ]+/g, "_");
-    const blobName = `${user.userId}/${Date.now()}_${safeFile}`;
+
+    // Use stable user id; make it path-safe
+    const userFolder = String(user.id).replace(/[^a-zA-Z0-9._-]+/g, "_");
+
+    const blobName = `${userFolder}/${Date.now()}_${safeFile}`;
     const blob = container.getBlockBlobClient(blobName);
 
     const expiresOn = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -95,7 +77,7 @@ module.exports = async function resumeUploadUrl(req, context) {
       {
         containerName,
         blobName,
-        permissions: BlobSASPermissions.parse("cw"),
+        permissions: BlobSASPermissions.parse("cw"), // create + write
         expiresOn,
       },
       cred
@@ -105,6 +87,7 @@ module.exports = async function resumeUploadUrl(req, context) {
       ok: true,
       blobName,
       uploadUrl: `${blob.url}?${sas}`,
+      userId: user.id, // helpful for debugging
     });
   } catch (e) {
     context.log("resumeUploadUrl error", e);
@@ -129,7 +112,8 @@ function parseConn(c) {
 function cors() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    // remove Authorization since we don't use it anymore
+    "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 }

@@ -1,12 +1,12 @@
-const jwt = require("jsonwebtoken");
+// src/lib/auth.js
+// Static Web Apps auth: trust the platform header (no JWT secrets)
 
 function readHeader(req, name) {
   const lower = name.toLowerCase();
   const h = req?.headers;
-
   if (!h) return "";
 
-  // Azure Functions sometimes provides Headers-like object
+  // Azure Functions can provide a Headers-like object
   if (typeof h.get === "function") {
     return h.get(name) || h.get(lower) || "";
   }
@@ -15,49 +15,41 @@ function readHeader(req, name) {
   return h[name] || h[lower] || "";
 }
 
-function requireAuth(req) {
-  const raw = readHeader(req, "Authorization");
-  if (!raw) {
-    throw new Error("Missing Authorization header");
+function requireUser(req) {
+  // Static Web Apps injects this after the user logs in
+  const principal = readHeader(req, "x-ms-client-principal");
+  if (!principal) {
+    throw new Error("Not authenticated (missing x-ms-client-principal). Use /login and call through SWA.");
   }
 
-  const token = raw.replace(/^Bearer\s+/i, "").trim();
-  if (!token) {
-    throw new Error("Missing bearer token");
-  }
-
-  const secret = process.env.APP_JWT_SECRET;
-  if (!secret) {
-    throw new Error("Missing APP_JWT_SECRET");
-  }
-
-  let payload;
+  let decoded;
   try {
-    payload = jwt.verify(token, secret, {
-      algorithms: ["HS256"],
-      // ❌ DO NOT validate issuer/audience — you are not using APP_URL
-    });
-  } catch (e) {
-    throw new Error(`JWT verification failed: ${e.message}`);
+    decoded = Buffer.from(principal, "base64").toString("utf8");
+  } catch {
+    throw new Error("Invalid x-ms-client-principal (base64 decode failed).");
   }
 
-  // ✅ ACCEPT ALL VALID USER ID CLAIMS
-  const userId =
-    payload.userId ||
-    payload.id ||
-    payload.uid ||
-    payload.sub;
-
-  if (!userId) {
-    throw new Error("Token missing user identifier");
+  let user;
+  try {
+    user = JSON.parse(decoded);
+  } catch {
+    throw new Error("Invalid x-ms-client-principal (JSON parse failed).");
   }
+
+  if (!user?.userId || !user?.identityProvider) {
+    throw new Error("Invalid principal (missing userId/identityProvider).");
+  }
+
+  const id = `${user.identityProvider}:${user.userId}`;
 
   return {
-    userId,
-    email: payload.email || null,
-    claims: payload,
+    id, // stable unique key (recommended for Cosmos / paths)
+    userId: user.userId,
+    provider: user.identityProvider,
+    email: user.userDetails || null,
+    claims: user.claims || [],
+    raw: user,
   };
 }
 
-
-module.exports = { requireAuth };
+module.exports = { requireUser };
