@@ -69,11 +69,19 @@ export default function AuthModal({ open, onClose, onComplete }) {
       throw new Error(msg);
     }
 
-    // If backend returns a token in JSON, store it (cookie-based auth is also fine)
-   const t = data.appToken || data.token;
+   // ✅ ONLY store your backend-issued app JWT.
+// Never store generic `data.token` (could be provider token / temp token).
+const t = data.appToken;
+
 if (t) {
-  localStorage.setItem("APP_TOKEN", t);
+  // normalize accidental quotes / Bearer prefix
+  const clean = String(t).replace(/^Bearer\s+/i, "").replace(/^"|"$/g, "").trim();
+
+  // store under both keys for compatibility across your app
+  localStorage.setItem("APP_TOKEN", clean);
+  localStorage.setItem("appToken", clean);
 }
+
 
 
     return data; // { ok, token?, user? ... }
