@@ -47,22 +47,36 @@ async function apiFetch(path, { method = "GET", token, body } = {}) {
     headers["Authorization"] = `Bearer ${clean}`;
   }
 
+  export async function apiFetch(path, opts = {}) {
+  const method = opts.method || "GET";
+
+  // ✅ always prefer your app JWT
+  const appToken =
+    opts.token ||
+    localStorage.getItem("APP_TOKEN") ||
+    localStorage.getItem("appToken") ||
+    null;
+
+  const headers = {
+    ...(opts.headers || {}),
+    ...(opts.body ? { "Content-Type": "application/json" } : {}),
+    ...(appToken ? { Authorization: `Bearer ${appToken}` } : {}),
+  };
+
   const res = await fetch(path, {
     method,
     headers,
-    credentials: "include", // ✅ CRITICAL for SWA/cookie sessions
-    body: body ? JSON.stringify(body) : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
 
   const text = await res.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
-  }
+  let data;
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
 
-  return { ok: res.ok, status: res.status, data };
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
 /**
