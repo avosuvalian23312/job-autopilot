@@ -202,7 +202,7 @@ ${skills}`;
         }
 
         // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
-        const sasResp = await apiFetch("/api/resumeUploadUrl", {
+       const sasResp = await apiFetch("/api/resume/upload-url", {
           method: "POST",
           body: {
             fileName: uploadedFile.name,
@@ -233,7 +233,7 @@ ${skills}`;
         }
 
         // 3) Save resume metadata into Cosmos (per-user, server derives userId)
-        const saveResp = await apiFetch("/api/resumeSave", {
+        const saveResp = await apiFetch("/api/resume/Save", {
           method: "POST",
           body: {
             blobName,
