@@ -89,17 +89,19 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const exchangeWithBackend = async (payload) => {
     await loadConfig();
 
-    const r = await fetch(`${apiBaseRef.current}/auth/exchange`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "omit",
-      body: JSON.stringify(payload),
-    });
+    const base = String(apiBaseRef.current || "/api").replace(/\/+$/, "");
+const r = await fetch(`${base}/authExchange`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "omit",
+  body: JSON.stringify(payload),
+});
+
 
     const data = await r.json().catch(() => null);
 
     if (!r.ok || !data?.ok) {
-      const msg = data?.error || `Auth exchange failed (${r.status})`;
+      const msg = data?.error || `Auth exchange failed (${r.status}) at ${base}/authExchange`;
       throw new Error(msg);
     }
 
