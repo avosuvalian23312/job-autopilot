@@ -32,7 +32,7 @@ jobs:
           app_location: "frontend/job-auto-pilot"
 
           # ✅ CRA => build, Vite => dist
-          output_location: "build"
+          output_location: "dist"
 
           # ✅ Functions folder
           api_location: "backend"
@@ -48,4 +48,5 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_RED_BEACH_033073710 }}
           action: "close"
+
 
