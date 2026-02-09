@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 
 function readHeader(req, name) {
   try {
-    // Azure Functions v4 style
+    // Functions v4: req.headers is a Headers-like object with get()
     if (req?.headers && typeof req.headers.get === "function") {
       return req.headers.get(name) || req.headers.get(name.toLowerCase()) || null;
     }
@@ -44,10 +44,8 @@ function requireAuth(req) {
     throw new Error("Unauthorized: invalid token");
   }
 
-  const userId = decoded.userId || decoded.uid;
-  if (!userId) {
-    throw new Error("Unauthorized (missing userId)");
-  }
+  const userId = decoded.userId || decoded.uid || null;
+  if (!userId) throw new Error("Unauthorized (missing userId)");
 
   return {
     userId,
