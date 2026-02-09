@@ -1,5 +1,22 @@
 const { CosmosClient } = require("@azure/cosmos");
 
+
+if (!process.env.COSMOS_CONNECTION_STRING) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_CONNECTION_STRING" } };
+  return;
+}
+if (!process.env.COSMOS_DB_NAME) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_DB_NAME" } };
+  return;
+}
+if (!process.env.COSMOS_RESUMES_CONTAINER_NAME) {
+  context.res = { status: 500, jsonBody: { error: "Missing COSMOS_RESUMES_CONTAINER_NAME" } };
+  return;
+}
+
+
+
+
 function getSwaUser(req) {
   const header =
     req.headers["x-ms-client-principal"] || req.headers["X-MS-CLIENT-PRINCIPAL"];
