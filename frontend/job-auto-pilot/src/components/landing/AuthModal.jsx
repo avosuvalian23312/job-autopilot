@@ -8,456 +8,433 @@ import { PublicClientApplication } from "@azure/msal-browser";
 function loadScriptOnce(src) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) return resolve();
+    if (existing) return resolve(true);
 
     const s = document.createElement("script");
     s.src = src;
     s.async = true;
-    s.onload = resolve;
+    s.defer = true;
+    s.onload = () => resolve(true);
     s.onerror = reject;
     document.head.appendChild(s);
   });
 }
 
-function normalizeToken(raw) {
-  if (!raw || typeof raw !== "string") return null;
-  let t = raw.trim();
-
-  // Remove accidental JSON quotes
-  t = t.replace(/^"|"$/g, "");
-
-  // If token was stored with Bearer prefix, strip it
-  t = t.replace(/^Bearer\s+/i, "");
-
-  // If whitespace snuck in, take first chunk
-  if (t.includes(" ")) t = t.split(/\s+/)[0];
-
-  return t || null;
-}
-
 export default function AuthModal({ open, onClose, onComplete }) {
-  const [tab, setTab] = useState("oauth");
   const [email, setEmail] = useState("");
-  const [magicSent, setMagicSent] = useState(false);
   const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState("start"); // "start" | "email_code"
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   const cfgRef = useRef(null);
   const apiBaseRef = useRef("/api");
+
+  // Google GIS popup
+  const googleReadyRef = useRef(false);
+  const googleTokenClientRef = useRef(null);
+
+  // Microsoft MSAL popup
+  const msalReadyRef = useRef(false);
   const msalRef = useRef(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        // If you have a /config.json in your public root, this will load it
-        const r = await fetch("/config.json", { cache: "no-store" });
-        if (r.ok) {
-          const cfg = await r.json();
-          cfgRef.current = cfg;
-          apiBaseRef.current = cfgRef.current?.API_BASE || "/api";
-        }
-      } catch {
-        // ignore
-      }
-    })();
-  }, []);
+  const loadConfig = async () => {
+    if (cfgRef.current) return cfgRef.current;
+    const res = await fetch("/config.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("Missing /config.json");
+    cfgRef.current = await res.json();
+    apiBaseRef.current = cfgRef.current?.API_BASE || "/api";
+    return cfgRef.current;
+  };
 
+  // ---------------------------
+  // APP TOKEN EXCHANGE (YOUR backend)
+  // ---------------------------
   const exchangeWithBackend = async (payload) => {
+    await loadConfig();
+
     const r = await fetch(`${apiBaseRef.current}/auth/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(payload),
     });
 
-    let data = null;
-    try {
-      data = await r.json();
-    } catch {
-      // ignore
-    }
+    const data = await r.json().catch(() => null);
 
-    if (!r.ok) {
-      const msg = data?.error || `Auth exchange failed (${r.status})`;
+    if (!r.ok || !data?.ok) {
+      const msg =
+        data?.error ||
+        `Auth exchange failed (${r.status})`;
       throw new Error(msg);
     }
 
     // If backend returns a token in JSON, store it (cookie-based auth is also fine)
     if (data.token) {
-      const t = normalizeToken(data.token);
-      if (t) {
-        localStorage.setItem("APP_TOKEN", t);
-        // Optional aliases for other parts of the app
-        localStorage.setItem("appToken", t);
-        localStorage.setItem("authToken", t);
-      }
+      localStorage.setItem("APP_TOKEN", data.token);
     }
 
     return data; // { ok, token?, user? ... }
   };
 
+  // ---------------------------
   // GOOGLE: GIS token popup
-  const handleGoogle = async () => {
-    setErr("");
-    setLoading(true);
-    try {
-      await loadScriptOnce("https://accounts.google.com/gsi/client");
+  // ---------------------------
+  const preloadGoogle = async () => {
+    if (googleReadyRef.current) return;
 
-      const clientId =
-        cfgRef.current?.GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const cfg = await loadConfig();
+    const clientId = (cfg?.GOOGLE_CLIENT_ID || "").trim();
 
-      if (!clientId) {
-        throw new Error(
-          "Missing GOOGLE_CLIENT_ID. Set VITE_GOOGLE_CLIENT_ID or /config.json GOOGLE_CLIENT_ID."
-        );
-      }
+    if (!clientId || clientId.includes("...")) {
+      throw new Error("Invalid GOOGLE_CLIENT_ID in /config.json (must be full value, no '...').");
+    }
 
-      // Request an access token (not an id_token) via GIS token client
-      const tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "openid email profile",
-        callback: async (resp) => {
-          try {
-            if (!resp?.access_token) {
-              throw new Error("Google auth failed: missing access_token");
-            }
+    await loadScriptOnce("https://accounts.google.com/gsi/client");
 
-            // Get profile (email/name/picture/sub) using the access token
-            const pr = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: `Bearer ${resp.access_token}` },
-            });
-            const profile = await pr.json();
+    if (!window.google?.accounts?.oauth2?.initTokenClient) {
+      throw new Error("Google Identity Services failed to load.");
+    }
 
-            // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
-            const exchanged = await exchangeWithBackend({
-              provider: "google",
-              providerProfile: profile,
-              // optional: send provider token for server-side verification if you implement it
-              providerAccessToken: resp.access_token,
-            });
+    googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "openid profile email",
+      callback: async (resp) => {
+        try {
+          setErr("");
+          setBusy(true);
 
-            onComplete?.({
-              ok: true,
-              provider: "google",
-              providerProfile: profile,
-              exchange: exchanged,
-            });
-          } catch (e) {
-            setErr(e?.message || "Google login failed");
-          } finally {
-            setLoading(false);
+          if (!resp?.access_token) {
+            throw new Error(resp?.error_description || "Google sign-in failed");
           }
-        },
-      });
 
-      tokenClient.requestAccessToken({ prompt: "consent" });
+          // Get profile (email/name/picture/sub) using the access token
+          const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: `Bearer ${resp.access_token}` },
+          });
+
+          if (!u.ok) throw new Error("Failed to fetch Google profile");
+
+          const profile = await u.json();
+
+          // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
+          const exchanged = await exchangeWithBackend({
+            provider: "google",
+            email: profile.email,
+            providerId: profile.sub || profile.email, // stable unique ID preferred
+            // optional: send provider token for server-side verification if you implement it
+            providerAccessToken: resp.access_token,
+          });
+
+          onComplete?.({
+            ok: true,
+            provider: "google",
+            user: {
+              email: profile.email,
+              name: profile.name,
+              picture: profile.picture,
+            },
+            exchange: exchanged,
+          });
+
+          onClose?.();
+        } catch (e) {
+          setErr(e?.message || "Google sign-in failed");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+
+    googleReadyRef.current = true;
+  };
+
+  const startGoogle = () => {
+    try {
+      setErr("");
+      const tc = googleTokenClientRef.current;
+      if (!tc) {
+        setErr("Google sign-in not ready yet. Refresh and try again.");
+        return;
+      }
+      // Must be called directly from click handler to avoid popup blocking
+      tc.requestAccessToken({ prompt: "select_account" });
     } catch (e) {
-      setErr(e?.message || "Google login failed");
-      setLoading(false);
+      setErr(e?.message || "Google sign-in failed");
     }
   };
 
+  // ---------------------------
   // MICROSOFT: MSAL popup
-  const handleMicrosoft = async () => {
-    setErr("");
-    setLoading(true);
+  // ---------------------------
+  const preloadMicrosoft = async () => {
+    if (msalReadyRef.current) return;
+
+    const cfg = await loadConfig();
+
+    const clientId = (cfg?.ENTRA_CLIENT_ID || "").trim();
+    const authority = (cfg?.ENTRA_AUTHORITY || "https://login.microsoftonline.com/common").trim();
+    const redirectUri = (cfg?.ENTRA_REDIRECT_URI || window.location.origin + "/").trim();
+
+    if (!clientId) throw new Error("Missing ENTRA_CLIENT_ID in /config.json");
+    if (!authority.startsWith("https://login.microsoftonline.com/")) {
+      throw new Error("ENTRA_AUTHORITY must be a login.microsoftonline.com URL");
+    }
+
+    const msalInstance = new PublicClientApplication({
+      auth: { clientId, authority, redirectUri },
+      cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+    });
+
+    await msalInstance.initialize();
+
+    msalRef.current = msalInstance;
+    msalReadyRef.current = true;
+  };
+
+  const startMicrosoft = async () => {
     try {
-      const tenantId =
-        cfgRef.current?.TENANT_ID || import.meta.env.VITE_TENANT_ID;
-      const clientId =
-        cfgRef.current?.CLIENT_ID || import.meta.env.VITE_CLIENT_ID;
+      setErr("");
+      setBusy(true);
 
-      if (!tenantId || !clientId) {
-        throw new Error(
-          "Missing Microsoft config. Set VITE_TENANT_ID + VITE_CLIENT_ID or /config.json."
-        );
-      }
+      const msal = msalRef.current;
+      if (!msal) throw new Error("Microsoft sign-in not ready yet.");
 
-      const authority =
-        cfgRef.current?.AUTHORITY ||
-        `https://login.microsoftonline.com/${tenantId}`;
-
-      const redirectUri =
-        cfgRef.current?.REDIRECT_URI ||
-        import.meta.env.VITE_REDIRECT_URI ||
-        window.location.origin;
-
-      const scopes =
-        cfgRef.current?.SCOPES || ["openid", "profile", "email"];
-
-      if (!msalRef.current) {
-        msalRef.current = new PublicClientApplication({
-          auth: {
-            clientId,
-            authority,
-            redirectUri,
-          },
-          cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
-        });
-        await msalRef.current.initialize();
-      }
-
-      const loginResp = await msalRef.current.loginPopup({
-        scopes,
+      const loginResp = await msal.loginPopup({
+        scopes: ["openid", "profile", "email"],
         prompt: "select_account",
       });
 
-      const account = loginResp?.account;
-      if (!account) throw new Error("Microsoft login failed: missing account");
+      const account = loginResp?.account || msal.getAllAccounts()?.[0];
+      if (!account) throw new Error("No Microsoft account returned.");
 
-      const tokenResp = await msalRef.current.acquireTokenSilent({
-        scopes,
-        account,
-      });
+      const claims = account.idTokenClaims || {};
+      const email =
+        account.username ||
+        claims.preferred_username ||
+        claims.email ||
+        "";
 
-      // Build a stable profile object for your backend
-      const providerProfile = {
-        name: account.name,
-        username: account.username,
-        homeAccountId: account.homeAccountId,
-        tenantId: account.tenantId,
-        localAccountId: account.localAccountId,
-      };
+      const providerId =
+        // AAD usually provides oid (object id) which is stable per tenant
+        claims.oid ||
+        claims.sub ||
+        account.homeAccountId ||
+        account.localAccountId ||
+        email;
 
       // ✅ EXCHANGE with your backend to get YOUR per-user token (for Stripe/credits/etc)
       const exchanged = await exchangeWithBackend({
         provider: "microsoft",
-        providerProfile,
-        providerAccessToken: tokenResp?.accessToken, // optional for server-side verification
-        providerIdToken: tokenResp?.idToken, // optional for server-side verification
+        email,
+        providerId,
+        tenantId: claims.tid || account.tenantId || "",
       });
 
       onComplete?.({
         ok: true,
         provider: "microsoft",
-        providerProfile,
+        user: {
+          email,
+          name: account.name || "",
+          tenantId: claims.tid || account.tenantId || "",
+        },
+        microsoft: {
+          homeAccountId: account.homeAccountId,
+          localAccountId: account.localAccountId,
+        },
         exchange: exchanged,
       });
+
+      onClose?.();
     } catch (e) {
-      setErr(e?.message || "Microsoft login failed");
+      setErr(e?.message || "Microsoft sign-in failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  // EMAIL MAGIC LINK + CODE
-  const sendMagic = async () => {
-    setErr("");
-    setLoading(true);
+  // Preload both providers when modal opens so popup won’t be blocked
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!open) return;
+      try {
+        setErr("");
+        await Promise.all([preloadGoogle(), preloadMicrosoft()]);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Auth setup failed");
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setEmail("");
+      setCode("");
+      setStep("start");
+      setBusy(false);
+      setErr("");
+    }
+  }, [open]);
+
+  // ---------------------------
+  // EMAIL OTP flow
+  // ---------------------------
+  const startEmail = async () => {
     try {
-      if (!email.trim()) throw new Error("Enter your email");
+      setErr("");
+      setBusy(true);
+
+      const em = email.trim().toLowerCase();
+      if (!em) throw new Error("Enter your email");
+
+      await loadConfig();
 
       const r = await fetch(`${apiBaseRef.current}/auth/email/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: em }),
       });
 
-      let data = null;
-      try {
-        data = await r.json();
-      } catch {
-        // ignore
-      }
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) throw new Error(data?.error || "Failed to send code");
 
-      if (!r.ok) {
-        throw new Error(data?.error || `Failed to send code (${r.status})`);
-      }
-
-      setMagicSent(true);
+      setStep("email_code");
     } catch (e) {
-      setErr(e?.message || "Failed to send code");
+      setErr(e?.message || "Email login failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  const verifyMagic = async () => {
-    setErr("");
-    setLoading(true);
+  const verifyEmail = async () => {
     try {
-      if (!email.trim()) throw new Error("Enter your email");
+      setErr("");
+      setBusy(true);
+
+      await loadConfig();
+
+      const em = email.trim().toLowerCase();
+      if (!em) throw new Error("Enter your email");
       if (!code.trim()) throw new Error("Enter the code");
 
       const r = await fetch(`${apiBaseRef.current}/auth/email/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+        body: JSON.stringify({ email: em, code: code.trim() }),
       });
 
-      let data = null;
-      try {
-        data = await r.json();
-      } catch {
-        // ignore
-      }
-
-      if (!r.ok) {
-        throw new Error(data?.error || `Invalid code (${r.status})`);
-      }
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) throw new Error(data?.error || "Invalid code");
 
       // If verify endpoint already returns a token, keep it
       if (data?.token) {
-        const t = normalizeToken(data.token);
-        if (t) {
-          localStorage.setItem("APP_TOKEN", t);
-          localStorage.setItem("appToken", t);
-          localStorage.setItem("authToken", t);
-        }
+        localStorage.setItem("APP_TOKEN", data.token);
+        onComplete?.(data);
+        onClose?.();
+        return;
       }
 
       // Otherwise, exchange to get YOUR token
       const exchanged = await exchangeWithBackend({
         provider: "email",
-        providerProfile: { email: email.trim() },
-        email: email.trim(),
-        code: code.trim(),
+        email: em,
+        providerId: em, // stable enough for email auth
       });
 
       onComplete?.({ ok: true, provider: "email", exchange: exchanged });
+      onClose?.();
     } catch (e) {
       setErr(e?.message || "Verification failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  if (!open) return null;
-
   return (
     <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-      >
-        <motion.div
-          className="w-full max-w-lg rounded-2xl border border-white/10 bg-[hsl(240,10%,6%)] shadow-2xl overflow-hidden"
-          initial={{ scale: 0.96, y: 20, opacity: 0 }}
-          animate={{ scale: 1, y: 0, opacity: 1 }}
-          exit={{ scale: 0.98, y: 10, opacity: 0 }}
-        >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-            <div>
-              <div className="text-white font-semibold text-lg">Sign in</div>
-              <div className="text-white/60 text-sm">
-                Continue to your dashboard
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-white/5 text-white/70 hover:text-white"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="px-5 pt-4">
-            <div className="flex gap-2 bg-white/5 rounded-xl p-1 border border-white/10">
+      {open && (
+        <>
+          <motion.div
+            className="fixed inset-0 bg-black/80 z-50"
+            onClick={busy ? undefined : onClose}
+          />
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="bg-[#0E0E12] p-8 rounded-2xl max-w-md w-full relative">
               <button
-                onClick={() => setTab("oauth")}
-                className={`flex-1 text-sm py-2 rounded-lg ${
-                  tab === "oauth" ? "bg-white/10 text-white" : "text-white/70"
-                }`}
+                className="absolute top-4 right-4"
+                onClick={onClose}
+                disabled={busy}
+                aria-label="Close"
               >
-                Google / Microsoft
+                <X />
               </button>
-              <button
-                onClick={() => setTab("email")}
-                className={`flex-1 text-sm py-2 rounded-lg ${
-                  tab === "email" ? "bg-white/10 text-white" : "text-white/70"
-                }`}
-              >
-                Email code
-              </button>
-            </div>
 
-            {err ? (
-              <div className="mt-3 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                {err}
+              <h2 className="text-2xl text-white mb-4">Get Started</h2>
+
+              <div className="space-y-3">
+                <Button
+                  onClick={startMicrosoft}
+                  disabled={busy}
+                  className="w-full bg-[#1f2937] text-white hover:bg-[#111827]"
+                >
+                  Continue with Microsoft
+                </Button>
+
+                <Button
+                  onClick={startGoogle}
+                  disabled={busy}
+                  className="w-full bg-white text-black hover:bg-white/90"
+                >
+                  Continue with Google
+                </Button>
               </div>
-            ) : null}
 
-            <div className="mt-4 pb-5">
-              {tab === "oauth" ? (
-                <div className="space-y-3">
-                  <Button
-                    className="w-full justify-center gap-2"
-                    variant="secondary"
-                    onClick={handleGoogle}
-                    disabled={loading}
-                  >
-                    Continue with Google
+              {/* Optional: keep your email-code login */}
+              <div className="mt-4">
+                <Input
+                  placeholder="Enter your email"
+                  value={email}
+                  disabled={busy || step === "email_code"}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+
+                {step === "start" && (
+                  <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send Login Code
                   </Button>
+                )}
 
-                  <Button
-                    className="w-full justify-center gap-2"
-                    variant="secondary"
-                    onClick={handleMicrosoft}
-                    disabled={loading}
-                  >
-                    Continue with Microsoft
-                  </Button>
-
-                  <div className="text-xs text-white/50 leading-relaxed pt-2">
-                    We’ll exchange your provider login for an app token used to access
-                    your account APIs.
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="text-sm text-white/70">
-                    Enter your email and we’ll send a code.
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-white/70 text-sm">
-                      <Mail className="w-4 h-4" /> Email
-                    </div>
+                {step === "email_code" && (
+                  <>
                     <Input
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      className="bg-white/5 border-white/10 text-white placeholder:text-white/40"
+                      placeholder="Enter code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="mt-3"
                     />
-                  </div>
-
-                  {!magicSent ? (
-                    <Button
-                      className="w-full"
-                      onClick={sendMagic}
-                      disabled={loading}
-                    >
-                      Send code
+                    <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
+                      Verify Code
                     </Button>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <div className="text-white/70 text-sm">Code</div>
-                        <Input
-                          value={code}
-                          onChange={(e) => setCode(e.target.value)}
-                          placeholder="123456"
-                          className="bg-white/5 border-white/10 text-white placeholder:text-white/40"
-                        />
-                      </div>
-                      <Button
-                        className="w-full"
-                        onClick={verifyMagic}
-                        disabled={loading}
-                      >
-                        Verify & continue
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
+
+              {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
             </div>
-          </div>
-        </motion.div>
-      </motion.div>
+          </motion.div>
+        </>
+      )}
     </AnimatePresence>
+    
   );
 }
