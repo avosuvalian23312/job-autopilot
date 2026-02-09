@@ -9,11 +9,6 @@ import { Input } from "@/components/ui/input";
  * - Redirect to /.auth/login/{provider}
  * - Use a RELATIVE post_login_redirect_uri so it returns to your app page correctly.
  * - Do NOT hit the identity.* domain directly.
- *
- * Valid providers for SWA typically include:
- * - "google"
- * - "aad" (Microsoft Entra ID / Azure AD)
- * - "github", etc.
  */
 function swaLogin(provider, redirectPath) {
   const path =
@@ -33,25 +28,29 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // ✅ Google button must go to Google provider
+  // ✅ Where you want users to land after login
+  // IMPORTANT: must start with "/"
+ const AFTER_LOGIN_PATH = "/pricing";
+
+  // ✅ Google -> Google chooser -> then go to /subscriptioninfo
   const startGoogle = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      swaLogin("google");
+      swaLogin("google", AFTER_LOGIN_PATH);
     } finally {
       setBusy(false);
     }
   };
 
-  // ✅ Microsoft button must go to AAD provider (Microsoft UI)
+  // ✅ Microsoft -> Microsoft chooser -> then go to /subscriptioninfo
   const startMicrosoft = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
     try {
-      swaLogin("aad");
+      swaLogin("aad", AFTER_LOGIN_PATH);
     } finally {
       setBusy(false);
     }
