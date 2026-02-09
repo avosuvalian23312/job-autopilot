@@ -21,23 +21,36 @@ const tones = ["Professional", "Confident", "Concise"];
 function getStoredAppToken() {
   const keys = ["APP_TOKEN", "appToken", "app_token", "appJwt", "authToken", "token"];
   for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && typeof v === "string") return v.replace(/^"|"$/g, "");
+    let v = localStorage.getItem(k);
+    if (!v || typeof v !== "string") continue;
+
+    // strip accidental quotes
+    v = v.replace(/^"|"$/g, "").trim();
+
+    // strip accidental "Bearer "
+    v = v.replace(/^Bearer\s+/i, "").trim();
+
+    if (v) return v;
   }
   return null;
 }
 
-
 /**
  * Simple helper for calling your SWA API with JSON + Bearer token.
+ * IMPORTANT: include credentials so cookie-based auth (if present) also works.
  */
 async function apiFetch(path, { method = "GET", token, body } = {}) {
   const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  if (token) {
+    const clean = String(token).replace(/^Bearer\s+/i, "").trim();
+    headers["Authorization"] = `Bearer ${clean}`;
+  }
 
   const res = await fetch(path, {
     method,
     headers,
+    credentials: "include", // ✅ CRITICAL for SWA/cookie sessions
     body: body ? JSON.stringify(body) : undefined,
   });
 
