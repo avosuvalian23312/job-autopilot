@@ -139,3 +139,9 @@ app.http("getJob", {
   authLevel: "anonymous",
   handler: require("./src/functions/getJob.js").getJob,
 });
+app.http("extractJob", {
+  methods: ["POST", "OPTIONS"],
+  route: "jobs/extract",
+  authLevel: "anonymous",
+  handler: require("./src/functions/extractJob.js"),
+});

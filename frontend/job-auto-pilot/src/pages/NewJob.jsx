@@ -226,24 +226,51 @@ export default function NewJob() {
   };
 
   const handleAnalyze = async () => {
-    if (!selectedResume) {
-      toast.error("Please select a resume");
-      return;
-    }
-    if (!jobDescription.trim()) {
-      toast.error("Please enter a job description");
-      return;
-    }
+  if (!selectedResume) {
+    toast.error("Please select a resume");
+    return;
+  }
+  if (!jobDescription.trim()) {
+    toast.error("Please enter a job description");
+    return;
+  }
 
-    setIsAnalyzing(true);
+  setIsAnalyzing(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+  try {
+    const res = await fetch("/api/jobs/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobDescription }),
+    });
 
-    const extracted = extractJobDetails(jobDescription);
-    setExtractedData(extracted);
-    setIsAnalyzing(false);
+    if (!res.ok) throw new Error(await res.text());
+    const extracted = await res.json();
+
+    setExtractedData({
+      jobTitle: extracted.jobTitle || "Position",
+      company: extracted.company || "Company",
+      website: extracted.website || null,
+      location: extracted.location || null,
+      seniority: extracted.seniority || null,
+      keywords: extracted.keywords || [],
+    });
+
     setShowConfirm(true);
-  };
+  } catch (e) {
+    console.error(e);
+
+    // fallback to your regex if backend fails
+    const fallback = extractJobDetails(jobDescription);
+    setExtractedData(fallback);
+    setShowConfirm(true);
+
+    toast.error("AI extract failed — used fallback extraction.");
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
+
 
  const handleGenerate = async () => {
   try {
