@@ -1,4 +1,4 @@
-const { CosmosClient } = require("@azure/cosmos");
+
 const {
   BlobServiceClient,
   generateBlobSASQueryParameters,
@@ -31,110 +31,123 @@ function parseAccountKeyFromConnStr(connStr) {
   return m ? m[1] : null;
 }
 
-module.exports = async function (request, context) {
-  try {
-    if (request.method === "OPTIONS") return { status: 204 };
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
-    const user = getSwaUser(request);
-    if (!user) return { status: 401, jsonBody: { ok: false } };
+function json(status, body) {
+  return {
+    status,
+    headers: { ...cors(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
 
-    const body = await request.json().catch(() => ({}));
-    const id = body?.id;
-    if (!id) return { status: 400, jsonBody: { ok: false, error: "Missing id" } };
+app.http("getResume", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      if (request.method === "OPTIONS") return { status: 204, headers: cors() };
 
-    // Cosmos lookup (same container you already use)
-    const client = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
-    const container = client
-      .database(process.env.COSMOS_DB_NAME)
-      .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
+      const user = getSwaUser(request);
+      if (!user) return json(401, { ok: false });
 
-    const query = {
-      query: `SELECT TOP 1 * FROM c WHERE c.userId = @uid AND c.id = @id`,
-      parameters: [
-        { name: "@uid", value: user.userId },
-        { name: "@id", value: id },
-      ],
-    };
+      const body = await request.json().catch(() => ({}));
+      const id = body?.id;
+      if (!id) return json(400, { ok: false, error: "Missing id" });
 
-    const { resources } = await container.items
-      .query(query, { partitionKey: user.userId })
-      .fetchAll();
+      // Cosmos lookup (same container you already use)
+      const client = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
+      const container = client
+        .database(process.env.COSMOS_DB_NAME)
+        .container(process.env.COSMOS_RESUMES_CONTAINER_NAME);
 
-    const doc = resources?.[0];
-    if (!doc) return { status: 404, jsonBody: { ok: false, error: "Not found" } };
+      const query = {
+        query: `SELECT TOP 1 * FROM c WHERE c.userId = @uid AND c.id = @id`,
+        parameters: [
+          { name: "@uid", value: user.userId },
+          { name: "@id", value: id },
+        ],
+      };
 
-    // If you ever store pasted text resumes as doc.content, return it directly
-    if (doc.content && String(doc.content).trim()) {
-      return {
-        status: 200,
-        jsonBody: {
+      const { resources } = await container.items
+        .query(query, { partitionKey: user.userId })
+        .fetchAll();
+
+      const doc = resources?.[0];
+      if (!doc) return json(404, { ok: false, error: "Not found" });
+
+      // If you ever store pasted text resumes as doc.content, return it directly
+      if (doc.content && String(doc.content).trim()) {
+        return json(200, {
           ok: true,
           content: doc.content,
           contentType: doc.contentType || "text/plain",
           originalName: doc.originalName || doc.fileName || doc.name || "resume.txt",
-        },
-      };
-    }
+        });
+      }
 
-    const blobName = doc.blobName;
-    if (!blobName) {
-      return { status: 400, jsonBody: { ok: false, error: "Missing blobName on resume doc" } };
-    }
+      const blobName = doc.blobName;
+      if (!blobName) {
+        return json(400, { ok: false, error: "Missing blobName on resume doc" });
+      }
 
-    const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    const containerName = process.env.RESUME_CONTAINER;
-    if (!connStr || !containerName) {
-      return {
-        status: 500,
-        jsonBody: { ok: false, error: "Missing AZURE_STORAGE_CONNECTION_STRING or RESUME_CONTAINER" },
-      };
-    }
+      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
+      const containerName = process.env.RESUME_CONTAINER;
 
-    // Build blob client
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connStr);
-    const blobClient = blobServiceClient
-      .getContainerClient(containerName)
-      .getBlobClient(blobName);
-
-    // Generate SAS (need account name + key for signing)
-    const accountName = parseAccountNameFromConnStr(connStr);
-    const accountKey = parseAccountKeyFromConnStr(connStr);
-    if (!accountName || !accountKey) {
-      return {
-        status: 500,
-        jsonBody: {
+      if (!connStr || !containerName) {
+        return json(500, {
           ok: false,
-          error: "Storage connection string missing AccountName/AccountKey; cannot generate SAS",
+          error: "Missing AZURE_STORAGE_CONNECTION_STRING or RESUME_CONTAINER",
+        });
+      }
+
+      // Build blob client
+      const blobServiceClient = BlobServiceClient.fromConnectionString(connStr);
+      const blobClient = blobServiceClient
+        .getContainerClient(containerName)
+        .getBlobClient(blobName);
+
+      // Generate SAS (need account name + key for signing)
+      const accountName = parseAccountNameFromConnStr(connStr);
+      const accountKey = parseAccountKeyFromConnStr(connStr);
+      if (!accountName || !accountKey) {
+        return json(500, {
+          ok: false,
+          error:
+            "Storage connection string missing AccountName/AccountKey; cannot generate SAS",
+        });
+      }
+
+      const credential = new StorageSharedKeyCredential(accountName, accountKey);
+      const expiresOn = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+      const sas = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName,
+          permissions: BlobSASPermissions.parse("r"),
+          expiresOn,
         },
-      };
-    }
+        credential
+      ).toString();
 
-    const credential = new StorageSharedKeyCredential(accountName, accountKey);
-    const expiresOn = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+      const url = `${blobClient.url}?${sas}`;
 
-    const sas = generateBlobSASQueryParameters(
-      {
-        containerName,
-        blobName,
-        permissions: BlobSASPermissions.parse("r"),
-        expiresOn,
-      },
-      credential
-    ).toString();
-
-    const url = `${blobClient.url}?${sas}`;
-
-    return {
-      status: 200,
-      jsonBody: {
+      return json(200, {
         ok: true,
         url,
         contentType: doc.contentType || "",
         originalName: doc.originalName || doc.fileName || doc.name || "",
-      },
-    };
-  } catch (err) {
-    context.log.error(err);
-    return { status: 500, jsonBody: { ok: false, error: "Server error" } };
-  }
-};
+      });
+    } catch (err) {
+      context.log.error(err);
+      return json(500, { ok: false, error: "Server error" });
+    }
+  },
+});

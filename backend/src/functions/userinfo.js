@@ -1,14 +1,16 @@
-// src/functions/userinfo.js
 const auth = require("../lib/auth");
 
-module.exports = async function userinfo(req, context) {
-  if (req.method === "OPTIONS") {
-    return { status: 204, headers: cors() };
+module.exports = async (request, context) => {
+  if (request.method === "OPTIONS") {
+    return {
+      status: 204,
+      headers: cors(),
+    };
   }
 
   let user;
   try {
-    user = auth.requireAuth(req);
+    user = auth.requireAuth(request);
   } catch (e) {
     return json(401, { ok: false, error: e.message });
   }
