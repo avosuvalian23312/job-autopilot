@@ -22,6 +22,7 @@ import {
   MapPin,
   BarChart2,
   Tag,
+  DollarSign,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -487,6 +488,50 @@ export default function NewJob() {
                     </p>
                   </div>
                 )}
+{(extractedData.payText ||
+  extractedData.payMin != null ||
+  extractedData.payMax != null) && (
+  <div className="flex items-center gap-2">
+    <DollarSign className="w-4 h-4 text-white/40" />
+    <p className="text-sm text-white/60">
+      {(() => {
+        const cur = extractedData.payCurrency || "USD";
+        const symbol = cur === "USD" ? "$" : cur + " ";
+
+        const periodMap = {
+          hour: "/hr",
+          year: "/yr",
+          month: "/mo",
+          week: "/wk",
+          day: "/day",
+        };
+        const suffix = extractedData.payPeriod
+          ? periodMap[extractedData.payPeriod] || ""
+          : "";
+
+        const fmt = (n) =>
+          typeof n === "number"
+            ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+            : null;
+
+        const min = fmt(extractedData.payMin);
+        const max = fmt(extractedData.payMax);
+
+        // Prefer structured numeric range if we have it
+        if (min && max) {
+          return min === max
+            ? `${symbol}${min}${suffix}`
+            : `${symbol}${min} - ${symbol}${max}${suffix}`;
+        }
+
+        // Otherwise show the raw payText if present
+        if (extractedData.payText) return extractedData.payText;
+
+        return null;
+      })()}
+    </p>
+  </div>
+)}
 
                 {extractedData.keywords?.length > 0 && (
                   <div>
