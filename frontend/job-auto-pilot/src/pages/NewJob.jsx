@@ -31,6 +31,11 @@ import {
   FileText,
   ClipboardCheck,
   Wand2,
+  Star,
+  ScanSearch,
+  Shield,
+  ListChecks,
+  Stars,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -330,9 +335,6 @@ export default function NewJob() {
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
-  // -----------------------------
-  // UI helpers (bigger + brighter)
-  // -----------------------------
   const chipBase =
     "px-4 py-2 rounded-full text-sm font-medium border border-white/12 bg-white/[0.07] text-white/85";
   const chipNeon =
@@ -396,15 +398,18 @@ export default function NewJob() {
     return `Top ${top}% pay`;
   };
 
-  // ✅ “popup zoom” behavior shared by pill/card sections (scope-only UI)
   const hoverZoom =
     "transition-transform duration-200 will-change-transform hover:scale-[1.01] hover:-translate-y-[1px]";
   const hoverZoomSoft =
     "transition-transform duration-200 will-change-transform hover:scale-[1.01]";
 
+  // ✅ default resume detection (for star)
+  const isDefaultResume = (r) =>
+    r?.isDefault === true || r?.default === true || r?.is_default === true;
+
   return (
     <div className="min-h-screen bg-[hsl(240,10%,6%)] text-white">
-      {/* Header (FULL WIDTH: logo left corner, close right corner) */}
+      {/* Header */}
       <header className="border-b border-white/10 bg-[hsl(240,10%,6%)]/85 backdrop-blur-xl sticky top-0 z-50">
         <div className="w-full px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -419,7 +424,6 @@ export default function NewJob() {
             </div>
           </div>
 
-          {/* Close button: red, outlined, corner-right */}
           <Button
             variant="ghost"
             onClick={() => navigate(createPageUrl("AppHome"))}
@@ -430,43 +434,74 @@ export default function NewJob() {
         </div>
       </header>
 
-      {/* Page wrapper */}
       <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)]">
-        {/* Analyzing Modal */}
+        {/* ✅ Analyzing Modal: checkbox steps incl. skills (more “adventurous”) */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className="rounded-2xl p-10 max-w-md w-full mx-4 border border-white/12 bg-[hsl(240,10%,10%)] shadow-2xl">
+            <div className="rounded-2xl p-10 max-w-md w-full mx-4 border border-purple-500/20 bg-[hsl(240,10%,10%)] shadow-2xl shadow-purple-600/10">
               <div className="text-center">
-                <div className="w-20 h-20 rounded-full bg-purple-600/20 flex items-center justify-center mx-auto mb-6 border border-purple-500/15">
+                <div className="w-20 h-20 rounded-full bg-purple-600/18 flex items-center justify-center mx-auto mb-6 border border-purple-500/20">
                   <Loader2 className="w-10 h-10 text-purple-200 animate-spin" />
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-2">
-                  Analyzing job description…
+                  Scanning job post…
                 </h2>
                 <p className="text-white/65 mb-7">
-                  Extracting title, company, pay, and requirements
+                  Building your packet blueprint
                 </p>
 
                 <div className="space-y-3 text-left">
-                  <div className="flex items-center gap-3 text-sm text-white/80">
+                  <div className="flex items-center gap-3 text-sm text-white/85">
                     <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center shadow shadow-purple-600/25">
                       <Check className="w-4 h-4 text-white" />
                     </div>
-                    Parsing job post
+                    <span className="flex items-center gap-2">
+                      <ScanSearch className="w-4 h-4 text-purple-200" />
+                      Parsing structure + sections
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/80">
+
+                  <div className="flex items-center gap-3 text-sm text-white/85">
                     <div className="w-6 h-6 rounded-full bg-purple-600/55 flex items-center justify-center">
-                      <Loader2 className="w-3 h-3 text-white animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
                     </div>
-                    Detecting role, company & pay
+                    <span className="flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-purple-200" />
+                      Detecting role, company & pay
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/55">
-                    <div className="w-6 h-6 rounded-full bg-white/10" />
-                    Extracting skills & constraints
+
+                  <div className="flex items-center gap-3 text-sm text-white/65">
+                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Tag className="w-3.5 h-3.5 text-white/55" />
+                    </div>
+                    Extracting skills & keywords
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/55">
-                    <div className="w-6 h-6 rounded-full bg-white/10" />
+
+                  <div className="flex items-center gap-3 text-sm text-white/65">
+                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <Shield className="w-3.5 h-3.5 text-white/55" />
+                    </div>
+                    Checking constraints (visa / model / seniority)
+                  </div>
+
+                  <div className="flex items-center gap-3 text-sm text-white/65">
+                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                      <ListChecks className="w-3.5 h-3.5 text-white/55" />
+                    </div>
                     Preparing packet draft
+                  </div>
+
+                  <div className="mt-5 pt-5 border-t border-white/10 flex items-center justify-center gap-2 text-xs text-white/60">
+                    <Stars className="w-4 h-4 text-purple-200" />
+                    AI mode:{" "}
+                    <span className="font-semibold text-white/80">
+                      {aiMode === "elite" ? "Elite" : "Standard"}
+                    </span>
+                    • Student mode:{" "}
+                    <span className="font-semibold text-white/80">
+                      {studentMode ? "On" : "Off"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -474,7 +509,7 @@ export default function NewJob() {
           </div>
         )}
 
-        {/* Confirmation Screen */}
+        {/* Confirmation Screen (unchanged) */}
         {showConfirm && extractedData && (
           <div className="w-full">
             <div className="mb-7 text-center">
@@ -620,15 +655,12 @@ export default function NewJob() {
                             {renderPayPrimary() && (
                               <span className={chipGreen}>{renderPayPrimary()}</span>
                             )}
-
                             {renderConfidence() && (
                               <span className={chipBase}>{renderConfidence()}</span>
                             )}
-
                             {renderAnnual() && (
                               <span className={chipAmber}>{renderAnnual()}</span>
                             )}
-
                             {renderTopPay() && (
                               <span className={`${chipNeon} flex items-center gap-2`}>
                                 <Percent className="w-4 h-4" />
@@ -785,12 +817,12 @@ export default function NewJob() {
               </p>
             </div>
 
-            {/* ✅ tighter spacing so it fits 1920x1080 better */}
-            <div className="rounded-2xl p-7 border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
-              {/* TOP ROW: Resume + Student mode (side-by-side on desktop) */}
+            {/* ✅ purple border card */}
+            <div className="rounded-2xl p-7 border border-purple-500/25 bg-[hsl(240,10%,10%)] shadow-xl shadow-purple-600/10">
+              {/* TOP ROW: make both boxes same height */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                {/* Resume Selector (with hover zoom + black dropdown) */}
-                <div className={`${hoverZoom} rounded-2xl`}>
+                {/* Resume Selector */}
+                <div className={`${hoverZoom} rounded-xl border border-white/12 bg-white/[0.03] p-5`}>
                   <label className="block text-lg font-semibold mb-2 text-white">
                     Resume <span className="text-red-400">*</span>
                   </label>
@@ -800,32 +832,42 @@ export default function NewJob() {
                       <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
                     </div>
                   ) : hasResumes ? (
-                    <Select
-                      value={selectedResume}
-                      onValueChange={setSelectedResume}
-                    >
+                    <Select value={selectedResume} onValueChange={setSelectedResume}>
                       <SelectTrigger className="border-white/12 text-white h-14 text-lg bg-white/[0.05] transition-transform duration-200 hover:scale-[1.01]">
                         <SelectValue placeholder="Select resume" />
                       </SelectTrigger>
 
-                      {/* ✅ black picker background + visible highlight */}
+                      {/* ✅ black picker + star on default */}
                       <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                        {resumes.map((resume) => (
-                          <SelectItem
-                            key={resume.id}
-                            value={resume.id.toString()}
-                            className={[
-                              "text-white/90",
-                              "focus:bg-purple-600/25 focus:text-white",
-                              "data-[highlighted]:bg-purple-600/25 data-[highlighted]:text-white",
-                              "hover:bg-purple-600/20",
-                              "transition-transform duration-150 hover:scale-[1.01]",
-                              "rounded-md",
-                            ].join(" ")}
-                          >
-                            {resume.name}
-                          </SelectItem>
-                        ))}
+                        {resumes.map((resume) => {
+                          const star = isDefaultResume(resume);
+                          return (
+                            <SelectItem
+                              key={resume.id}
+                              value={resume.id.toString()}
+                              className={[
+                                "text-white/90",
+                                "focus:bg-purple-600/25 focus:text-white",
+                                "data-[highlighted]:bg-purple-600/25 data-[highlighted]:text-white",
+                                "hover:bg-purple-600/20",
+                                "transition-transform duration-150 hover:scale-[1.01]",
+                                "rounded-md",
+                              ].join(" ")}
+                            >
+                              <span className="flex items-center gap-2">
+                                {star && (
+                                  <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
+                                )}
+                                <span className="truncate">{resume.name}</span>
+                                {star && (
+                                  <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-100">
+                                    Default
+                                  </span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   ) : (
@@ -839,10 +881,15 @@ export default function NewJob() {
                       </Button>
                     </div>
                   )}
+
+                  <div className="mt-3 flex items-center gap-2 text-xs text-white/55">
+                    <Stars className="w-4 h-4 text-purple-200" />
+                    Default resumes are marked with a star.
+                  </div>
                 </div>
 
-                {/* Student Mode Toggle (card hover zoom) */}
-                <div className={`${hoverZoom} flex items-start gap-3 p-5 rounded-xl bg-white/[0.05] border border-white/12`}>
+                {/* Student Mode Toggle (same “card box” style + equal height feel) */}
+                <div className={`${hoverZoom} rounded-xl border border-white/12 bg-white/[0.03] p-5 flex items-start gap-3`}>
                   <button
                     onClick={() => setStudentMode(!studentMode)}
                     className={`w-12 h-6 rounded-full transition-all relative ${
@@ -865,11 +912,16 @@ export default function NewJob() {
                     <p className="text-sm text-white/55">
                       Emphasizes projects, coursework, and skills instead of work experience.
                     </p>
+
+                    <div className="mt-3 text-xs text-white/55 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-200" />
+                      Great for freshmen + internships.
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* AI Mode Selector (already has zoom; keep but tighter) */}
+              {/* AI Mode Selector */}
               <div className={`${hoverZoomSoft}`}>
                 <label className="block text-lg font-semibold mb-1 text-white">
                   AI Mode <span className="text-red-400">*</span>
@@ -948,7 +1000,7 @@ export default function NewJob() {
                 </div>
               </div>
 
-              {/* Job Description (card hover zoom + shorter height so page fits) */}
+              {/* Job Description (✅ blank placeholder; no filler “example”) */}
               <div className={`${hoverZoom} mt-4`}>
                 <label className="block text-lg font-semibold mb-2 text-white">
                   Job Description <span className="text-red-400">*</span>
@@ -956,14 +1008,7 @@ export default function NewJob() {
                 <Textarea
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
-                  placeholder={`Paste the full job description here...
-
-Example:
-We are looking for a Software Engineer to join our team...
-
-Requirements:
-- 3+ years of experience with React
-- Strong problem-solving skills...`}
+                  placeholder=""
                   className="min-h-[220px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
                 />
                 <p className="text-sm mt-2 text-white/55">
@@ -971,7 +1016,7 @@ Requirements:
                 </p>
               </div>
 
-              {/* Generate Button (hover zoom) */}
+              {/* Generate Button */}
               <div className={`${hoverZoomSoft} pt-3`}>
                 <Button
                   onClick={handleAnalyze}
