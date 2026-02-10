@@ -1,5 +1,6 @@
 // backend/index.js (Azure Functions v4 - code-first model)
 // Single place to register ALL HTTP routes.
+console.log("✅ backend/index.js loaded");
 
 "use strict";
 
