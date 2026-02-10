@@ -1,4 +1,4 @@
-// src/functions/resumeUploadUrl.js (Azure Functions v4)
+// src/functions/resumeUploadUrl.js (Azure Functions v4 - hardened, no requireUser dependency)
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -6,35 +6,86 @@ const {
   BlobSASPermissions,
 } = require("@azure/storage-blob");
 
-const { requireUser } = require("../lib/auth");
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+function json(status, body) {
+  return {
+    status,
+    headers: { ...cors(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
+function getSwaUser(request) {
+  const header =
+    request.headers.get("x-ms-client-principal") ||
+    request.headers.get("X-MS-CLIENT-PRINCIPAL");
+  if (!header) return null;
+
+  try {
+    const decoded = Buffer.from(header, "base64").toString("utf8");
+    const principal = JSON.parse(decoded);
+    if (!principal?.userId) return null;
+    return { userId: principal.userId };
+  } catch {
+    return null;
+  }
+}
+
+async function safeJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
+function parseConn(c) {
+  const m = {};
+  String(c || "")
+    .split(";")
+    .forEach((p) => {
+      const i = p.indexOf("=");
+      if (i === -1) return;
+      const k = p.slice(0, i);
+      const v = p.slice(i + 1);
+      m[k] = v;
+    });
+  return { accountName: m.AccountName || null, accountKey: m.AccountKey || null };
+}
 
 module.exports = async function resumeUploadUrl(request, context) {
-  // NOTE: v4 uses `request`, not old-style `req`
-  if (request.method === "OPTIONS") {
-    return { status: 204, headers: cors() };
-  }
-
-  // --- AUTH: SWA principal header ---
-  let user;
   try {
-    // requireUser MUST read headers via request.headers.get(...)
-    user = requireUser(request);
-  } catch (e) {
-    return json(401, {
-      ok: false,
-      error: e.message,
-      hint:
-        "Make sure you are logged in via Static Web Apps auth and call /api/* through the SWA site.",
-    });
-  }
+    if (request.method === "OPTIONS") return { status: 204, headers: cors() };
+    if (request.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
 
-  try {
-    const body = await safeJson(request);
-    const fileName = body?.fileName;
-
-    if (!fileName) {
-      return json(400, { ok: false, error: "fileName required" });
+    // ✅ v4-safe SWA auth
+    const user = getSwaUser(request);
+    if (!user) {
+      return json(401, {
+        ok: false,
+        error: "Unauthorized (missing x-ms-client-principal)",
+        hint: "Make sure you are logged in through the SWA site and calling /api/* on the same domain.",
+      });
     }
+
+    const body = await safeJson(request);
+
+    // ✅ accept multiple possible keys to avoid frontend mismatch
+    const fileName =
+      body?.fileName ||
+      body?.originalName ||
+      body?.name ||
+      body?.filename ||
+      "";
+
+    if (!fileName) return json(400, { ok: false, error: "fileName required" });
 
     const conn = process.env.AZURE_STORAGE_CONNECTION_STRING;
     const containerName = process.env.RESUME_CONTAINER || "resumes";
@@ -57,17 +108,13 @@ module.exports = async function resumeUploadUrl(request, context) {
     const container = service.getContainerClient(containerName);
     await container.createIfNotExists();
 
-    // Safe naming
     const safeFile = String(fileName).replace(/[^\w.\-()+ ]+/g, "_");
-    const userFolder = String(user.id || user.userId || user.sub || "user").replace(
-      /[^a-zA-Z0-9._-]+/g,
-      "_"
-    );
+    const userFolder = String(user.userId).replace(/[^a-zA-Z0-9._-]+/g, "_");
 
     const blobName = `${userFolder}/${Date.now()}_${safeFile}`;
     const blob = container.getBlockBlobClient(blobName);
 
-    const expiresOn = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresOn = new Date(Date.now() + 10 * 60 * 1000);
     const sas = generateBlobSASQueryParameters(
       {
         containerName,
@@ -82,51 +129,9 @@ module.exports = async function resumeUploadUrl(request, context) {
       ok: true,
       blobName,
       uploadUrl: `${blob.url}?${sas}`,
-      userId: user.id || user.userId || null,
     });
   } catch (e) {
     context.log("resumeUploadUrl error", e);
     return json(500, { ok: false, error: e?.message || "Server error" });
   }
 };
-
-async function safeJson(request) {
-  try {
-    // v4 request.json() throws if body empty or invalid
-    return await request.json();
-  } catch {
-    return {};
-  }
-}
-
-function parseConn(c) {
-  const m = {};
-  String(c)
-    .split(";")
-    .forEach((p) => {
-      const i = p.indexOf("=");
-      if (i === -1) return;
-      const k = p.slice(0, i);
-      const v = p.slice(i + 1);
-      m[k] = v;
-    });
-  return { accountName: m.AccountName, accountKey: m.AccountKey };
-}
-
-function cors() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-  };
-}
-
-function json(status, body) {
-  return {
-    status,
-    headers: { ...cors(), "Content-Type": "application/json" },
-    // Azure Functions v4 supports BOTH `body` (string) and `jsonBody` (object).
-    // Using `body` keeps your style consistent.
-    body: JSON.stringify(body),
-  };
-}
