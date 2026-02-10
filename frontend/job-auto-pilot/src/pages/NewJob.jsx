@@ -36,6 +36,8 @@ import {
   Shield,
   ListChecks,
   Stars,
+  GraduationCap as EduIcon,
+  Award,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -199,6 +201,7 @@ export default function NewJob() {
       "C\\+\\+",
       "TypeScript",
       "Git",
+      "Azure",
     ];
     commonSkills.forEach((skill) => {
       if (new RegExp(`\\b${skill}\\b`, "i").test(description)) {
@@ -244,8 +247,9 @@ export default function NewJob() {
         website: extracted.website || null,
         location: extracted.location || null,
         seniority: extracted.seniority || null,
-        keywords: extracted.keywords || [],
+        keywords: Array.isArray(extracted.keywords) ? extracted.keywords : [],
 
+        // ✅ pay (backend may send "Unknown")
         payText: extracted.payText || null,
         payMin:
           typeof extracted.payMin === "number" && Number.isFinite(extracted.payMin)
@@ -279,17 +283,59 @@ export default function NewJob() {
             : null,
         payPercentileSource: extracted.payPercentileSource || null,
 
+        // ✅ chips (updated to backend keys)
         employmentType: extracted.employmentType || null,
         workModel: extracted.workModel || null,
-        experienceBand: extracted.experienceBand || null,
-        visaClearance: extracted.visaClearance || null,
+        experienceLevel: extracted.experienceLevel || null,
+        complianceTags: Array.isArray(extracted.complianceTags)
+          ? extracted.complianceTags
+          : [],
+
+        // ✅ requirements (new)
+        requirements:
+          extracted.requirements && typeof extracted.requirements === "object"
+            ? {
+                skillsRequired: Array.isArray(extracted.requirements.skillsRequired)
+                  ? extracted.requirements.skillsRequired
+                  : [],
+                skillsPreferred: Array.isArray(extracted.requirements.skillsPreferred)
+                  ? extracted.requirements.skillsPreferred
+                  : [],
+                educationRequired:
+                  typeof extracted.requirements.educationRequired === "string"
+                    ? extracted.requirements.educationRequired
+                    : null,
+                yearsExperienceMin:
+                  typeof extracted.requirements.yearsExperienceMin === "number" &&
+                  Number.isFinite(extracted.requirements.yearsExperienceMin)
+                    ? extracted.requirements.yearsExperienceMin
+                    : null,
+                certificationsPreferred: Array.isArray(
+                  extracted.requirements.certificationsPreferred
+                )
+                  ? extracted.requirements.certificationsPreferred
+                  : [],
+                workModelRequired:
+                  typeof extracted.requirements.workModelRequired === "string"
+                    ? extracted.requirements.workModelRequired
+                    : null,
+              }
+            : null,
       });
 
       setShowConfirm(true);
     } catch (e) {
       console.error(e);
       const fallback = extractJobDetails(jobDescription);
-      setExtractedData(fallback);
+      setExtractedData({
+        ...fallback,
+        payText: "Unknown",
+        employmentType: null,
+        workModel: null,
+        experienceLevel: null,
+        complianceTags: [],
+        requirements: null,
+      });
       setShowConfirm(true);
       toast.error("AI extract failed — used fallback extraction.");
     } finally {
@@ -335,14 +381,19 @@ export default function NewJob() {
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
-  const chipBase =
-    "px-4 py-2 rounded-full text-sm font-medium border border-white/12 bg-white/[0.07] text-white/85";
-  const chipNeon =
-    "px-4 py-2 rounded-full text-sm font-medium border border-purple-500/25 bg-purple-600/18 text-purple-100";
-  const chipGreen =
-    "px-4 py-2 rounded-full text-sm font-semibold border border-emerald-500/25 bg-emerald-600/18 text-emerald-100";
-  const chipAmber =
-    "px-4 py-2 rounded-full text-sm font-semibold border border-amber-500/25 bg-amber-600/18 text-amber-100";
+  // ✅ Neon “set together” theme (all pills/cards have a consistent neon border)
+  const neonBorder = "border border-purple-500/22";
+  const neonCard = `bg-white/[0.03] ${neonBorder} shadow-xl shadow-purple-600/10`;
+  const neonPill =
+    "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-purple-500/22";
+  const neonPillStrong =
+    "px-4 py-2 rounded-full text-sm font-semibold bg-purple-600/18 text-purple-100 border border-purple-500/28";
+
+  // Keep “status colors” but still tie into purple border
+  const pillGreen =
+    "px-4 py-2 rounded-full text-sm font-semibold bg-emerald-600/18 text-emerald-100 border border-purple-500/22";
+  const pillAmber =
+    "px-4 py-2 rounded-full text-sm font-semibold bg-amber-600/18 text-amber-100 border border-purple-500/22";
 
   const fmtMoney = (n) =>
     typeof n === "number"
@@ -371,6 +422,7 @@ export default function NewJob() {
         ? `${symbol}${min}${suffix}`
         : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
+
     if (extractedData?.payText) return extractedData.payText;
     return null;
   };
@@ -398,14 +450,27 @@ export default function NewJob() {
     return `Top ${top}% pay`;
   };
 
+  // ✅ shared “pop up zoom” for anything interactive
   const hoverZoom =
-    "transition-transform duration-200 will-change-transform hover:scale-[1.01] hover:-translate-y-[1px]";
+    "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
   const hoverZoomSoft =
     "transition-transform duration-200 will-change-transform hover:scale-[1.01]";
+  const pressFx = "active:scale-[0.99]";
 
   // ✅ default resume detection (for star)
   const isDefaultResume = (r) =>
     r?.isDefault === true || r?.default === true || r?.is_default === true;
+
+  // Requirements helpers
+  const req = extractedData?.requirements || null;
+  const hasReq =
+    !!req &&
+    (req.skillsRequired?.length ||
+      req.skillsPreferred?.length ||
+      req.educationRequired ||
+      req.yearsExperienceMin != null ||
+      req.certificationsPreferred?.length ||
+      req.workModelRequired);
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,6%)] text-white">
@@ -427,7 +492,7 @@ export default function NewJob() {
           <Button
             variant="ghost"
             onClick={() => navigate(createPageUrl("AppHome"))}
-            className="h-10 px-4 rounded-lg border border-red-500/40 text-red-200 hover:text-white hover:bg-red-600/15 hover:border-red-400/70 transition-all"
+            className={`h-10 px-4 rounded-lg border border-red-500/40 text-red-200 hover:text-white hover:bg-red-600/15 hover:border-red-400/70 transition-all ${hoverZoomSoft} ${pressFx}`}
           >
             Close
           </Button>
@@ -435,10 +500,10 @@ export default function NewJob() {
       </header>
 
       <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)]">
-        {/* ✅ Analyzing Modal: checkbox steps incl. skills (more “adventurous”) */}
+        {/* ✅ Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className="rounded-2xl p-10 max-w-md w-full mx-4 border border-purple-500/20 bg-[hsl(240,10%,10%)] shadow-2xl shadow-purple-600/10">
+            <div className={`rounded-2xl p-10 max-w-md w-full mx-4 ${neonBorder} bg-[hsl(240,10%,10%)] shadow-2xl shadow-purple-600/10`}>
               <div className="text-center">
                 <div className="w-20 h-20 rounded-full bg-purple-600/18 flex items-center justify-center mx-auto mb-6 border border-purple-500/20">
                   <Loader2 className="w-10 h-10 text-purple-200 animate-spin" />
@@ -475,14 +540,14 @@ export default function NewJob() {
                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
                       <Tag className="w-3.5 h-3.5 text-white/55" />
                     </div>
-                    Extracting skills & keywords
+                    Extracting skills & requirements
                   </div>
 
                   <div className="flex items-center gap-3 text-sm text-white/65">
                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
                       <Shield className="w-3.5 h-3.5 text-white/55" />
                     </div>
-                    Checking constraints (visa / model / seniority)
+                    Checking constraints (visa / on-site / seniority)
                   </div>
 
                   <div className="flex items-center gap-3 text-sm text-white/65">
@@ -509,7 +574,7 @@ export default function NewJob() {
           </div>
         )}
 
-        {/* Confirmation Screen (unchanged) */}
+        {/* Confirmation Screen */}
         {showConfirm && extractedData && (
           <div className="w-full">
             <div className="mb-7 text-center">
@@ -522,7 +587,8 @@ export default function NewJob() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
+              {/* LEFT: extracted */}
+              <div className={`lg:col-span-2 rounded-2xl ${neonBorder} bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden`}>
                 <div className="h-1.5 bg-gradient-to-r from-purple-600/80 via-fuchsia-500/45 to-purple-600/80" />
                 <div className="p-8 md:p-10">
                   <div className="flex items-start justify-between gap-6">
@@ -539,7 +605,7 @@ export default function NewJob() {
                               jobTitle: e.target.value,
                             })
                           }
-                          className="bg-white/10 border-white/14 text-white h-12 text-lg"
+                          className="bg-white/10 border-purple-500/22 text-white h-12 text-lg"
                         />
                       ) : (
                         <p className="text-3xl font-semibold text-white">
@@ -560,7 +626,7 @@ export default function NewJob() {
                                 company: e.target.value,
                               })
                             }
-                            className="bg-white/10 border-white/14 text-white h-12 text-lg"
+                            className="bg-white/10 border-purple-500/22 text-white h-12 text-lg"
                           />
                         ) : (
                           <p className="text-xl text-white/90 font-medium">
@@ -582,7 +648,7 @@ export default function NewJob() {
                                     website: e.target.value,
                                   })
                                 }
-                                className="bg-white/10 border-white/14 text-white h-11 text-base flex-1"
+                                className="bg-white/10 border-purple-500/22 text-white h-11 text-base flex-1"
                               />
                             ) : (
                               <span className="truncate">
@@ -607,6 +673,7 @@ export default function NewJob() {
                         )}
                       </div>
 
+                      {/* Job Details */}
                       <div className="mt-7">
                         <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
                           <Tag className="w-4 h-4" />
@@ -614,32 +681,34 @@ export default function NewJob() {
                         </label>
                         <div className="flex flex-wrap gap-3">
                           {extractedData.employmentType && (
-                            <span className={`${chipBase} flex items-center gap-2`}>
+                            <span className={`${neonPill} flex items-center gap-2`}>
                               <Briefcase className="w-4 h-4 text-white/60" />
                               {extractedData.employmentType}
                             </span>
                           )}
                           {extractedData.workModel && (
-                            <span className={`${chipBase} flex items-center gap-2`}>
+                            <span className={`${neonPill} flex items-center gap-2`}>
                               <Building2 className="w-4 h-4 text-white/60" />
                               {extractedData.workModel}
                             </span>
                           )}
-                          {extractedData.experienceBand && (
-                            <span className={`${chipBase} flex items-center gap-2`}>
+                          {extractedData.experienceLevel && (
+                            <span className={`${neonPill} flex items-center gap-2`}>
                               <Clock className="w-4 h-4 text-white/60" />
-                              {extractedData.experienceBand}
+                              {extractedData.experienceLevel}
                             </span>
                           )}
-                          {extractedData.visaClearance && (
-                            <span className={`${chipBase} flex items-center gap-2`}>
-                              <ShieldCheck className="w-4 h-4 text-white/60" />
-                              {extractedData.visaClearance}
-                            </span>
-                          )}
+                          {Array.isArray(extractedData.complianceTags) &&
+                            extractedData.complianceTags.slice(0, 6).map((tag, i) => (
+                              <span key={i} className={`${neonPillStrong} flex items-center gap-2`}>
+                                <ShieldCheck className="w-4 h-4 text-purple-100" />
+                                {tag}
+                              </span>
+                            ))}
                         </div>
                       </div>
 
+                      {/* Compensation */}
                       {(extractedData.payText ||
                         extractedData.payMin != null ||
                         extractedData.payMax != null ||
@@ -653,16 +722,19 @@ export default function NewJob() {
 
                           <div className="flex flex-wrap gap-3">
                             {renderPayPrimary() && (
-                              <span className={chipGreen}>{renderPayPrimary()}</span>
+                              <span className={pillGreen}>{renderPayPrimary()}</span>
                             )}
+
                             {renderConfidence() && (
-                              <span className={chipBase}>{renderConfidence()}</span>
+                              <span className={neonPill}>{renderConfidence()}</span>
                             )}
+
                             {renderAnnual() && (
-                              <span className={chipAmber}>{renderAnnual()}</span>
+                              <span className={pillAmber}>{renderAnnual()}</span>
                             )}
+
                             {renderTopPay() && (
-                              <span className={`${chipNeon} flex items-center gap-2`}>
+                              <span className={`${neonPillStrong} flex items-center gap-2`}>
                                 <Percent className="w-4 h-4" />
                                 {renderTopPay()}
                               </span>
@@ -679,6 +751,89 @@ export default function NewJob() {
                         </div>
                       )}
 
+                      {/* ✅ Requirements (new) */}
+                      {hasReq && (
+                        <div className="mt-8">
+                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                            <ListChecks className="w-4 h-4" />
+                            Requirements
+                          </label>
+
+                          <div className="space-y-4">
+                            {(req?.educationRequired || req?.yearsExperienceMin != null || req?.workModelRequired) && (
+                              <div className="flex flex-wrap gap-3">
+                                {req?.educationRequired && (
+                                  <span className={`${neonPill} flex items-center gap-2`}>
+                                    <EduIcon className="w-4 h-4 text-white/60" />
+                                    {req.educationRequired}
+                                  </span>
+                                )}
+                                {req?.yearsExperienceMin != null && (
+                                  <span className={`${neonPill} flex items-center gap-2`}>
+                                    <Clock className="w-4 h-4 text-white/60" />
+                                    {req.yearsExperienceMin}+ yrs
+                                  </span>
+                                )}
+                                {req?.workModelRequired && (
+                                  <span className={`${neonPillStrong} flex items-center gap-2`}>
+                                    <Building2 className="w-4 h-4" />
+                                    {req.workModelRequired} required
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {Array.isArray(req?.skillsRequired) && req.skillsRequired.length > 0 && (
+                              <div>
+                                <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                                  Required skills
+                                </div>
+                                <div className="flex flex-wrap gap-3">
+                                  {req.skillsRequired.slice(0, 16).map((s, i) => (
+                                    <span key={i} className={neonPillStrong}>
+                                      {s}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {Array.isArray(req?.skillsPreferred) && req.skillsPreferred.length > 0 && (
+                              <div>
+                                <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                                  Preferred skills
+                                </div>
+                                <div className="flex flex-wrap gap-3">
+                                  {req.skillsPreferred.slice(0, 12).map((s, i) => (
+                                    <span key={i} className={neonPill}>
+                                      {s}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {Array.isArray(req?.certificationsPreferred) &&
+                              req.certificationsPreferred.length > 0 && (
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                                    Certifications (preferred)
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    {req.certificationsPreferred.slice(0, 12).map((c, i) => (
+                                      <span key={i} className={`${neonPill} flex items-center gap-2`}>
+                                        <Award className="w-4 h-4 text-white/60" />
+                                        {c}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Skills / Keywords */}
                       {extractedData.keywords?.length > 0 && (
                         <div className="mt-8">
                           <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
@@ -686,11 +841,8 @@ export default function NewJob() {
                             Key Skills Detected
                           </label>
                           <div className="flex flex-wrap gap-3">
-                            {extractedData.keywords.map((keyword, i) => (
-                              <span
-                                key={i}
-                                className="px-4 py-2 rounded-full bg-purple-600/22 text-purple-100 text-sm font-medium border border-purple-500/22"
-                              >
+                            {extractedData.keywords.slice(0, 16).map((keyword, i) => (
+                              <span key={i} className={neonPill}>
                                 {keyword}
                               </span>
                             ))}
@@ -704,7 +856,7 @@ export default function NewJob() {
                         variant="ghost"
                         size="sm"
                         onClick={() => setEditMode(true)}
-                        className="text-white/65 hover:text-white hover:bg-white/10"
+                        className={`text-white/65 hover:text-white hover:bg-white/10 ${hoverZoomSoft} ${pressFx}`}
                       >
                         <Edit2 className="w-5 h-5" />
                       </Button>
@@ -715,7 +867,7 @@ export default function NewJob() {
                     <div className="mt-8 flex justify-end">
                       <Button
                         onClick={() => setEditMode(false)}
-                        className="bg-purple-600 hover:bg-purple-500 text-white h-12 px-7 text-lg font-semibold shadow-lg shadow-purple-600/25"
+                        className={`bg-purple-600 hover:bg-purple-500 text-white h-12 px-7 text-lg font-semibold shadow-lg shadow-purple-600/25 ${hoverZoomSoft} ${pressFx}`}
                       >
                         Save Changes
                       </Button>
@@ -724,7 +876,8 @@ export default function NewJob() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
+              {/* RIGHT: preview (✅ every card hover-zooms) */}
+              <div className={`rounded-2xl ${neonBorder} bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden`}>
                 <div className="h-1.5 bg-gradient-to-r from-purple-600/70 via-purple-400/25 to-purple-600/70" />
                 <div className="p-8">
                   <h3 className="text-xl font-bold text-white mb-2">
@@ -735,7 +888,7 @@ export default function NewJob() {
                   </p>
 
                   <div className="space-y-4">
-                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                    <div className={`${hoverZoom} ${pressFx} flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] ${neonBorder}`}>
                       <FileText className="w-5 h-5 text-purple-200 mt-0.5" />
                       <div>
                         <p className="font-semibold text-white">Tailored Resume</p>
@@ -745,7 +898,7 @@ export default function NewJob() {
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                    <div className={`${hoverZoom} ${pressFx} flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] ${neonBorder}`}>
                       <Wand2 className="w-5 h-5 text-purple-200 mt-0.5" />
                       <div>
                         <p className="font-semibold text-white">Cover Letter</p>
@@ -755,7 +908,7 @@ export default function NewJob() {
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                    <div className={`${hoverZoom} ${pressFx} flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] ${neonBorder}`}>
                       <ClipboardCheck className="w-5 h-5 text-purple-200 mt-0.5" />
                       <div>
                         <p className="font-semibold text-white">Checklist</p>
@@ -766,7 +919,7 @@ export default function NewJob() {
                     </div>
                   </div>
 
-                  <div className="mt-6 p-4 rounded-xl bg-purple-600/10 border border-purple-500/20">
+                  <div className={`${hoverZoomSoft} ${pressFx} mt-6 p-4 rounded-xl bg-purple-600/10 ${neonBorder}`}>
                     <p className="text-sm text-white/80">
                       Mode:{" "}
                       <span className="font-semibold text-purple-100">
@@ -784,6 +937,7 @@ export default function NewJob() {
               </div>
             </div>
 
+            {/* Bottom buttons (✅ hover zoom on both) */}
             <div className="mt-7 flex flex-col sm:flex-row gap-4">
               <Button
                 onClick={() => {
@@ -791,13 +945,13 @@ export default function NewJob() {
                   setExtractedData(null);
                 }}
                 variant="outline"
-                className="flex-1 h-14 bg-white/5 border-white/15 text-white hover:bg-white/10 text-lg"
+                className={`flex-1 h-14 bg-white/5 ${neonBorder} text-white hover:bg-white/10 text-lg ${hoverZoomSoft} ${pressFx}`}
               >
                 Back to Edit
               </Button>
               <Button
                 onClick={handleGenerate}
-                className="flex-1 h-14 bg-purple-600 hover:bg-purple-500 text-white text-lg font-semibold shadow-lg shadow-purple-600/25"
+                className={`flex-1 h-14 bg-purple-600 hover:bg-purple-500 text-white text-lg font-semibold shadow-lg shadow-purple-600/25 ${hoverZoomSoft} ${pressFx}`}
               >
                 Looks good — Generate Packet
               </Button>
@@ -818,26 +972,25 @@ export default function NewJob() {
             </div>
 
             {/* ✅ purple border card */}
-            <div className="rounded-2xl p-7 border border-purple-500/25 bg-[hsl(240,10%,10%)] shadow-xl shadow-purple-600/10">
-              {/* TOP ROW: make both boxes same height */}
+            <div className={`rounded-2xl p-7 ${neonBorder} bg-[hsl(240,10%,10%)] shadow-xl shadow-purple-600/10`}>
+              {/* TOP ROW: same style/height */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                {/* Resume Selector */}
-                <div className={`${hoverZoom} rounded-xl border border-white/12 bg-white/[0.03] p-5`}>
+                {/* Resume Selector (✅ no “default pill text”; star only) */}
+                <div className={`${hoverZoom} ${pressFx} rounded-xl ${neonCard} p-5`}>
                   <label className="block text-lg font-semibold mb-2 text-white">
                     Resume <span className="text-red-400">*</span>
                   </label>
 
                   {resumesLoading ? (
-                    <div className="p-4 rounded-xl border border-white/12 text-center bg-white/[0.05]">
+                    <div className={`p-4 rounded-xl ${neonBorder} text-center bg-white/[0.05]`}>
                       <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
                     </div>
                   ) : hasResumes ? (
                     <Select value={selectedResume} onValueChange={setSelectedResume}>
-                      <SelectTrigger className="border-white/12 text-white h-14 text-lg bg-white/[0.05] transition-transform duration-200 hover:scale-[1.01]">
+                      <SelectTrigger className={`border-purple-500/22 text-white h-14 text-lg bg-white/[0.05] ${hoverZoomSoft} ${pressFx}`}>
                         <SelectValue placeholder="Select resume" />
                       </SelectTrigger>
 
-                      {/* ✅ black picker + star on default */}
                       <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
                         {resumes.map((resume) => {
                           const star = isDefaultResume(resume);
@@ -859,11 +1012,6 @@ export default function NewJob() {
                                   <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
                                 )}
                                 <span className="truncate">{resume.name}</span>
-                                {star && (
-                                  <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-100">
-                                    Default
-                                  </span>
-                                )}
                               </span>
                             </SelectItem>
                           );
@@ -871,25 +1019,20 @@ export default function NewJob() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <div className="p-4 rounded-xl border border-white/12 text-center bg-white/[0.05]">
+                    <div className={`p-4 rounded-xl ${neonBorder} text-center bg-white/[0.05]`}>
                       <p className="mb-3 text-sm text-white/60">No resumes found</p>
                       <Button
                         onClick={() => navigate(createPageUrl("Resumes"))}
-                        className="bg-purple-600 hover:bg-purple-500 text-white hover:scale-[1.02] transition-all"
+                        className={`bg-purple-600 hover:bg-purple-500 text-white ${hoverZoomSoft} ${pressFx}`}
                       >
                         Upload Resume
                       </Button>
                     </div>
                   )}
-
-                  <div className="mt-3 flex items-center gap-2 text-xs text-white/55">
-                    <Stars className="w-4 h-4 text-purple-200" />
-                    Default resumes are marked with a star.
-                  </div>
                 </div>
 
-                {/* Student Mode Toggle (same “card box” style + equal height feel) */}
-                <div className={`${hoverZoom} rounded-xl border border-white/12 bg-white/[0.03] p-5 flex items-start gap-3`}>
+                {/* Student Mode Toggle */}
+                <div className={`${hoverZoom} ${pressFx} rounded-xl ${neonCard} p-5 flex items-start gap-3`}>
                   <button
                     onClick={() => setStudentMode(!studentMode)}
                     className={`w-12 h-6 rounded-full transition-all relative ${
@@ -912,11 +1055,6 @@ export default function NewJob() {
                     <p className="text-sm text-white/55">
                       Emphasizes projects, coursework, and skills instead of work experience.
                     </p>
-
-                    <div className="mt-3 text-xs text-white/55 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-purple-200" />
-                      Great for freshmen + internships.
-                    </div>
                   </div>
                 </div>
               </div>
@@ -933,10 +1071,10 @@ export default function NewJob() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => setAiMode("standard")}
-                    className={`p-6 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
+                    className={`p-6 rounded-xl border-2 transition-all text-left ${hoverZoom} ${pressFx} relative ${
                       aiMode === "standard"
                         ? "border-green-500/55 bg-green-500/12 shadow-lg shadow-green-500/20"
-                        : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-green-500/10"
+                        : "border-purple-500/22 bg-white/[0.03] hover:border-purple-400/35 hover:shadow-lg hover:shadow-purple-500/10"
                     }`}
                     style={{ minHeight: "200px" }}
                   >
@@ -946,7 +1084,7 @@ export default function NewJob() {
                       </div>
                       <span className="font-bold text-xl text-white">Standard</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-100 mb-3 font-semibold border border-green-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-100 mb-3 font-semibold border border-purple-500/22">
                       Recommended • Safe & ATS-friendly
                     </span>
                     <ul className="text-base leading-relaxed space-y-1 text-white/75">
@@ -961,10 +1099,10 @@ export default function NewJob() {
 
                   <button
                     onClick={() => setAiMode("elite")}
-                    className={`p-6 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
+                    className={`p-6 rounded-xl border-2 transition-all text-left ${hoverZoom} ${pressFx} relative ${
                       aiMode === "elite"
                         ? "border-amber-500/55 bg-amber-500/12 shadow-lg shadow-amber-500/20"
-                        : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-amber-500/10"
+                        : "border-purple-500/22 bg-white/[0.03] hover:border-purple-400/35 hover:shadow-lg hover:shadow-purple-500/10"
                     }`}
                     style={{ minHeight: "200px" }}
                   >
@@ -974,7 +1112,7 @@ export default function NewJob() {
                       </div>
                       <span className="font-bold text-xl text-white">Elite</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-100 mb-3 font-semibold border border-amber-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-100 mb-3 font-semibold border border-purple-500/22">
                       Advanced • Use with caution
                     </span>
                     <ul className="text-base leading-relaxed space-y-1 mb-2 text-white/75">
@@ -1000,8 +1138,8 @@ export default function NewJob() {
                 </div>
               </div>
 
-              {/* Job Description (✅ blank placeholder; no filler “example”) */}
-              <div className={`${hoverZoom} mt-4`}>
+              {/* Job Description (blank placeholder) */}
+              <div className={`${hoverZoom} ${pressFx} mt-4`}>
                 <label className="block text-lg font-semibold mb-2 text-white">
                   Job Description <span className="text-red-400">*</span>
                 </label>
@@ -1009,7 +1147,7 @@ export default function NewJob() {
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                   placeholder=""
-                  className="min-h-[220px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
+                  className="min-h-[220px] border-purple-500/22 text-white resize-none text-base bg-white/[0.05]"
                 />
                 <p className="text-sm mt-2 text-white/55">
                   Paste the full job description. We’ll extract title, company, pay, and requirements.
@@ -1021,7 +1159,7 @@ export default function NewJob() {
                 <Button
                   onClick={handleAnalyze}
                   disabled={!selectedResume || !jobDescription.trim()}
-                  className="w-full h-14 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/30 transition-all"
+                  className={`w-full h-14 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed ${hoverZoomSoft} ${pressFx} hover:shadow-lg hover:shadow-purple-500/30`}
                 >
                   Generate Packet
                 </Button>

@@ -26,7 +26,7 @@ function parseWorkModel(text) {
   if (/\bhybrid\b/i.test(t)) return "Hybrid";
 
   // On-site patterns
-  if (/(on[-\s]?site|onsite|in[-\s]?office|office[-\s]?based|must be on site)/i.test(t)) return "On-site";
+  if (/(on[-\s]?site|onsite|in[-\s]?office|office[-\s]?based|must be on site|in person|in-person)/i.test(t)) return "On-site";
 
   // Remote patterns
   if (/\bremote\b/i.test(t) || /(work from home|wfh)/i.test(t)) return "Remote";
@@ -50,26 +50,14 @@ function parseExperience(text) {
   };
 
   let lo = null;
-  let hi = null;
 
-  if (range) {
-    lo = pick(range[1]);
-    hi = pick(range[2]);
-  } else if (plus) {
-    lo = pick(plus[1]);
-    hi = null;
-  } else if (min) {
-    lo = pick(min[1]);
-    hi = null;
-  } else if (single) {
-    lo = pick(single[1]);
-    hi = null;
-  }
+  if (range) lo = pick(range[1]);
+  else if (plus) lo = pick(plus[1]);
+  else if (min) lo = pick(min[1]);
+  else if (single) lo = pick(single[1]);
 
   // Convert to a simple chip band
-  // You asked: “0–2 yrs”, “3–5 yrs”, “5+ yrs”
   const years = lo;
-
   if (years == null) return null;
   if (years <= 2) return "0–2 yrs";
   if (years <= 5) return "3–5 yrs";
@@ -98,7 +86,7 @@ function parseCompliance(text) {
     tags.add("Clearance required");
   }
 
-  // Background check (optional but helpful)
+  // Background check
   if (/(background check|drug test|e-?verify)/i.test(t)) {
     tags.add("Background check");
   }
@@ -108,7 +96,176 @@ function parseCompliance(text) {
 
 /**
  * -----------------------------
- * Pay fallback (your existing logic)
+ * Requirements extraction (fallback)
+ * -----------------------------
+ */
+
+function splitLines(text) {
+  return String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function pickSectionLines(allLines, headerRegex, maxLines = 40) {
+  // Find a header line, then collect subsequent bullet-ish lines until a blank-ish stop.
+  const idx = allLines.findIndex((l) => headerRegex.test(l));
+  if (idx === -1) return [];
+
+  const out = [];
+  for (let i = idx + 1; i < allLines.length && out.length < maxLines; i++) {
+    const line = allLines[i];
+    if (!line) break;
+
+    // Stop if we hit another common header
+    if (/^(benefits|job\s*type|location|work\s*location|position\s*overview|full\s*job\s*description|responsibilities|key\s*responsibilities|qualifications|requirements|education|experience|skills)\b[:]?$/i.test(line)) {
+      break;
+    }
+
+    // Bullet-ish or short requirement-ish lines
+    if (/^[-•·o]\s+/.test(line) || /required|preferred|experience|degree|cert/i.test(line)) {
+      out.push(line.replace(/^[-•·o]\s+/, "").trim());
+    } else {
+      // also keep short lines right after header
+      if (line.length <= 140) out.push(line);
+    }
+  }
+  return out;
+}
+
+function uniqStrings(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const x of arr || []) {
+    const s = String(x || "").trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+function parseRequirementsFallback(text) {
+  const raw = String(text || "");
+  const lines = splitLines(raw);
+
+  const skillsRequired = [];
+  const skillsPreferred = [];
+  const certificationsPreferred = [];
+
+  // 1) Try to read explicit Indeed-like “Skills” block
+  const skillsBlock = pickSectionLines(lines, /^skills\b[:]?$/i, 30);
+  for (const l of skillsBlock) {
+    // Example: "VoIP (Required)" or "Salesforce (Required)"
+    const m = l.match(/^(.+?)(?:\s*\((required|preferred)\))?$/i);
+    if (!m) continue;
+    const skill = m[1].trim();
+    const tag = (m[2] || "").toLowerCase();
+    if (!skill) continue;
+    if (tag === "preferred") skillsPreferred.push(skill);
+    else skillsRequired.push(skill); // default to required when unclear in Skills block
+  }
+
+  // 2) Qualifications / Requirements sections
+  const qualLines = [
+    ...pickSectionLines(lines, /^qualifications\b[:]?$/i, 50),
+    ...pickSectionLines(lines, /^requirements\b[:]?$/i, 50),
+  ];
+
+  // 3) Education required
+  let educationRequired = null;
+  // Pull from explicit Education header if present
+  const eduLines = pickSectionLines(lines, /^education\b[:]?$/i, 20);
+  const eduText = [...eduLines, ...qualLines].join(" \n ");
+
+  if (/\b(bachelor|b\.?s\.?|ba\b|bs\b)\b/i.test(eduText)) {
+    educationRequired = "Bachelor's degree (or equivalent experience)";
+  } else if (/\bassociate\b/i.test(eduText)) {
+    educationRequired = "Associate degree (or equivalent experience)";
+  }
+
+  // 4) Years experience min (prefer “Required/Qualifications”)
+  let yearsExperienceMin = null;
+  const yearsM =
+    raw.replace(/[–—]/g, "-").match(/(\d{1,2})\+?\s*(?:years?|yrs?)\s*(?:of\s+)?experience\b/i) ||
+    raw.replace(/[–—]/g, "-").match(/(?:experience|exp\.)\s*[:\-]?\s*(\d{1,2})\+?\s*(?:years?|yrs?)\b/i) ||
+    raw.replace(/[–—]/g, "-").match(/(?:minimum|min\.)\s*(\d{1,2})\s*(?:years?|yrs?)\b/i);
+
+  if (yearsM) {
+    const n = Number(yearsM[1]);
+    if (Number.isFinite(n)) yearsExperienceMin = n;
+  }
+
+  // 5) Certifications preferred
+  const certHints = [
+    /CompTIA\s*(Network\+|Security\+|A\+)\b/i,
+    /\bCCNA\b/i,
+    /\bCCNP\b/i,
+    /Microsoft\s+Certified/i,
+    /\bMCSA\b/i,
+    /\bMCSE\b/i,
+  ];
+  for (const re of certHints) {
+    const m = raw.match(re);
+    if (m) {
+      // keep the matched string as displayed
+      certificationsPreferred.push(m[0].trim());
+    }
+  }
+
+  // 6) Work model required (strong phrasing)
+  let workModelRequired = null;
+  if (/(100%\s*in\s*(office|offifce)|fully\s*on[-\s]?site|work\s*location:\s*in\s*person|\bin\s*person\b|on[-\s]?site|onsite)/i.test(raw)) {
+    workModelRequired = "On-site";
+  } else if (/\bhybrid\b/i.test(raw)) {
+    workModelRequired = "Hybrid";
+  } else if (/\bremote\b/i.test(raw) || /(work from home|wfh)/i.test(raw)) {
+    workModelRequired = "Remote";
+  }
+
+  // 7) If skillsRequired still empty, infer from a small tech dictionary
+  if (skillsRequired.length === 0) {
+    const tech = [
+      "VoIP",
+      "Salesforce",
+      "Litify",
+      "Windows",
+      "Linux",
+      "Networking",
+      "Firewalls",
+      "Antivirus",
+      "Backups",
+      "Cybersecurity",
+      "Helpdesk",
+      "Active Directory",
+      "Office 365",
+      "Microsoft 365",
+      "Azure",
+      "VPN",
+      "Servers",
+    ];
+    for (const s of tech) {
+      const re = new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (re.test(raw)) skillsRequired.push(s);
+    }
+  }
+
+  return {
+    skillsRequired: uniqStrings(skillsRequired).slice(0, 16),
+    skillsPreferred: uniqStrings(skillsPreferred).slice(0, 12),
+    educationRequired,
+    yearsExperienceMin,
+    certificationsPreferred: uniqStrings(certificationsPreferred).slice(0, 10),
+    workModelRequired,
+  };
+}
+
+/**
+ * -----------------------------
+ * Pay fallback (HARDENED: prevents false positives)
  * -----------------------------
  */
 function parsePayFallback(text) {
@@ -116,6 +273,19 @@ function parsePayFallback(text) {
 
   // Normalize dashes
   const norm = t.replace(/[–—]/g, "-");
+
+  // 🚫 Common noise that should never be treated as pay
+  // - Ratings: "4.5 out of 5 stars"
+  // - Response rate: "Responded to 75%"
+  // - Zip codes: 75230
+  // - Commute: 25 minutes
+  // - Addresses/IDs
+  const hasNoiseContext =
+    /(out of 5 stars|stars\b|responded to\s*\d+%|typicall?y within|commute|minutes\b|job address|tx\s+\d{5}\b)/i.test(norm);
+
+  // ✅ Strong pay hints
+  const hasCurrency = /(\$|usd\b)/i.test(norm);
+  const hasPayKeyword = /\b(pay|salary|compensation|pay range|salary range|hourly)\b/i.test(norm);
 
   // period detection helpers
   const periodHints = [
@@ -128,7 +298,27 @@ function parsePayFallback(text) {
 
   let payPeriod = null;
   for (const p of periodHints) {
-    if (p.re.test(norm)) { payPeriod = p.period; break; }
+    if (p.re.test(norm)) {
+      payPeriod = p.period;
+      break;
+    }
+  }
+
+  // If no currency and no pay keyword, do NOT parse numbers at all.
+  // This single rule prevents your "$129" from zip/ratings/percentages.
+  if (!hasCurrency && !hasPayKeyword) {
+    return {
+      payText: null,
+      payMin: null,
+      payMax: null,
+      payCurrency: "USD",
+      payPeriod: null,
+      payConfidence: 0.0,
+      payAnnualizedMin: null,
+      payAnnualizedMax: null,
+      payPercentile: null,
+      payPercentileSource: null,
+    };
   }
 
   // Range patterns:
@@ -138,7 +328,7 @@ function parsePayFallback(text) {
 
   // Single patterns:
   // "$120k", "$85,000", "85k"
-  const oneRe = /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
+  const oneRe = /(\$|usd\s*)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
 
   const toNum = (raw, isK) => {
     if (!raw) return null;
@@ -149,7 +339,7 @@ function parsePayFallback(text) {
 
   let payMin = null;
   let payMax = null;
-  let payCurrency = "USD";
+  const payCurrency = "USD";
   let payText = null;
 
   const rangeM = norm.match(rangeRe);
@@ -158,7 +348,6 @@ function parsePayFallback(text) {
     const minK = !!rangeM[3] && /k/i.test(rangeM[3]);
     const maxRaw = rangeM[5];
     const maxK = !!rangeM[6] && /k/i.test(rangeM[6]);
-
     payMin = toNum(minRaw, minK);
     payMax = toNum(maxRaw, maxK);
   } else {
@@ -172,16 +361,17 @@ function parsePayFallback(text) {
     }
   }
 
-  // If we found numbers, build a nice text
+  // Build nice text if we found numbers
   if (payMin != null || payMax != null) {
     const sym = "$";
     const fmt = (n) => (typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "");
-    const suffix = payPeriod ? ({hour:"/hr",year:"/yr",month:"/mo",week:"/wk",day:"/day"}[payPeriod] || "") : "";
+    const suffix = payPeriod ? ({ hour: "/hr", year: "/yr", month: "/mo", week: "/wk", day: "/day" }[payPeriod] || "") : "";
 
     if (payMin != null && payMax != null) {
-      payText = payMin === payMax
-        ? `${sym}${fmt(payMin)}${suffix}`
-        : `${sym}${fmt(payMin)} – ${sym}${fmt(payMax)}${suffix}`;
+      payText =
+        payMin === payMax
+          ? `${sym}${fmt(payMin)}${suffix}`
+          : `${sym}${fmt(payMin)} – ${sym}${fmt(payMax)}${suffix}`;
     } else if (payMin != null) {
       payText = `${sym}${fmt(payMin)}${suffix}`;
     } else if (payMax != null) {
@@ -190,9 +380,14 @@ function parsePayFallback(text) {
   }
 
   // Confidence
-  let payConfidence = 0.2;
-  if (payText && payPeriod) payConfidence = 0.85;
-  else if (payText && !payPeriod) payConfidence = 0.35;
+  let payConfidence = 0.0;
+
+  // strong: currency + period
+  if (payText && payPeriod && hasCurrency) payConfidence = 0.9;
+  // medium: currency + pay keyword, missing period
+  else if (payText && hasCurrency && hasPayKeyword) payConfidence = 0.55;
+  // weak: currency but noisy context => downgrade hard
+  else if (payText && hasCurrency) payConfidence = hasNoiseContext ? 0.15 : 0.35;
 
   // Annualize
   const annualFactor =
@@ -206,7 +401,7 @@ function parsePayFallback(text) {
   const payAnnualizedMin = (annualFactor && typeof payMin === "number") ? Math.round(payMin * annualFactor) : null;
   const payAnnualizedMax = (annualFactor && typeof payMax === "number") ? Math.round(payMax * annualFactor) : null;
 
-  // Percentile heuristic
+  // Percentile heuristic (only if annualized exists)
   const mid = (payAnnualizedMin && payAnnualizedMax)
     ? (payAnnualizedMin + payAnnualizedMax) / 2
     : (payAnnualizedMin || payAnnualizedMax || null);
@@ -233,6 +428,49 @@ function parsePayFallback(text) {
     payPercentile,
     payPercentileSource: payPercentile != null ? "heuristic-bands" : null,
   };
+}
+
+// Final guard: if pay isn’t confident enough, return Unknown
+function normalizePayUnknown(basePay, minConfidence = 0.5) {
+  const p = basePay || {};
+  const conf = typeof p.payConfidence === "number" ? p.payConfidence : 0;
+
+  // if we have *any* pay numbers but low confidence => wipe and mark unknown
+  const hasNums = (p.payMin != null || p.payMax != null);
+  const hasText = typeof p.payText === "string" && p.payText.trim();
+
+  if ((hasNums || hasText) && conf < minConfidence) {
+    return {
+      payText: "Unknown",
+      payMin: null,
+      payMax: null,
+      payCurrency: "USD",
+      payPeriod: null,
+      payConfidence: 0.0,
+      payAnnualizedMin: null,
+      payAnnualizedMax: null,
+      payPercentile: null,
+      payPercentileSource: null,
+    };
+  }
+
+  // if nothing found at all
+  if (!hasNums && !hasText) {
+    return {
+      payText: "Unknown",
+      payMin: null,
+      payMax: null,
+      payCurrency: "USD",
+      payPeriod: null,
+      payConfidence: 0.0,
+      payAnnualizedMin: null,
+      payAnnualizedMax: null,
+      payPercentile: null,
+      payPercentileSource: null,
+    };
+  }
+
+  return p;
 }
 
 function fallbackExtract(description) {
@@ -264,7 +502,7 @@ function fallbackExtract(description) {
 
   // Website
   const urlMatch = text.match(/https?:\/\/[^\s]+/);
-  let website = urlMatch ? urlMatch[0] : null;
+  const website = urlMatch ? urlMatch[0] : null;
 
   // Location
   const locPatterns = [
@@ -298,14 +536,17 @@ function fallbackExtract(description) {
     if (re.test(text)) skills.add(s);
   }
 
-  // NEW: chips
+  // chips
   const employmentType = parseEmploymentType(text);
   const workModel = parseWorkModel(text);
   const experienceLevel = parseExperience(text);
   const complianceTags = parseCompliance(text);
 
-  // Pay
-  const pay = parsePayFallback(text);
+  // Pay (hardened + unknown guard)
+  const pay = normalizePayUnknown(parsePayFallback(text), 0.5);
+
+  // Requirements
+  const requirements = parseRequirementsFallback(text);
 
   return {
     jobTitle: jobTitle || "Position",
@@ -319,6 +560,8 @@ function fallbackExtract(description) {
     workModel,
     experienceLevel,
     complianceTags,
+
+    requirements,
 
     ...pay,
   };
@@ -344,7 +587,7 @@ module.exports = async function (request, context) {
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
 
-    // Hardcoded ok (you said you don't have apiVersion in env)
+    // Hardcoded ok
     const apiVersion = "2024-02-15-preview";
 
     if (!endpoint || !apiKey || !deployment) {
@@ -372,15 +615,25 @@ workModel (string|null),        // one of: "Remote","Hybrid","On-site"
 experienceLevel (string|null),  // one of: "0–2 yrs","3–5 yrs","5+ yrs"
 complianceTags (string[]),      // examples: ["US Citizen required","Clearance required","No sponsorship"]
 
+requirements (object|null) with keys:
+  skillsRequired (string[]),
+  skillsPreferred (string[]),
+  educationRequired (string|null),
+  yearsExperienceMin (number|null),
+  certificationsPreferred (string[]),
+  workModelRequired (string|null) // "Remote"|"Hybrid"|"On-site"|null
+
 payText (string|null),
 payMin (number|null),
 payMax (number|null),
 payCurrency (string|null),      // ex: "USD"
 payPeriod (string|null),        // one of: "hour","year","month","week","day"
-payConfidence (number|null)     // 0..1 confidence about payPeriod
+payConfidence (number|null)     // 0..1 confidence about pay
 
+Rules:
+- Do NOT invent pay. If you do not see salary/compensation explicitly, set all pay fields null.
+- If unknown: use null (or [] for arrays).
 No markdown, no commentary, no extra keys.
-If unknown: use null (or [] for arrays).
 `.trim();
 
     const user = `JOB DESCRIPTION:\n${jobDescription}`;
@@ -397,7 +650,7 @@ If unknown: use null (or [] for arrays).
           { role: "user", content: user },
         ],
         temperature: 0.1,
-        max_tokens: 650,
+        max_tokens: 850,
       }),
     });
 
@@ -428,6 +681,44 @@ If unknown: use null (or [] for arrays).
     const allowedExperience = new Set(["0–2 yrs", "3–5 yrs", "5+ yrs"]);
     const allowedPeriods = new Set(["hour", "year", "month", "week", "day"]);
 
+    const safeReq = (() => {
+      const r = parsed?.requirements;
+      if (!r || typeof r !== "object") return null;
+
+      const wm = (typeof r.workModelRequired === "string" && allowedWorkModel.has(r.workModelRequired))
+        ? r.workModelRequired
+        : null;
+
+      const years = (typeof r.yearsExperienceMin === "number" && Number.isFinite(r.yearsExperienceMin))
+        ? Math.max(0, Math.min(60, Math.round(r.yearsExperienceMin)))
+        : null;
+
+      const skillsRequired = Array.isArray(r.skillsRequired)
+        ? r.skillsRequired.filter((x) => typeof x === "string" && x.trim()).slice(0, 16)
+        : [];
+
+      const skillsPreferred = Array.isArray(r.skillsPreferred)
+        ? r.skillsPreferred.filter((x) => typeof x === "string" && x.trim()).slice(0, 12)
+        : [];
+
+      const certs = Array.isArray(r.certificationsPreferred)
+        ? r.certificationsPreferred.filter((x) => typeof x === "string" && x.trim()).slice(0, 12)
+        : [];
+
+      const edu = (typeof r.educationRequired === "string" && r.educationRequired.trim())
+        ? r.educationRequired.trim()
+        : null;
+
+      return {
+        skillsRequired,
+        skillsPreferred,
+        educationRequired: edu,
+        yearsExperienceMin: years,
+        certificationsPreferred: certs,
+        workModelRequired: wm,
+      };
+    })();
+
     const safe = {
       jobTitle: typeof parsed?.jobTitle === "string" && parsed.jobTitle.trim() ? parsed.jobTitle.trim() : null,
       company: typeof parsed?.company === "string" && parsed.company.trim() ? parsed.company.trim() : null,
@@ -451,6 +742,8 @@ If unknown: use null (or [] for arrays).
         ? parsed.complianceTags.filter((x) => typeof x === "string" && x.trim()).slice(0, 6)
         : [],
 
+      requirements: safeReq,
+
       payText: typeof parsed?.payText === "string" && parsed.payText.trim() ? parsed.payText.trim() : null,
       payMin: (typeof parsed?.payMin === "number" && Number.isFinite(parsed.payMin)) ? parsed.payMin : null,
       payMax: (typeof parsed?.payMax === "number" && Number.isFinite(parsed.payMax)) ? parsed.payMax : null,
@@ -466,24 +759,27 @@ If unknown: use null (or [] for arrays).
     if (safe.payMax != null && safe.payMin == null) safe.payMin = safe.payMax;
 
     // If payPeriod missing but we have numbers, let fallback infer period/annualization/percentile
-    const needPayFallback = (safe.payMin != null || safe.payMax != null) && !safe.payPeriod;
+    const needPayFallback = (safe.payMin != null || safe.payMax != null || safe.payText) && !safe.payPeriod;
 
     const payFromFallback = needPayFallback
       ? parsePayFallback(jobDescription)
       : null;
 
-    const mergedPay = {
+    const mergedPayRaw = {
       payText: safe.payText ?? payFromFallback?.payText ?? null,
       payMin: safe.payMin ?? payFromFallback?.payMin ?? null,
       payMax: safe.payMax ?? payFromFallback?.payMax ?? null,
       payCurrency: safe.payCurrency ?? payFromFallback?.payCurrency ?? "USD",
       payPeriod: safe.payPeriod ?? payFromFallback?.payPeriod ?? null,
-      payConfidence: safe.payConfidence ?? payFromFallback?.payConfidence ?? null,
+      payConfidence: safe.payConfidence ?? payFromFallback?.payConfidence ?? 0.0,
       payAnnualizedMin: payFromFallback?.payAnnualizedMin ?? null,
       payAnnualizedMax: payFromFallback?.payAnnualizedMax ?? null,
       payPercentile: payFromFallback?.payPercentile ?? null,
       payPercentileSource: payFromFallback?.payPercentileSource ?? null,
     };
+
+    // ✅ Final pay truth: if not confident, make it Unknown
+    const mergedPay = normalizePayUnknown(mergedPayRaw, 0.5);
 
     const isMostlyEmpty =
       !safe.jobTitle &&
@@ -492,11 +788,15 @@ If unknown: use null (or [] for arrays).
       !safe.location &&
       !safe.seniority &&
       safe.keywords.length === 0 &&
-      (mergedPay.payMin == null && mergedPay.payMax == null && !mergedPay.payText) &&
-      !safe.employmentType &&
-      !safe.workModel &&
-      !safe.experienceLevel &&
-      (!safe.complianceTags || safe.complianceTags.length === 0);
+      (!safe.employmentType && !safe.workModel && !safe.experienceLevel) &&
+      (!safe.complianceTags || safe.complianceTags.length === 0) &&
+      (!safe.requirements || (
+        (!safe.requirements.educationRequired) &&
+        (!safe.requirements.yearsExperienceMin) &&
+        (!safe.requirements.workModelRequired) &&
+        (!safe.requirements.skillsRequired || safe.requirements.skillsRequired.length === 0) &&
+        (!safe.requirements.certificationsPreferred || safe.requirements.certificationsPreferred.length === 0)
+      ));
 
     const base = isMostlyEmpty
       ? fallbackExtract(jobDescription)
@@ -513,29 +813,22 @@ If unknown: use null (or [] for arrays).
           experienceLevel: safe.experienceLevel,
           complianceTags: safe.complianceTags,
 
+          requirements: safe.requirements,
+
           ...mergedPay,
         };
 
-    // If AI missed the chip fields, fallback-fill them (super helpful)
+    // If AI missed the chip fields, fallback-fill them
     if (!base.employmentType) base.employmentType = parseEmploymentType(jobDescription);
     if (!base.workModel) base.workModel = parseWorkModel(jobDescription);
     if (!base.experienceLevel) base.experienceLevel = parseExperience(jobDescription);
     if (!base.complianceTags || base.complianceTags.length === 0) base.complianceTags = parseCompliance(jobDescription);
 
-    // If AI missed pay entirely, fallback-fill it
-    if (!base.payText && base.payMin == null && base.payMax == null) {
-      const p = parsePayFallback(jobDescription);
-      base.payText = p.payText;
-      base.payMin = p.payMin;
-      base.payMax = p.payMax;
-      base.payCurrency = p.payCurrency;
-      base.payPeriod = p.payPeriod;
-      base.payConfidence = p.payConfidence;
-      base.payAnnualizedMin = p.payAnnualizedMin;
-      base.payAnnualizedMax = p.payAnnualizedMax;
-      base.payPercentile = p.payPercentile;
-      base.payPercentileSource = p.payPercentileSource;
-    }
+    // If AI missed requirements, fallback-fill them
+    if (!base.requirements) base.requirements = parseRequirementsFallback(jobDescription);
+
+    // If pay is still missing, guarantee Unknown
+    base.payText = (typeof base.payText === "string" && base.payText.trim()) ? base.payText.trim() : "Unknown";
 
     return { status: 200, jsonBody: base };
   } catch (err) {
