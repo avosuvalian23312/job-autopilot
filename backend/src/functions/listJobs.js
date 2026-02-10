@@ -12,12 +12,15 @@ const container = cosmos
 async function listJobs(request, context) {
   try {
     // ✅ SWA auth user (do NOT accept userId from query/body)
-    const user = getSwaUser(request);
-    if (!user?.userId) {
-      return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
-    }
+   const { getSwaUser } = require("../lib/swaUser"); // adjust path if needed
 
-    const userId = user.userId;
+const user = getSwaUser(request);
+if (!user?.userId) {
+  return { status: 401, jsonBody: { error: "Not authenticated" } };
+}
+
+const userId = user.userId;
+
 
     // ✅ If your container PK is /userId, pass partitionKey for speed + correctness
     const { resources } = await container.items

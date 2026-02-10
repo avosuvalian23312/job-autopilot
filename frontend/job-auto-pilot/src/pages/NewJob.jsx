@@ -60,13 +60,31 @@ export default function NewJob() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const apiFetch = async (path, options = {}) => {
-    const res = await fetch(path, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
+  const res = await fetch(path, {
+    ...options,
+    credentials: "include", // ✅ SWA auth cookie
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!res.ok) {
+    const msg = data?.error || data?.message || data?.detail || text || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return data;
+};
+
 
     if (!res.ok) {
       let msg = `Request failed (${res.status})`;
@@ -281,6 +299,7 @@ export default function NewJob() {
       const res = await fetch("/api/jobs/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", 
         body: JSON.stringify({
           jobTitle,
           company,
@@ -357,6 +376,7 @@ export default function NewJob() {
       const res = await fetch("/api/jobs/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ jobDescription }),
       });
 
@@ -490,35 +510,32 @@ export default function NewJob() {
     }
   };
 
-  const handleGenerate = async () => {
-    try {
-      const userId = localStorage.getItem("userId") || "demo-user";
+ const payload = {
+  resumeId: selectedResume,
+  jobTitle: extractedData.jobTitle,
+  company: extractedData.company,
+  website: extractedData.website,
+  location: extractedData.location,
+  seniority: extractedData.seniority,
+  keywords: extractedData.keywords,
+  jobDescription,
+  aiMode,
+  studentMode,
+};
 
-      const payload = {
-        userId,
-        resumeId: selectedResume,
-        jobTitle: extractedData.jobTitle,
-        company: extractedData.company,
-        website: extractedData.website,
-        location: extractedData.location,
-        seniority: extractedData.seniority,
-        keywords: extractedData.keywords,
-        jobDescription,
-        aiMode,
-        studentMode,
-      };
 
       const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include", // ✅
+  body: JSON.stringify(payload),
+});
+
 
       if (!res.ok) throw new Error(await res.text());
       const job = await res.json();
 
       localStorage.setItem("latestJobId", job.id);
-      localStorage.setItem("latestUserId", userId);
       navigate(createPageUrl("Packet"));
     } catch (e) {
       console.error(e);
