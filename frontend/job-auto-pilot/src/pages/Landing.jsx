@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Rocket, ArrowRight, Sparkles } from "lucide-react";
+import { Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+
+import SocialProofToasts from "@/components/landing/SocialProofToasts";
 
 import HeroSection from "@/components/landing/HeroSection";
 import CompanyLogos from "@/components/landing/CompanyLogos";
@@ -38,37 +40,47 @@ export default function Landing() {
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>
+
           <nav className="hidden md:flex items-center gap-8 text-sm text-white/50 font-medium">
             <a
               href="#pricing"
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                document
+                  .getElementById("pricing")
+                  ?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
               Pricing
             </a>
+
             <a
               href="#features"
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });
+                document
+                  .getElementById("features")
+                  ?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
               Features
             </a>
+
             <a
               href="#reviews"
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth" });
+                document
+                  .getElementById("reviews")
+                  ?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
               Reviews
             </a>
+
             <a
               onClick={() => navigate(createPageUrl("Blog"))}
               className="hover:text-white transition-colors cursor-pointer"
@@ -76,6 +88,7 @@ export default function Landing() {
               Blog
             </a>
           </nav>
+
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -84,6 +97,7 @@ export default function Landing() {
             >
               Sign in
             </Button>
+
             <Button
               onClick={() => setAuthOpen(true)}
               className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium px-5 py-2 rounded-lg premium-button shadow-lg hover:shadow-purple-500/25"
@@ -96,48 +110,109 @@ export default function Landing() {
 
       <main className="pt-16">
         <HeroSection onGetStarted={() => setAuthOpen(true)} />
-        
-        <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <CompanyLogos />
         </motion.div>
-        
-        <motion.div id="how-it-works" initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          id="how-it-works"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <HowItWorks />
         </motion.div>
-        
+
         <div id="features">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
             <FeatureCards />
           </motion.div>
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
             <FeaturesPreview />
           </motion.div>
         </div>
-        
-        <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <BeforeAfter />
         </motion.div>
-        
-        <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <StatsSection />
         </motion.div>
-        
-        <motion.div id="reviews" initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          id="reviews"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <ReviewsSection />
         </motion.div>
-        
-        <motion.div id="pricing" initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          id="pricing"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <PricingSection onSelect={() => setAuthOpen(true)} />
         </motion.div>
-        
-        <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+        >
           <FAQSection />
         </motion.div>
       </main>
 
       <FooterSection />
 
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onComplete={handleAuthComplete} />
+      {/* ✅ Anchored Social Proof Toasts (mock data) */}
+      <SocialProofToasts
+        position="bottom-left"
+        maxVisible={3}
+        intervalMs={5200}
+        hideOnMobile={false}
+      />
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onComplete={handleAuthComplete}
+      />
     </div>
   );
 }
