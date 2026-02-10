@@ -43,7 +43,6 @@ import { toast } from "sonner";
 
 export default function NewJob() {
   const navigate = useNavigate();
-
   const [selectedResume, setSelectedResume] = useState("");
   const [aiMode, setAiMode] = useState("standard");
   const [studentMode, setStudentMode] = useState(false);
@@ -60,7 +59,12 @@ export default function NewJob() {
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // ✅ SWA-safe JSON helper (cookie auth)
+  // ✅ SWA user cache
+  const [swaUserId, setSwaUserId] = useState("");
+
+  // ---------------------------
+  // Helpers
+  // ---------------------------
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(path, {
       ...options,
@@ -73,6 +77,7 @@ export default function NewJob() {
 
     const text = await res.text().catch(() => "");
     let data = null;
+
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -85,6 +90,7 @@ export default function NewJob() {
         data?.message ||
         data?.detail ||
         (typeof data?.raw === "string" ? data.raw : "") ||
+        text ||
         `Request failed (${res.status})`;
       throw new Error(msg);
     }
@@ -92,13 +98,67 @@ export default function NewJob() {
     return data;
   };
 
+  const getSwaUser = async () => {
+    // SWA provides /.auth/me when auth is enabled
+    const res = await fetch("/.auth/me", { credentials: "include" });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const entry = Array.isArray(data) ? data[0] : null;
+    const cp = entry?.clientPrincipal || null;
+
+    // userId is best; fall back to userDetails or identityProvider
+    const userId =
+      cp?.userId ||
+      cp?.userDetails ||
+      (cp?.identityProvider ? `${cp.identityProvider}:${cp.userDetails || ""}` : "") ||
+      "";
+
+    return userId || null;
+  };
+
+  const ensureUserId = async () => {
+    if (swaUserId) return swaUserId;
+
+    try {
+      const id = await getSwaUser();
+      if (id) {
+        setSwaUserId(id);
+        return id;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Last-resort stable fallback (still not "demo-user")
+    const local =
+      localStorage.getItem("swaUserIdFallback") ||
+      `anon-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem("swaUserIdFallback", local);
+    setSwaUserId(local);
+    return local;
+  };
+
+  useEffect(() => {
+    // warm SWA user id (non-blocking)
+    (async () => {
+      try {
+        const id = await getSwaUser();
+        if (id) setSwaUserId(id);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  // ---------------------------
+  // Load resumes
+  // ---------------------------
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
         setResumesLoading(true);
-
         const data = await apiFetch("/api/resume/list", { method: "GET" });
         const list = Array.isArray(data) ? data : data?.resumes || [];
 
@@ -139,13 +199,15 @@ export default function NewJob() {
     };
   }, []);
 
+  // ---------------------------
+  // Fallback extraction
+  // ---------------------------
   const extractJobDetails = (description) => {
     const titlePatterns = [
       /(?:position|role|job title|title):\s*([^\n]+)/i,
       /(?:hiring|seeking|looking for)\s+(?:a|an)?\s*([^\n,]+?)(?:\s+at|\s+to|\s+in|\s*\n)/i,
       /^([A-Z][^\n]{10,60}?)(?:\s+at|\s+-|\s*\n)/m,
     ];
-
     let jobTitle = null;
     for (const pattern of titlePatterns) {
       const match = description.match(pattern);
@@ -160,7 +222,6 @@ export default function NewJob() {
       /(?:at|@)\s+([A-Z][a-zA-Z0-9\s&.]+?)(?:\s+is|\s+we|\s+-|\s*\n)/,
       /About\s+([A-Z][a-zA-Z0-9\s&.]+?)(?:\s*\n|:)/i,
     ];
-
     let company = null;
     for (const pattern of companyPatterns) {
       const match = description.match(pattern);
@@ -181,7 +242,6 @@ export default function NewJob() {
       /(?:in|at)\s+([A-Z][a-z]+,\s*[A-Z]{2})/,
       /(?:Remote|Hybrid|On-site)(?:\s+in\s+)?([A-Z][a-z]+(?:,\s*[A-Z]{2})?)/,
     ];
-
     let location = null;
     for (const pattern of locationPatterns) {
       const match = description.match(pattern);
@@ -197,7 +257,6 @@ export default function NewJob() {
       "Mid-Level": /mid.level|experienced|3\+?\s*years/i,
       Senior: /senior|lead|principal|staff|10\+?\s*years/i,
     };
-
     let seniority = null;
     for (const [level, pattern] of Object.entries(seniorityKeywords)) {
       if (pattern.test(description)) {
@@ -221,7 +280,6 @@ export default function NewJob() {
       "Git",
       "Azure",
     ];
-
     commonSkills.forEach((skill) => {
       if (new RegExp(`\\b${skill}\\b`, "i").test(description)) {
         skills.add(skill.replace(/\\\+/g, "+"));
@@ -238,7 +296,9 @@ export default function NewJob() {
     };
   };
 
-  // ✅ frontend-safe fallback previews (if /api/jobs/preview fails)
+  // ---------------------------
+  // Previews
+  // ---------------------------
   const buildPreviewFallback = ({ jobTitle, company, keywords, studentMode: sm }) => {
     const role = String(jobTitle || "this role").trim() || "this role";
     const org = String(company || "the company").trim() || "the company";
@@ -273,21 +333,11 @@ export default function NewJob() {
     };
   };
 
-  // ✅ fetch micro-previews from backend
-  const fetchPreviews = async ({
-    jobTitle,
-    company,
-    keywords,
-    jobDescription: jd,
-    aiMode: mode,
-    studentMode: sm,
-  }) => {
+  const fetchPreviews = async ({ jobTitle, company, keywords, jobDescription: jd, aiMode: mode, studentMode: sm }) => {
     setPreviewLoading(true);
     try {
-      const res = await fetch("/api/jobs/preview", {
+      const data = await apiFetch("/api/jobs/preview", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           jobTitle,
           company,
@@ -297,9 +347,6 @@ export default function NewJob() {
           studentMode: sm,
         }),
       });
-
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
 
       const bullets = Array.isArray(data?.resumePreview?.bullets)
         ? data.resumePreview.bullets.filter(Boolean).slice(0, 2)
@@ -329,19 +376,15 @@ export default function NewJob() {
       });
     } catch (e) {
       console.error(e);
-      setPreviewData(
-        buildPreviewFallback({
-          jobTitle,
-          company,
-          keywords,
-          studentMode: sm,
-        })
-      );
+      setPreviewData(buildPreviewFallback({ jobTitle, company, keywords, studentMode: sm }));
     } finally {
       setPreviewLoading(false);
     }
   };
 
+  // ---------------------------
+  // Analyze + Generate
+  // ---------------------------
   const handleAnalyze = async () => {
     if (!selectedResume) {
       toast.error("Please select a resume");
@@ -357,60 +400,49 @@ export default function NewJob() {
     try {
       setPreviewData(null);
 
-      const res = await fetch("/api/jobs/extract", {
+      const extracted = await apiFetch("/api/jobs/extract", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ jobDescription }),
       });
 
-      if (!res.ok) throw new Error(await res.text());
-      const extracted = await res.json();
-
       const nextExtracted = {
-        jobTitle: extracted.jobTitle || "Position",
-        company: extracted.company || "Company",
-        website: extracted.website || null,
-        location: extracted.location || null,
-        seniority: extracted.seniority || null,
-        keywords: Array.isArray(extracted.keywords) ? extracted.keywords : [],
+        jobTitle: extracted?.jobTitle || "Position",
+        company: extracted?.company || "Company",
+        website: extracted?.website || null,
+        location: extracted?.location || null,
+        seniority: extracted?.seniority || null,
+        keywords: Array.isArray(extracted?.keywords) ? extracted.keywords : [],
 
-        payText: extracted.payText || null,
-        payMin:
-          typeof extracted.payMin === "number" && Number.isFinite(extracted.payMin)
-            ? extracted.payMin
-            : null,
-        payMax:
-          typeof extracted.payMax === "number" && Number.isFinite(extracted.payMax)
-            ? extracted.payMax
-            : null,
-        payCurrency: extracted.payCurrency || "USD",
-        payPeriod: extracted.payPeriod || null,
+        payText: extracted?.payText || null,
+        payMin: typeof extracted?.payMin === "number" && Number.isFinite(extracted.payMin) ? extracted.payMin : null,
+        payMax: typeof extracted?.payMax === "number" && Number.isFinite(extracted.payMax) ? extracted.payMax : null,
+        payCurrency: extracted?.payCurrency || "USD",
+        payPeriod: extracted?.payPeriod || null,
         payConfidence:
-          typeof extracted.payConfidence === "number" && Number.isFinite(extracted.payConfidence)
+          typeof extracted?.payConfidence === "number" && Number.isFinite(extracted.payConfidence)
             ? extracted.payConfidence
             : null,
         payAnnualizedMin:
-          typeof extracted.payAnnualizedMin === "number" && Number.isFinite(extracted.payAnnualizedMin)
+          typeof extracted?.payAnnualizedMin === "number" && Number.isFinite(extracted.payAnnualizedMin)
             ? extracted.payAnnualizedMin
             : null,
         payAnnualizedMax:
-          typeof extracted.payAnnualizedMax === "number" && Number.isFinite(extracted.payAnnualizedMax)
+          typeof extracted?.payAnnualizedMax === "number" && Number.isFinite(extracted.payAnnualizedMax)
             ? extracted.payAnnualizedMax
             : null,
         payPercentile:
-          typeof extracted.payPercentile === "number" && Number.isFinite(extracted.payPercentile)
+          typeof extracted?.payPercentile === "number" && Number.isFinite(extracted.payPercentile)
             ? extracted.payPercentile
             : null,
-        payPercentileSource: extracted.payPercentileSource || null,
+        payPercentileSource: extracted?.payPercentileSource || null,
 
-        employmentType: extracted.employmentType || null,
-        workModel: extracted.workModel || null,
-        experienceLevel: extracted.experienceLevel || null,
-        complianceTags: Array.isArray(extracted.complianceTags) ? extracted.complianceTags : [],
+        employmentType: extracted?.employmentType || null,
+        workModel: extracted?.workModel || null,
+        experienceLevel: extracted?.experienceLevel || null,
+        complianceTags: Array.isArray(extracted?.complianceTags) ? extracted.complianceTags : [],
 
         requirements:
-          extracted.requirements && typeof extracted.requirements === "object"
+          extracted?.requirements && typeof extracted.requirements === "object"
             ? {
                 skillsRequired: Array.isArray(extracted.requirements.skillsRequired)
                   ? extracted.requirements.skillsRequired
@@ -451,8 +483,8 @@ export default function NewJob() {
       });
     } catch (e) {
       console.error(e);
-      const fallback = extractJobDetails(jobDescription);
 
+      const fallback = extractJobDetails(jobDescription);
       const nextExtracted = {
         ...fallback,
         payText: "Unknown",
@@ -481,38 +513,40 @@ export default function NewJob() {
     }
   };
 
-  // ✅ FIXED: this MUST be inside an async function (your build failed because it wasn’t)
   const handleGenerate = async () => {
     try {
+      if (!extractedData?.jobTitle || !jobDescription.trim()) {
+        toast.error("Missing job title or job description.");
+        return;
+      }
+
+      const userId = await ensureUserId();
+
       const payload = {
-        // ✅ no "demo-user" — backend should use SWA auth identity
+        userId, // ✅ REQUIRED by backend
         resumeId: selectedResume,
-        jobTitle: extractedData.jobTitle,
+        jobTitle: extractedData.jobTitle, // ✅ REQUIRED by backend
         company: extractedData.company,
         website: extractedData.website,
         location: extractedData.location,
         seniority: extractedData.seniority,
         keywords: extractedData.keywords,
-        jobDescription,
+        jobDescription, // ✅ REQUIRED by backend
         aiMode,
         studentMode,
       };
 
-      const res = await fetch("/api/jobs", {
+      const job = await apiFetch("/api/jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error(await res.text());
-      const job = await res.json();
-
-      localStorage.setItem("latestJobId", job.id);
+      localStorage.setItem("latestJobId", job?.id);
+      localStorage.setItem("latestUserId", userId);
       navigate(createPageUrl("Packet"));
     } catch (e) {
       console.error(e);
-      toast.error("Failed to create job.");
+      toast.error(e?.message || "Failed to create job.");
     }
   };
 
@@ -523,15 +557,12 @@ export default function NewJob() {
   // ---------------------------
   const pageBg =
     "bg-[radial-gradient(1100px_700px_at_10%_-10%,rgba(99,102,241,0.22),transparent_55%),radial-gradient(900px_600px_at_95%_0%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_650px_at_50%_110%,rgba(168,85,247,0.18),transparent_55%),linear-gradient(180deg,hsl(240,10%,6%),hsl(240,12%,5%))]";
-  const surface =
-    "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
+  const surface = "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
   const edge = "border border-white/10 ring-1 ring-white/5";
   const brandRing = "ring-1 ring-violet-400/20 border-violet-400/20";
   const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
-  const ambient =
-    "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
-  const neonLine =
-    "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
+  const ambient = "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
+  const neonLine = "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
   const hoverLift =
     "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
@@ -539,8 +570,7 @@ export default function NewJob() {
   const glowHover =
     "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.22),0_18px_60px_rgba(0,0,0,0.55),0_0_40px_rgba(34,211,238,0.10)]";
 
-  const pill =
-    "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
+  const pill = "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
   const pillBrand =
     "px-4 py-2 rounded-full text-sm font-semibold bg-violet-500/15 text-violet-100 border border-violet-400/25";
   const pillGood =
@@ -549,9 +579,7 @@ export default function NewJob() {
     "px-4 py-2 rounded-full text-sm font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
 
   const fmtMoney = (n) =>
-    typeof n === "number"
-      ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-      : null;
+    typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
 
   const renderPayPrimary = () => {
     const cur = extractedData?.payCurrency || "USD";
@@ -565,6 +593,7 @@ export default function NewJob() {
     if (min && max) {
       return min === max ? `${symbol}${min}${suffix}` : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
+
     if (extractedData?.payText) return extractedData.payText;
     return null;
   };
@@ -592,8 +621,7 @@ export default function NewJob() {
     return `Top ${top}% pay`;
   };
 
-  const isDefaultResume = (r) =>
-    r?.isDefault === true || r?.default === true || r?.is_default === true;
+  const isDefaultResume = (r) => r?.isDefault === true || r?.default === true || r?.is_default === true;
 
   const req = extractedData?.requirements || null;
   const hasReq =
@@ -648,12 +676,8 @@ export default function NewJob() {
               </div>
 
               <div className="flex flex-col leading-tight">
-                <span className="font-bold tracking-tight text-white text-lg">
-                  Job Autopilot
-                </span>
-                <span className="text-xs text-white/60">
-                  Premium packet generation • ATS-safe workflow
-                </span>
+                <span className="font-bold tracking-tight text-white text-lg">Job Autopilot</span>
+                <span className="text-xs text-white/60">Premium packet generation • ATS-safe workflow</span>
               </div>
             </div>
 
@@ -679,22 +703,12 @@ export default function NewJob() {
         {/* Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div
-              className={[
-                "rounded-2xl p-10 max-w-md w-full mx-4",
-                surface,
-                edge,
-                brandRing,
-                ambient,
-              ].join(" ")}
-            >
+            <div className={["rounded-2xl p-10 max-w-md w-full mx-4", surface, edge, brandRing, ambient].join(" ")}>
               <div className="text-center">
                 <div className="w-20 h-20 rounded-2xl bg-white/[0.04] flex items-center justify-center mx-auto mb-6 border border-white/10 ring-1 ring-violet-400/15 shadow-[0_0_45px_rgba(167,139,250,0.12)]">
                   <Loader2 className="w-10 h-10 text-violet-200 animate-spin" />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">
-                  Scanning job post…
-                </h2>
+                <h2 className="text-2xl font-bold text-white mb-2">Scanning job post…</h2>
                 <p className="text-white/65 mb-7">Building your packet blueprint</p>
 
                 <div className="space-y-3 text-left">
@@ -742,13 +756,9 @@ export default function NewJob() {
                   <div className="mt-5 pt-5 border-t border-white/10 flex items-center justify-center gap-2 text-xs text-white/60">
                     <Stars className="w-4 h-4 text-violet-200" />
                     AI mode:{" "}
-                    <span className="font-semibold text-white/85">
-                      {aiMode === "elite" ? "Elite" : "Standard"}
-                    </span>
-                    • Student mode:{" "}
-                    <span className="font-semibold text-white/85">
-                      {studentMode ? "On" : "Off"}
-                    </span>
+                    <span className="font-semibold text-white/85">{aiMode === "elite" ? "Elite" : "Standard"}</span> •
+                    Student mode:{" "}
+                    <span className="font-semibold text-white/85">{studentMode ? "On" : "Off"}</span>
                   </div>
                 </div>
               </div>
@@ -760,68 +770,38 @@ export default function NewJob() {
         {showConfirm && extractedData && (
           <div className="w-full">
             <div className="mb-7 text-center">
-              <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">
-                Confirm details
-              </h1>
-              <p className="text-lg text-white/70">
-                Review extracted info before generating
-              </p>
+              <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">Confirm details</h1>
+              <p className="text-lg text-white/70">Review extracted info before generating</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left */}
-              <div
-                className={[
-                  "lg:col-span-2 rounded-2xl overflow-hidden",
-                  surface,
-                  edge,
-                  brandRing,
-                  cardShadow,
-                ].join(" ")}
-              >
+              <div className={["lg:col-span-2 rounded-2xl overflow-hidden", surface, edge, brandRing, cardShadow].join(" ")}>
                 <div className={`h-1.5 ${neonLine}`} />
                 <div className="p-8 md:p-10">
                   <div className="flex items-start justify-between gap-6">
                     <div className="min-w-0 flex-1">
-                      <label className="text-sm text-white/60 mb-2 block">
-                        Job Title
-                      </label>
+                      <label className="text-sm text-white/60 mb-2 block">Job Title</label>
                       {editMode ? (
                         <Input
                           value={extractedData.jobTitle}
-                          onChange={(e) =>
-                            setExtractedData({
-                              ...extractedData,
-                              jobTitle: e.target.value,
-                            })
-                          }
+                          onChange={(e) => setExtractedData({ ...extractedData, jobTitle: e.target.value })}
                           className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                         />
                       ) : (
-                        <p className="text-3xl font-semibold text-white tracking-tight">
-                          {extractedData.jobTitle}
-                        </p>
+                        <p className="text-3xl font-semibold text-white tracking-tight">{extractedData.jobTitle}</p>
                       )}
 
                       <div className="mt-6">
-                        <label className="text-sm text-white/60 mb-2 block">
-                          Company
-                        </label>
+                        <label className="text-sm text-white/60 mb-2 block">Company</label>
                         {editMode ? (
                           <Input
                             value={extractedData.company}
-                            onChange={(e) =>
-                              setExtractedData({
-                                ...extractedData,
-                                company: e.target.value,
-                              })
-                            }
+                            onChange={(e) => setExtractedData({ ...extractedData, company: e.target.value })}
                             className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                           />
                         ) : (
-                          <p className="text-xl text-white/90 font-medium">
-                            {extractedData.company}
-                          </p>
+                          <p className="text-xl text-white/90 font-medium">{extractedData.company}</p>
                         )}
                       </div>
 
@@ -832,12 +812,7 @@ export default function NewJob() {
                             {editMode ? (
                               <Input
                                 value={extractedData.website}
-                                onChange={(e) =>
-                                  setExtractedData({
-                                    ...extractedData,
-                                    website: e.target.value,
-                                  })
-                                }
+                                onChange={(e) => setExtractedData({ ...extractedData, website: e.target.value })}
                                 className="bg-black/30 border-white/12 text-white h-11 text-base flex-1 rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                               />
                             ) : (
@@ -887,10 +862,7 @@ export default function NewJob() {
                           )}
                           {Array.isArray(extractedData.complianceTags) &&
                             extractedData.complianceTags.slice(0, 6).map((tag, i) => (
-                              <span
-                                key={i}
-                                className={`${pillBrand} flex items-center gap-2`}
-                              >
+                              <span key={i} className={`${pillBrand} flex items-center gap-2`}>
                                 <ShieldCheck className="w-4 h-4 text-violet-100" />
                                 {tag}
                               </span>
@@ -910,15 +882,9 @@ export default function NewJob() {
                           </label>
 
                           <div className="flex flex-wrap gap-3">
-                            {renderPayPrimary() && (
-                              <span className={pillGood}>{renderPayPrimary()}</span>
-                            )}
-                            {renderConfidence() && (
-                              <span className={pill}>{renderConfidence()}</span>
-                            )}
-                            {renderAnnual() && (
-                              <span className={pillWarn}>{renderAnnual()}</span>
-                            )}
+                            {renderPayPrimary() && <span className={pillGood}>{renderPayPrimary()}</span>}
+                            {renderConfidence() && <span className={pill}>{renderConfidence()}</span>}
+                            {renderAnnual() && <span className={pillWarn}>{renderAnnual()}</span>}
                             {renderTopPay() && (
                               <span className={`${pillBrand} flex items-center gap-2`}>
                                 <Percent className="w-4 h-4" />
@@ -927,12 +893,11 @@ export default function NewJob() {
                             )}
                           </div>
 
-                          {typeof extractedData.payPercentile === "number" &&
-                            extractedData.payPercentileSource && (
-                              <p className="text-sm text-white/45 mt-3">
-                                Percentile is an estimate ({extractedData.payPercentileSource})
-                              </p>
-                            )}
+                          {typeof extractedData.payPercentile === "number" && extractedData.payPercentileSource && (
+                            <p className="text-sm text-white/45 mt-3">
+                              Percentile is an estimate ({extractedData.payPercentileSource})
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -944,9 +909,7 @@ export default function NewJob() {
                           </label>
 
                           <div className="space-y-4">
-                            {(req?.educationRequired ||
-                              req?.yearsExperienceMin != null ||
-                              req?.workModelRequired) && (
+                            {(req?.educationRequired || req?.yearsExperienceMin != null || req?.workModelRequired) && (
                               <div className="flex flex-wrap gap-3">
                                 {req?.educationRequired && (
                                   <span className={`${pill} flex items-center gap-2`}>
@@ -971,9 +934,7 @@ export default function NewJob() {
 
                             {Array.isArray(req?.skillsRequired) && req.skillsRequired.length > 0 && (
                               <div>
-                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                  Required skills
-                                </div>
+                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">Required skills</div>
                                 <div className="flex flex-wrap gap-3">
                                   {req.skillsRequired.slice(0, 16).map((s, i) => (
                                     <span key={i} className={pillBrand}>
@@ -999,22 +960,21 @@ export default function NewJob() {
                               </div>
                             )}
 
-                            {Array.isArray(req?.certificationsPreferred) &&
-                              req.certificationsPreferred.length > 0 && (
-                                <div>
-                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                    Certifications (preferred)
-                                  </div>
-                                  <div className="flex flex-wrap gap-3">
-                                    {req.certificationsPreferred.slice(0, 12).map((c, i) => (
-                                      <span key={i} className={`${pill} flex items-center gap-2`}>
-                                        <Award className="w-4 h-4 text-white/60" />
-                                        {c}
-                                      </span>
-                                    ))}
-                                  </div>
+                            {Array.isArray(req?.certificationsPreferred) && req.certificationsPreferred.length > 0 && (
+                              <div>
+                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                  Certifications (preferred)
                                 </div>
-                              )}
+                                <div className="flex flex-wrap gap-3">
+                                  {req.certificationsPreferred.slice(0, 12).map((c, i) => (
+                                    <span key={i} className={`${pill} flex items-center gap-2`}>
+                                      <Award className="w-4 h-4 text-white/60" />
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1041,11 +1001,9 @@ export default function NewJob() {
                         variant="ghost"
                         size="sm"
                         onClick={() => setEditMode(true)}
-                        className={[
-                          "text-white/65 hover:text-white hover:bg-white/5 rounded-xl",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
+                        className={["text-white/65 hover:text-white hover:bg-white/5 rounded-xl", hoverLift, pressFx].join(
+                          " "
+                        )}
                       >
                         <Edit2 className="w-5 h-5" />
                       </Button>
@@ -1073,23 +1031,11 @@ export default function NewJob() {
               </div>
 
               {/* Right */}
-              <div
-                className={[
-                  "rounded-2xl overflow-hidden",
-                  surface,
-                  edge,
-                  brandRing,
-                  cardShadow,
-                ].join(" ")}
-              >
+              <div className={["rounded-2xl overflow-hidden", surface, edge, brandRing, cardShadow].join(" ")}>
                 <div className={`h-1.5 ${neonLine}`} />
                 <div className="p-8">
-                  <h3 className="text-xl font-bold text-white mb-2 tracking-tight">
-                    Packet preview
-                  </h3>
-                  <p className="text-sm text-white/60 mb-6">
-                    What you’ll generate from this job post.
-                  </p>
+                  <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Packet preview</h3>
+                  <p className="text-sm text-white/60 mb-6">What you’ll generate from this job post.</p>
 
                   <div className="space-y-4">
                     <div
@@ -1104,9 +1050,7 @@ export default function NewJob() {
                       <FileText className="w-5 h-5 text-cyan-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Tailored Resume</p>
-                        <p className="text-sm text-white/60">
-                          Optimized bullets + keywords for ATS.
-                        </p>
+                        <p className="text-sm text-white/60">Optimized bullets + keywords for ATS.</p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
@@ -1140,17 +1084,13 @@ export default function NewJob() {
                       <Wand2 className="w-5 h-5 text-violet-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Cover Letter</p>
-                        <p className="text-sm text-white/60">
-                          Matching tone to role + company.
-                        </p>
+                        <p className="text-sm text-white/60">Matching tone to role + company.</p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
                             <div className="h-3 rounded bg-white/10 w-[88%]" />
                           ) : (
-                            <div className={previewBlurLine}>
-                              {coverPreviewSentence || "First sentence preview…"}
-                            </div>
+                            <div className={previewBlurLine}>{coverPreviewSentence || "First sentence preview…"}</div>
                           )}
                         </div>
                       </div>
@@ -1168,9 +1108,7 @@ export default function NewJob() {
                       <ClipboardCheck className="w-5 h-5 text-indigo-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Checklist</p>
-                        <p className="text-sm text-white/60">
-                          Next steps + quick apply notes.
-                        </p>
+                        <p className="text-sm text-white/60">Next steps + quick apply notes.</p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
@@ -1209,16 +1147,10 @@ export default function NewJob() {
                     ].join(" ")}
                   >
                     <p className="text-sm text-white/85">
-                      Mode:{" "}
-                      <span className="font-semibold text-white">
-                        {aiMode === "elite" ? "Elite" : "Standard"}
-                      </span>
+                      Mode: <span className="font-semibold text-white">{aiMode === "elite" ? "Elite" : "Standard"}</span>
                     </p>
                     <p className="text-sm text-white/60 mt-1">
-                      Student mode:{" "}
-                      <span className="font-semibold text-white/85">
-                        {studentMode ? "On" : "Off"}
-                      </span>
+                      Student mode: <span className="font-semibold text-white/85">{studentMode ? "On" : "Off"}</span>
                     </p>
                   </div>
                 </div>
@@ -1265,15 +1197,11 @@ export default function NewJob() {
         {!showConfirm && (
           <div className="max-w-[1180px] mx-auto">
             <div className="mb-5 text-center">
-              <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
-                Create a new job packet
-              </h1>
-              <p className="text-lg text-white/70">
-                Paste a job description — we’ll extract details automatically
-              </p>
+              <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">Create a new job packet</h1>
+              <p className="text-lg text-white/70">Paste a job description — we’ll extract details automatically</p>
             </div>
 
-            <div className={[ "rounded-2xl p-7", surface, edge, brandRing, ambient ].join(" ")}>
+            <div className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(" ")}>
               {/* Top row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {/* Resume selector */}
@@ -1327,9 +1255,7 @@ export default function NewJob() {
                               ].join(" ")}
                             >
                               <span className="flex items-center gap-2">
-                                {star && (
-                                  <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
-                                )}
+                                {star && <Star className="w-4 h-4 text-amber-200 fill-amber-200" />}
                                 <span className="truncate">{resume.name}</span>
                               </span>
                             </SelectItem>
@@ -1342,12 +1268,9 @@ export default function NewJob() {
                       <p className="mb-3 text-sm text-white/60">No resumes found</p>
                       <Button
                         onClick={() => navigate(createPageUrl("Resumes"))}
-                        className={[
-                          "rounded-2xl",
-                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
+                        className={["rounded-2xl", "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60", hoverLift, pressFx].join(
+                          " "
+                        )}
                       >
                         Upload Resume
                       </Button>
@@ -1372,9 +1295,7 @@ export default function NewJob() {
                     className={[
                       "w-12 h-6 rounded-full transition-all relative",
                       "border border-white/10",
-                      studentMode
-                        ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50"
-                        : "bg-white/10",
+                      studentMode ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50" : "bg-white/10",
                     ].join(" ")}
                     aria-label="Toggle student mode"
                   >
@@ -1390,9 +1311,7 @@ export default function NewJob() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <GraduationCap className="w-5 h-5 text-white/75" />
-                      <span className="text-base font-medium text-white">
-                        No experience / Student mode
-                      </span>
+                      <span className="text-base font-medium text-white">No experience / Student mode</span>
                     </div>
                     <p className="text-sm text-white/60">
                       Emphasizes projects, coursework, and skills instead of work experience.
@@ -1411,9 +1330,7 @@ export default function NewJob() {
                 <label className="block text-lg font-semibold mb-1 text-white">
                   AI Mode <span className="text-rose-300">*</span>
                 </label>
-                <p className="text-sm mb-3 text-white/65">
-                  Choose how AI handles your resume content.
-                </p>
+                <p className="text-sm mb-3 text-white/65">Choose how AI handles your resume content.</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
@@ -1443,9 +1360,7 @@ export default function NewJob() {
                       <li>• Improves clarity and impact of your existing bullets</li>
                       <li>• Rewrites descriptions to match the job</li>
                       <li>• Optimizes wording and keywords</li>
-                      <li className="font-semibold text-emerald-100/90">
-                        • Does NOT create fake experience
-                      </li>
+                      <li className="font-semibold text-emerald-100/90">• Does NOT create fake experience</li>
                     </ul>
                   </button>
 
@@ -1476,18 +1391,14 @@ export default function NewJob() {
                       <li>• May create or enhance experience bullets</li>
                       <li>• Can infer responsibilities from context</li>
                       <li>• Designed to maximize callbacks</li>
-                      <li className="font-semibold text-amber-100/90">
-                        • Higher risk if verified by employer
-                      </li>
+                      <li className="font-semibold text-amber-100/90">• Higher risk if verified by employer</li>
                     </ul>
 
                     {aiMode === "elite" && (
                       <div className="mt-3 pt-3 border-t border-amber-400/15">
                         <p className="text-xs text-amber-100/90 flex items-start gap-2">
                           <span className="text-amber-100 font-bold">⚠</span>
-                          <span>
-                            Elite mode may generate inferred or mock experience. Use responsibly.
-                          </span>
+                          <span>Elite mode may generate inferred or mock experience. Use responsibly.</span>
                         </p>
                       </div>
                     )}
