@@ -245,11 +245,12 @@ export default function NewJob() {
     setShowConfirm(true);
   };
 
-  const handleGenerate = async () => {
-    const packetData = {
-      resume: resumes.find((r) => r.id?.toString() === selectedResume)?.name,
-      aiMode,
-      studentMode,
+ const handleGenerate = async () => {
+  try {
+    const userId = localStorage.getItem("userId") || "demo-user";
+
+    const payload = {
+      userId,
       jobTitle: extractedData.jobTitle,
       company: extractedData.company,
       website: extractedData.website,
@@ -257,9 +258,29 @@ export default function NewJob() {
       seniority: extractedData.seniority,
       keywords: extractedData.keywords,
       jobDescription,
-      generatedAt: new Date().toISOString(),
+      aiMode,
+      studentMode,
     };
-    localStorage.setItem("latestPacket", JSON.stringify(packetData));
+
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const job = await res.json();
+
+    // Store just the jobId
+    localStorage.setItem("latestJobId", job.id);
+
+    navigate(createPageUrl("Packet"));
+  } catch (e) {
+    console.error(e);
+    toast.error("Failed to create job.");
+  }
+};
+
 
     navigate(createPageUrl("Packet"));
   };
