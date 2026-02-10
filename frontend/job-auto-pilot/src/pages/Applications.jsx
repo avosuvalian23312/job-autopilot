@@ -146,31 +146,26 @@ export default function Applications() {
   };
 
   const loadJobs = async () => {
-    setIsLoading(true);
-    try {
-      // primary: "listjobs"
-      let data = null;
-      try {
-        data = await apiFetch("/api/jobs/list", { method: "GET" });
-      } catch {
-        // fallback #1
-        data = await apiFetch("/api/jobs", { method: "GET" });
-      }
+  setIsLoading(true);
+  try {
+    // ✅ single source of truth (matches your backend route: route: "jobs")
+    const data = await apiFetch("/api/jobs", { method: "GET" });
 
-      const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
-      const normalized = list
-        .map(normalizeJob)
-        .filter((x) => x?.id != null);
+    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
+    const normalized = list
+      .map(normalizeJob)
+      .filter((x) => x?.id != null);
 
-      setApplications(normalized);
-    } catch (e) {
-      console.error(e);
-      toast.error("Could not load applications from cloud.");
-      setApplications([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setApplications(normalized);
+  } catch (e) {
+    console.error(e);
+    toast.error("Failed to load applications.");
+    setApplications([]);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   useEffect(() => {
     loadJobs();

@@ -1,4 +1,4 @@
-// backend/index.js (Azure Functions v4 - code-first model)
+\// backend/index.js (Azure Functions v4 - code-first model)
 // Single place to register ALL HTTP routes.
 console.log("✅ backend/index.js loaded");
 
@@ -33,12 +33,29 @@ app.http("health", {
 // Core APIs
 // ========================
 
+// ✅ IMPORTANT:
+// Azure Functions code-first routing can behave badly when you register the SAME route ("jobs")
+// twice under different function names (GET listJobs + POST createJob).
+// That can cause GET /api/jobs to 404 or POST /api/jobs to shadow the other.
+// Fix: register ONE "jobs" route that supports GET + POST and dispatch by method.
 
-app.http("listJobs", {
-  methods: ["GET", "OPTIONS"],
+app.http("jobs", {
+  methods: ["GET", "POST", "OPTIONS"],
   route: "jobs",
   authLevel: "anonymous",
-  handler: require("./src/functions/listJobs.js"),
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+
+    if (request.method === "GET") {
+      return require("./src/functions/listJobs.js")(request, context);
+    }
+
+    if (request.method === "POST") {
+      return require("./src/functions/createJob.js").createJob(request, context);
+    }
+
+    return { status: 405, body: "Method not allowed" };
+  },
 });
 
 app.http("updateJobStatus", {
@@ -51,7 +68,6 @@ app.http("updateJobStatus", {
 // ========================
 // Auth APIs
 // ========================
-
 app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
@@ -62,7 +78,6 @@ app.http("authExchange", {
 // ========================
 // Resume APIs
 // ========================
-
 app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
   route: "resume/upload-url",
@@ -118,13 +133,10 @@ app.http("userinfo", {
   authLevel: "anonymous",
   handler: require("./src/functions/userinfo.js"),
 });
-// Create job
-app.http("createJob", {
-  methods: ["POST", "OPTIONS"],
-  route: "jobs",
-  authLevel: "anonymous",
-  handler: require("./src/functions/createJob.js").createJob,
-});
+
+// ========================
+// Job sub-routes
+// ========================
 
 // Generate docs for a job (Packet.jsx calls this)
 app.http("generateJobDocuments", {
@@ -133,18 +145,21 @@ app.http("generateJobDocuments", {
   authLevel: "anonymous",
   handler: require("./src/functions/generateJobDocuments.js").generateJobDocuments,
 });
+
 app.http("getJob", {
   methods: ["GET", "OPTIONS"],
   route: "jobs/{jobId}",
   authLevel: "anonymous",
   handler: require("./src/functions/getJob.js").getJob,
 });
+
 app.http("extractJob", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/extract",
   authLevel: "anonymous",
   handler: require("./src/functions/extractJob.js"),
 });
+
 app.http("previewJob", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/preview",
