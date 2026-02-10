@@ -274,7 +274,7 @@ export default function NewJob() {
 
     localStorage.setItem("latestJobId", job.id);
     localStorage.setItem("latestUserId", userId); // ✅ needed for PK=/userId
-
+    navigate(createPageUrl("Packet"));
     
   } catch (e) {
     console.error(e);
@@ -284,8 +284,7 @@ export default function NewJob() {
 
 
 
-    navigate(createPageUrl("Packet"));
-  };
+ 
 
   // (Optional) keep existing UI identical; this only ensures the selector has data
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);

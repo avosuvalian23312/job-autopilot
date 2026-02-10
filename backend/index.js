@@ -33,12 +33,6 @@ app.http("health", {
 // Core APIs
 // ========================
 
-app.http("generateDocuments", {
-  methods: ["POST", "OPTIONS"],
-  route: "generate-documents",
-  authLevel: "anonymous",
-  handler: require("./src/functions/generateDocuments.js"),
-});
 
 app.http("listJobs", {
   methods: ["GET", "OPTIONS"],
