@@ -321,24 +321,29 @@ export default function SocialProofToasts({
                   .map((e, i) => {
                     // Make them look like “cards behind”:
                     // slightly bigger, slightly down/right, more transparent
-                    const scale = 1 + (i + 1) * 0.03;
-                    const y = (i + 1) * 10;
-                    const x = (i + 1) * 6;
-                    const opacity = 0.20 - i * 0.06; // fades further back
+                    const scale = 1 + (i + 1) * 0.02;
+
+// ✅ Move ghosts UP instead of down/right
+const y = -(i + 1) * 12;     // up
+const x = 0;                // no sideways shift (cleaner)
+
+// ✅ Make them more visible (but still subtle)
+const opacity = 0.22 - i * 0.07;
+
 
                     return (
                       <div
                         key={e.id}
                         className={[
                           "absolute inset-0 rounded-2xl border border-white/10",
-                          "bg-[rgba(10,10,14,0.55)]",
+                          "bg-[rgba(10,10,14,0.70)]",
                           "shadow-[0_10px_26px_rgba(0,0,0,0.35)]",
                           "backdrop-blur-xl",
                         ].join(" ")}
                         style={{
                           transform: `translate(${x}px, ${y}px) scale(${scale})`,
                           opacity: Math.max(opacity, 0.06),
-                          filter: "blur(0.2px)",
+                          filter: "blur(0px)",
                           zIndex: 0,
                         }}
                         aria-hidden="true"

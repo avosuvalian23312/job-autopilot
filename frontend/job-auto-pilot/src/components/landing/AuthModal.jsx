@@ -32,6 +32,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
   // IMPORTANT: must start with "/"
   const AFTER_LOGIN_PATH = "/pricing";
 
+  // ✅ Your public logos (must exist in /public/logos/)
+  const GOOGLE_LOGO = "/logos/google-logo-9808.png";
+  const MICROSOFT_LOGO = "/logos/64px-Microsoft_logo.svg.png";
+
   // --- Zoom / popup effect controller (triggers whenever modal opens OR a login starts) ---
   const [pulse, setPulse] = useState(0);
   const pulseTimer = useRef(null);
@@ -39,12 +43,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const triggerPulse = () => {
     setPulse((p) => p + 1);
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
-    // (optional) you can add more delayed pulses here if you want a double-pop
   };
 
   useEffect(() => {
     if (open) {
-      // reset modal state on open + do a soft "zoom-in"
       setErr("");
       setBusy(false);
       setStep("start");
@@ -58,44 +60,35 @@ export default function AuthModal({ open, onClose, onComplete }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // ✅ Google -> Google chooser -> then go to AFTER_LOGIN_PATH
   const startGoogle = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
 
-    // UI zoom/popup effect right before redirect
     triggerPulse();
 
-    // tiny delay so animation is visible before redirect
     setTimeout(() => {
       swaLogin("google", AFTER_LOGIN_PATH);
     }, 220);
   };
 
-  // ✅ Microsoft -> Microsoft chooser -> then go to AFTER_LOGIN_PATH
   const startMicrosoft = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
 
-    // UI zoom/popup effect right before redirect
     triggerPulse();
 
-    // tiny delay so animation is visible before redirect
     setTimeout(() => {
       swaLogin("aad", AFTER_LOGIN_PATH);
     }, 220);
   };
 
-  // Email-code flow requires a separate provider + backend implementation.
-  // UI unchanged; show message.
   const startEmail = async () => {
     if (busy) return;
     setErr("");
     setBusy(true);
 
-    // pulse so users get feedback that something happened
     triggerPulse();
 
     setTimeout(() => {
@@ -126,7 +119,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     exit: { opacity: 0 },
   };
 
-  // modal "zoom-in" + slight bounce, and a micro "pulse" keyframe when pulse changes
   const modalVariants = {
     hidden: { opacity: 0, scale: 0.92, y: 10, filter: "blur(3px)" },
     visible: {
@@ -145,7 +137,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     },
   };
 
-  // This runs when pulse changes (open OR provider click) and gives a quick "pop"
   const pulseKeyframes = {
     scale: [1, 1.03, 0.995, 1],
     transition: { duration: 0.32, ease: "easeOut" },
@@ -176,9 +167,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
               initial="hidden"
               animate="visible"
               exit="exit"
-              // pulse effect on top of the base animation
               whileHover={!busy ? { scale: 1.005 } : undefined}
-              // run pulse keyframes whenever pulse increments
               {...(pulse > 0 ? { animate: ["visible", pulseKeyframes] } : {})}
               className="bg-[#0E0E12] p-8 rounded-2xl max-w-md w-full relative border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
             >
@@ -198,9 +187,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
               <div className="relative">
                 <h2 className="text-2xl font-bold text-white mb-2">Sign in</h2>
-                <p className="text-white/70 mb-6">
-                  Choose a provider to continue.
-                </p>
+                <p className="text-white/70 mb-6">Choose a provider to continue.</p>
 
                 <div className="space-y-3">
                   <Button
@@ -208,7 +195,15 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     disabled={busy}
                     className="w-full"
                   >
-                    Continue with Google
+                    <span className="flex items-center justify-center gap-2">
+                      <img
+                        src={GOOGLE_LOGO}
+                        alt="Google"
+                        className="h-5 w-5 object-contain"
+                        loading="lazy"
+                      />
+                      <span>Continue with Google</span>
+                    </span>
                   </Button>
 
                   <Button
@@ -217,14 +212,20 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     className="w-full"
                     variant="secondary"
                   >
-                    Continue with Microsoft
+                    <span className="flex items-center justify-center gap-2">
+                      <img
+                        src={MICROSOFT_LOGO}
+                        alt="Microsoft"
+                        className="h-5 w-5 object-contain"
+                        loading="lazy"
+                      />
+                      <span>Continue with Microsoft</span>
+                    </span>
                   </Button>
                 </div>
 
                 <div className="mt-6 border-t border-white/10 pt-6">
-                  <div className="text-white/70 text-sm mb-3">
-                    Or sign in with email
-                  </div>
+                  <div className="text-white/70 text-sm mb-3">Or sign in with email</div>
 
                   <Input
                     placeholder="Enter your email"
@@ -234,11 +235,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   />
 
                   {step === "start" && (
-                    <Button
-                      onClick={startEmail}
-                      disabled={busy}
-                      className="w-full mt-3"
-                    >
+                    <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
                       <Mail className="mr-2 h-4 w-4" />
                       Send Login Code
                     </Button>
@@ -252,26 +249,16 @@ export default function AuthModal({ open, onClose, onComplete }) {
                         onChange={(e) => setCode(e.target.value)}
                         className="mt-3"
                       />
-                      <Button
-                        onClick={verifyEmail}
-                        className="w-full mt-3"
-                        disabled={busy}
-                      >
+                      <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
                         Verify Code
                       </Button>
                     </>
                   )}
                 </div>
 
-                {err && (
-                  <div className="mt-4 text-red-400 text-sm">{err}</div>
-                )}
+                {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
 
-                {busy && (
-                  <div className="mt-4 text-white/50 text-xs">
-                    Redirecting…
-                  </div>
-                )}
+                {busy && <div className="mt-4 text-white/50 text-xs">Redirecting…</div>}
               </div>
             </motion.div>
           </motion.div>
