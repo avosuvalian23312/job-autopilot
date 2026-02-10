@@ -28,6 +28,9 @@ import {
   Building2,
   ShieldCheck,
   Clock,
+  FileText,
+  ClipboardCheck,
+  Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,13 +45,9 @@ export default function NewJob() {
   const [extractedData, setExtractedData] = useState(null);
   const [editMode, setEditMode] = useState(false);
 
-  // ✅ NEW: resumes come from Cosmos (via backend) instead of localStorage
   const [resumes, setResumes] = useState([]);
   const [resumesLoading, setResumesLoading] = useState(true);
 
-  // -----------------------------
-  // API helper (SWA => Functions)
-  // -----------------------------
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(path, {
       ...options,
@@ -71,19 +70,16 @@ export default function NewJob() {
     return text ? JSON.parse(text) : null;
   };
 
-  // ✅ Load resumes from Cosmos
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
         setResumesLoading(true);
-
         const data = await apiFetch("/api/resume/list", { method: "GET" });
         const list = Array.isArray(data) ? data : data?.resumes || [];
 
         if (cancelled) return;
-
         setResumes(list);
 
         const defaultResume =
@@ -96,7 +92,6 @@ export default function NewJob() {
         if (pick?.id != null) setSelectedResume(String(pick.id));
       } catch (e) {
         if (cancelled) return;
-
         console.error(e);
         toast.error(
           "Could not load resumes from cloud. Falling back to local resumes."
@@ -123,7 +118,6 @@ export default function NewJob() {
     };
   }, []);
 
-  // (kept for fallback)
   const extractJobDetails = (description) => {
     const titlePatterns = [
       /(?:position|role|job title|title):\s*([^\n]+)/i,
@@ -247,7 +241,6 @@ export default function NewJob() {
         seniority: extracted.seniority || null,
         keywords: extracted.keywords || [],
 
-        // pay fields
         payText: extracted.payText || null,
         payMin:
           typeof extracted.payMin === "number" && Number.isFinite(extracted.payMin)
@@ -281,11 +274,10 @@ export default function NewJob() {
             : null,
         payPercentileSource: extracted.payPercentileSource || null,
 
-        // extra chips (optional fields from backend if present)
-        employmentType: extracted.employmentType || null, // Full-time / Contract / Part-time / Internship
-        workModel: extracted.workModel || null, // Remote / Hybrid / On-site
-        experienceBand: extracted.experienceBand || null, // "0–2 yrs" etc
-        visaClearance: extracted.visaClearance || null, // "No sponsorship" etc
+        employmentType: extracted.employmentType || null,
+        workModel: extracted.workModel || null,
+        experienceBand: extracted.experienceBand || null,
+        visaClearance: extracted.visaClearance || null,
       });
 
       setShowConfirm(true);
@@ -339,16 +331,16 @@ export default function NewJob() {
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
   // -----------------------------
-  // UI helpers (no backend changes)
+  // UI helpers (bigger + brighter)
   // -----------------------------
   const chipBase =
-    "px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 bg-white/[0.06] text-white/80";
+    "px-4 py-2 rounded-full text-sm font-medium border border-white/12 bg-white/[0.07] text-white/85";
   const chipNeon =
-    "px-3 py-1.5 rounded-full text-xs font-medium border border-purple-500/20 bg-purple-600/15 text-purple-200";
+    "px-4 py-2 rounded-full text-sm font-medium border border-purple-500/25 bg-purple-600/18 text-purple-100";
   const chipGreen =
-    "px-3 py-1.5 rounded-full text-xs font-medium border border-emerald-500/20 bg-emerald-600/15 text-emerald-200";
+    "px-4 py-2 rounded-full text-sm font-semibold border border-emerald-500/25 bg-emerald-600/18 text-emerald-100";
   const chipAmber =
-    "px-3 py-1.5 rounded-full text-xs font-medium border border-amber-500/20 bg-amber-600/15 text-amber-200";
+    "px-4 py-2 rounded-full text-sm font-semibold border border-amber-500/25 bg-amber-600/18 text-amber-100";
 
   const fmtMoney = (n) =>
     typeof n === "number"
@@ -358,26 +350,14 @@ export default function NewJob() {
   const renderPayPrimary = () => {
     const cur = extractedData?.payCurrency || "USD";
     const symbol = cur === "USD" ? "$" : `${cur} `;
-
-    const periodMap = {
-      hour: "/hr",
-      year: "/yr",
-      month: "/mo",
-      week: "/wk",
-      day: "/day",
-    };
-    const suffix = extractedData?.payPeriod
-      ? periodMap[extractedData.payPeriod] || ""
-      : "";
+    const periodMap = { hour: "/hr", year: "/yr", month: "/mo", week: "/wk", day: "/day" };
+    const suffix = extractedData?.payPeriod ? periodMap[extractedData.payPeriod] || "" : "";
 
     const min = fmtMoney(extractedData?.payMin);
     const max = fmtMoney(extractedData?.payMax);
 
-    // If period missing but annualized exists, prefer showing annual too.
     if (min && max) {
-      return min === max
-        ? `${symbol}${min}${suffix}`
-        : `${symbol}${min} – ${symbol}${max}${suffix}`;
+      return min === max ? `${symbol}${min}${suffix}` : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
     if (extractedData?.payText) return extractedData.payText;
     return null;
@@ -386,7 +366,6 @@ export default function NewJob() {
   const renderAnnual = () => {
     const min = fmtMoney(extractedData?.payAnnualizedMin);
     const max = fmtMoney(extractedData?.payAnnualizedMax);
-
     if (min && max) return `Est. $${min} – $${max} /yr`;
     if (min) return `Est. $${min} /yr`;
     if (max) return `Est. $${max} /yr`;
@@ -403,71 +382,73 @@ export default function NewJob() {
 
   const renderTopPay = () => {
     if (typeof extractedData?.payPercentile !== "number") return null;
-    // existing heuristic uses percentile where higher = higher pay
     const top = Math.round(100 - extractedData.payPercentile);
     return `Top ${top}% pay`;
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,6%)]">
-      {/* Header */}
+    <div className="min-h-screen bg-[hsl(240,10%,6%)] text-white">
+      {/* Header (FULL WIDTH: logo left corner, close right corner) */}
       <header className="border-b border-white/10 bg-[hsl(240,10%,6%)]/85 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-[1200px] mx-auto px-5 sm:px-6 h-16 flex items-center justify-between">
+        <div className="w-full px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-purple-600/90 flex items-center justify-center shadow-lg shadow-purple-600/20">
-              <Rocket className="w-4.5 h-4.5 text-white" />
+            <div className="w-10 h-10 rounded-lg bg-purple-600/90 flex items-center justify-center shadow-lg shadow-purple-600/25">
+              <Rocket className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col leading-tight">
               <span className="font-bold text-white text-lg">Job Autopilot</span>
-              <span className="text-xs text-white/45">
+              <span className="text-xs text-white/55">
                 Paste a JD → verify → generate packet
               </span>
             </div>
           </div>
+
+          {/* Close button: red, outlined, corner-right */}
           <Button
             variant="ghost"
             onClick={() => navigate(createPageUrl("AppHome"))}
-            className="text-white/70 hover:text-white hover:bg-white/10 transition-all"
+            className="h-10 px-4 rounded-lg border border-red-500/40 text-red-200 hover:text-white hover:bg-red-600/15 hover:border-red-400/70 transition-all"
           >
             Close
           </Button>
         </div>
       </header>
 
-      <div className="max-w-[1200px] mx-auto px-5 sm:px-6 py-10 min-h-[calc(100vh-4rem)] flex flex-col justify-center">
+      {/* Page wrapper: full-ish width for 1080p (fills screen better) */}
+      <div className="w-full px-6 py-10 min-h-[calc(100vh-4rem)]">
         {/* Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className="rounded-2xl p-10 max-w-md w-full mx-4 border border-white/10 bg-[hsl(240,10%,10%)] shadow-2xl">
+            <div className="rounded-2xl p-10 max-w-md w-full mx-4 border border-white/12 bg-[hsl(240,10%,10%)] shadow-2xl">
               <div className="text-center">
                 <div className="w-20 h-20 rounded-full bg-purple-600/20 flex items-center justify-center mx-auto mb-6 border border-purple-500/15">
-                  <Loader2 className="w-10 h-10 text-purple-300 animate-spin" />
+                  <Loader2 className="w-10 h-10 text-purple-200 animate-spin" />
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-2">
                   Analyzing job description…
                 </h2>
-                <p className="text-white/55 mb-7">
+                <p className="text-white/65 mb-7">
                   Extracting title, company, pay, and requirements
                 </p>
 
                 <div className="space-y-3 text-left">
-                  <div className="flex items-center gap-3 text-sm text-white/70">
+                  <div className="flex items-center gap-3 text-sm text-white/80">
                     <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center shadow shadow-purple-600/25">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                     Parsing job post
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/70">
+                  <div className="flex items-center gap-3 text-sm text-white/80">
                     <div className="w-6 h-6 rounded-full bg-purple-600/55 flex items-center justify-center">
                       <Loader2 className="w-3 h-3 text-white animate-spin" />
                     </div>
                     Detecting role, company & pay
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/45">
+                  <div className="flex items-center gap-3 text-sm text-white/55">
                     <div className="w-6 h-6 rounded-full bg-white/10" />
                     Extracting skills & constraints
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-white/45">
+                  <div className="flex items-center gap-3 text-sm text-white/55">
                     <div className="w-6 h-6 rounded-full bg-white/10" />
                     Preparing packet draft
                   </div>
@@ -480,254 +461,299 @@ export default function NewJob() {
         {/* Confirmation Screen */}
         {showConfirm && extractedData && (
           <div className="w-full">
-            <div className="mb-6 text-center">
-              <h1 className="text-4xl md:text-[44px] font-bold text-white mb-2">
+            <div className="mb-8 text-center">
+              <h1 className="text-5xl font-bold text-white mb-2">
                 Confirm details
               </h1>
-              <p className="text-base md:text-lg text-white/55">
+              <p className="text-lg text-white/70">
                 Review extracted info before generating
               </p>
             </div>
 
-            <div className="rounded-2xl border border-white/12 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
-              {/* top glow bar */}
-              <div className="h-1.5 rounded-t-2xl bg-gradient-to-r from-purple-600/70 via-fuchsia-500/40 to-purple-600/70" />
+            {/* 2-column on desktop to use screen better */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* LEFT: main details (bigger) */}
+              <div className="lg:col-span-2 rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
+                <div className="h-1.5 bg-gradient-to-r from-purple-600/80 via-fuchsia-500/45 to-purple-600/80" />
+                <div className="p-8 md:p-10">
+                  <div className="flex items-start justify-between gap-6">
+                    <div className="min-w-0 flex-1">
+                      <label className="text-sm text-white/60 mb-2 block">
+                        Job Title
+                      </label>
+                      {editMode ? (
+                        <Input
+                          value={extractedData.jobTitle}
+                          onChange={(e) =>
+                            setExtractedData({
+                              ...extractedData,
+                              jobTitle: e.target.value,
+                            })
+                          }
+                          className="bg-white/10 border-white/14 text-white h-12 text-lg"
+                        />
+                      ) : (
+                        <p className="text-3xl font-semibold text-white">
+                          {extractedData.jobTitle}
+                        </p>
+                      )}
 
-              <div className="p-7 md:p-8">
-                {/* Layout: on wide screens, keep things centered + bigger */}
-                <div className="flex items-start justify-between gap-6">
-                  <div className="min-w-0 flex-1">
-                    {/* Title row */}
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <label className="text-xs text-white/55 mb-1 block">
-                          Job Title
+                      <div className="mt-6">
+                        <label className="text-sm text-white/60 mb-2 block">
+                          Company
                         </label>
                         {editMode ? (
                           <Input
-                            value={extractedData.jobTitle}
+                            value={extractedData.company}
                             onChange={(e) =>
                               setExtractedData({
                                 ...extractedData,
-                                jobTitle: e.target.value,
+                                company: e.target.value,
                               })
                             }
-                            className="bg-white/7 border-white/12 text-white h-11 text-base"
+                            className="bg-white/10 border-white/14 text-white h-12 text-lg"
                           />
                         ) : (
-                          <p className="text-xl md:text-2xl font-semibold text-white truncate">
-                            {extractedData.jobTitle}
+                          <p className="text-xl text-white/90 font-medium">
+                            {extractedData.company}
                           </p>
                         )}
                       </div>
 
-                      {!editMode && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditMode(true)}
-                          className="text-white/60 hover:text-white hover:bg-white/10"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
+                      <div className="mt-5 space-y-3">
+                        {extractedData.website && (
+                          <div className="flex items-center gap-3 text-base text-white/80">
+                            <Globe className="w-5 h-5 text-white/55" />
+                            {editMode ? (
+                              <Input
+                                value={extractedData.website}
+                                onChange={(e) =>
+                                  setExtractedData({
+                                    ...extractedData,
+                                    website: e.target.value,
+                                  })
+                                }
+                                className="bg-white/10 border-white/14 text-white h-11 text-base flex-1"
+                              />
+                            ) : (
+                              <span className="truncate">{extractedData.website}</span>
+                            )}
+                          </div>
+                        )}
+
+                        {extractedData.location && (
+                          <div className="flex items-center gap-3 text-base text-white/80">
+                            <MapPin className="w-5 h-5 text-white/55" />
+                            <span>{extractedData.location}</span>
+                          </div>
+                        )}
+
+                        {extractedData.seniority && (
+                          <div className="flex items-center gap-3 text-base text-white/80">
+                            <BarChart2 className="w-5 h-5 text-white/55" />
+                            <span>{extractedData.seniority}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Job detail chips */}
+                      <div className="mt-7">
+                        <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                          <Tag className="w-4 h-4" />
+                          Job Details
+                        </label>
+                        <div className="flex flex-wrap gap-3">
+                          {extractedData.employmentType && (
+                            <span className={`${chipBase} flex items-center gap-2`}>
+                              <Briefcase className="w-4 h-4 text-white/60" />
+                              {extractedData.employmentType}
+                            </span>
+                          )}
+                          {extractedData.workModel && (
+                            <span className={`${chipBase} flex items-center gap-2`}>
+                              <Building2 className="w-4 h-4 text-white/60" />
+                              {extractedData.workModel}
+                            </span>
+                          )}
+                          {extractedData.experienceBand && (
+                            <span className={`${chipBase} flex items-center gap-2`}>
+                              <Clock className="w-4 h-4 text-white/60" />
+                              {extractedData.experienceBand}
+                            </span>
+                          )}
+                          {extractedData.visaClearance && (
+                            <span className={`${chipBase} flex items-center gap-2`}>
+                              <ShieldCheck className="w-4 h-4 text-white/60" />
+                              {extractedData.visaClearance}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Compensation */}
+                      {(extractedData.payText ||
+                        extractedData.payMin != null ||
+                        extractedData.payMax != null ||
+                        extractedData.payAnnualizedMin != null ||
+                        extractedData.payAnnualizedMax != null) && (
+                        <div className="mt-8">
+                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                            <DollarSign className="w-4 h-4" />
+                            Compensation
+                          </label>
+
+                          <div className="flex flex-wrap gap-3">
+                            {renderPayPrimary() && (
+                              <span className={chipGreen}>{renderPayPrimary()}</span>
+                            )}
+
+                            {renderConfidence() && (
+                              <span className={chipBase}>{renderConfidence()}</span>
+                            )}
+
+                            {/* add back annual estimate */}
+                            {renderAnnual() && (
+                              <span className={chipAmber}>{renderAnnual()}</span>
+                            )}
+
+                            {/* add back % pay */}
+                            {renderTopPay() && (
+                              <span className={`${chipNeon} flex items-center gap-2`}>
+                                <Percent className="w-4 h-4" />
+                                {renderTopPay()}
+                              </span>
+                            )}
+                          </div>
+
+                          {typeof extractedData.payPercentile === "number" &&
+                            extractedData.payPercentileSource && (
+                              <p className="text-sm text-white/45 mt-3">
+                                Percentile is an estimate ({extractedData.payPercentileSource})
+                              </p>
+                            )}
+                        </div>
+                      )}
+
+                      {/* Skills */}
+                      {extractedData.keywords?.length > 0 && (
+                        <div className="mt-8">
+                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                            <Tag className="w-4 h-4" />
+                            Key Skills Detected
+                          </label>
+                          <div className="flex flex-wrap gap-3">
+                            {extractedData.keywords.map((keyword, i) => (
+                              <span
+                                key={i}
+                                className="px-4 py-2 rounded-full bg-purple-600/22 text-purple-100 text-sm font-medium border border-purple-500/22"
+                              >
+                                {keyword}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    {/* Company */}
-                    <div className="mt-5">
-                      <label className="text-xs text-white/55 mb-1 block">
-                        Company
-                      </label>
-                      {editMode ? (
-                        <Input
-                          value={extractedData.company}
-                          onChange={(e) =>
-                            setExtractedData({
-                              ...extractedData,
-                              company: e.target.value,
-                            })
-                          }
-                          className="bg-white/7 border-white/12 text-white h-11 text-base"
-                        />
-                      ) : (
-                        <p className="text-white/90 text-lg md:text-xl font-medium">
-                          {extractedData.company}
+                    {!editMode && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditMode(true)}
+                        className="text-white/65 hover:text-white hover:bg-white/10"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {editMode && (
+                    <div className="mt-8 flex justify-end">
+                      <Button
+                        onClick={() => setEditMode(false)}
+                        className="bg-purple-600 hover:bg-purple-500 text-white h-12 px-7 text-lg font-semibold shadow-lg shadow-purple-600/25"
+                      >
+                        Save Changes
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: packet preview (fills space, makes screen feel “used”) */}
+              <div className="rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
+                <div className="h-1.5 bg-gradient-to-r from-purple-600/70 via-purple-400/25 to-purple-600/70" />
+                <div className="p-8">
+                  <h3 className="text-xl font-bold text-white mb-2">Packet preview</h3>
+                  <p className="text-sm text-white/60 mb-6">
+                    What you’ll generate from this job post.
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                      <FileText className="w-5 h-5 text-purple-200 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-white">Tailored Resume</p>
+                        <p className="text-sm text-white/60">
+                          Optimized bullets + keywords for ATS.
                         </p>
-                      )}
-                    </div>
-
-                    {/* meta line */}
-                    <div className="mt-4 space-y-2">
-                      {extractedData.website && (
-                        <div className="flex items-center gap-2 text-sm text-white/70">
-                          <Globe className="w-4 h-4 text-white/50" />
-                          {editMode ? (
-                            <Input
-                              value={extractedData.website}
-                              onChange={(e) =>
-                                setExtractedData({
-                                  ...extractedData,
-                                  website: e.target.value,
-                                })
-                              }
-                              className="bg-white/7 border-white/12 text-white h-10 text-sm flex-1"
-                            />
-                          ) : (
-                            <span className="truncate">{extractedData.website}</span>
-                          )}
-                        </div>
-                      )}
-
-                      {extractedData.location && (
-                        <div className="flex items-center gap-2 text-sm text-white/70">
-                          <MapPin className="w-4 h-4 text-white/50" />
-                          <span>{extractedData.location}</span>
-                        </div>
-                      )}
-
-                      {extractedData.seniority && (
-                        <div className="flex items-center gap-2 text-sm text-white/70">
-                          <BarChart2 className="w-4 h-4 text-white/50" />
-                          <span>{extractedData.seniority}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Job detail chips row */}
-                    <div className="mt-5">
-                      <label className="text-xs text-white/55 mb-2 block flex items-center gap-2">
-                        <Tag className="w-3.5 h-3.5" />
-                        Job Details
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {extractedData.employmentType && (
-                          <span className={`${chipBase} flex items-center gap-1.5`}>
-                            <Briefcase className="w-3.5 h-3.5 text-white/55" />
-                            {extractedData.employmentType}
-                          </span>
-                        )}
-                        {extractedData.workModel && (
-                          <span className={`${chipBase} flex items-center gap-1.5`}>
-                            <Building2 className="w-3.5 h-3.5 text-white/55" />
-                            {extractedData.workModel}
-                          </span>
-                        )}
-                        {extractedData.experienceBand && (
-                          <span className={`${chipBase} flex items-center gap-1.5`}>
-                            <Clock className="w-3.5 h-3.5 text-white/55" />
-                            {extractedData.experienceBand}
-                          </span>
-                        )}
-                        {extractedData.visaClearance && (
-                          <span className={`${chipBase} flex items-center gap-1.5`}>
-                            <ShieldCheck className="w-3.5 h-3.5 text-white/55" />
-                            {extractedData.visaClearance}
-                          </span>
-                        )}
                       </div>
                     </div>
 
-                    {/* Compensation */}
-                    {(extractedData.payText ||
-                      extractedData.payMin != null ||
-                      extractedData.payMax != null ||
-                      extractedData.payAnnualizedMin != null ||
-                      extractedData.payAnnualizedMax != null) && (
-                      <div className="mt-6">
-                        <label className="text-xs text-white/55 mb-2 block flex items-center gap-2">
-                          <DollarSign className="w-3.5 h-3.5" />
-                          Compensation
-                        </label>
-
-                        <div className="flex flex-wrap gap-2">
-                          {/* Primary pay */}
-                          {renderPayPrimary() && (
-                            <span className={`${chipGreen}`}>
-                              {renderPayPrimary()}
-                            </span>
-                          )}
-
-                          {/* Confidence */}
-                          {renderConfidence() && (
-                            <span className={`${chipBase}`}>{renderConfidence()}</span>
-                          )}
-
-                          {/* Annualized */}
-                          {renderAnnual() && (
-                            <span className={`${chipAmber}`}>{renderAnnual()}</span>
-                          )}
-
-                          {/* Top X% pay */}
-                          {renderTopPay() && (
-                            <span
-                              className={`${chipNeon} flex items-center gap-1.5`}
-                            >
-                              <Percent className="w-3.5 h-3.5" />
-                              {renderTopPay()}
-                            </span>
-                          )}
-                        </div>
-
-                        {typeof extractedData.payPercentile === "number" &&
-                          extractedData.payPercentileSource && (
-                            <p className="text-xs text-white/40 mt-2">
-                              Percentile is an estimate (
-                              {extractedData.payPercentileSource})
-                            </p>
-                          )}
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                      <Wand2 className="w-5 h-5 text-purple-200 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-white">Cover Letter</p>
+                        <p className="text-sm text-white/60">
+                          Matching tone to role + company.
+                        </p>
                       </div>
-                    )}
+                    </div>
 
-                    {/* Skills */}
-                    {extractedData.keywords?.length > 0 && (
-                      <div className="mt-6">
-                        <label className="text-xs text-white/55 mb-2 block flex items-center gap-2">
-                          <Tag className="w-3.5 h-3.5" />
-                          Key Skills Detected
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {extractedData.keywords.map((keyword, i) => (
-                            <span
-                              key={i}
-                              className="px-3 py-1.5 rounded-full bg-purple-600/20 text-purple-200 text-xs font-medium border border-purple-500/20"
-                            >
-                              {keyword}
-                            </span>
-                          ))}
-                        </div>
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.06] border border-white/10">
+                      <ClipboardCheck className="w-5 h-5 text-purple-200 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-white">Checklist</p>
+                        <p className="text-sm text-white/60">
+                          Next steps + quick apply notes.
+                        </p>
                       </div>
-                    )}
+                    </div>
+                  </div>
+
+                  <div className="mt-6 p-4 rounded-xl bg-purple-600/10 border border-purple-500/20">
+                    <p className="text-sm text-white/80">
+                      Mode:{" "}
+                      <span className="font-semibold text-purple-100">
+                        {aiMode === "elite" ? "Elite" : "Standard"}
+                      </span>
+                    </p>
+                    <p className="text-sm text-white/60 mt-1">
+                      Student mode:{" "}
+                      <span className="font-semibold text-white/80">
+                        {studentMode ? "On" : "Off"}
+                      </span>
+                    </p>
                   </div>
                 </div>
-
-                {editMode && (
-                  <div className="mt-7 flex justify-end">
-                    <Button
-                      onClick={() => setEditMode(false)}
-                      className="bg-purple-600 hover:bg-purple-500 text-white h-11 px-6 text-base font-semibold shadow-lg shadow-purple-600/20"
-                    >
-                      Save Changes
-                    </Button>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Actions */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <div className="mt-7 flex flex-col sm:flex-row gap-4">
               <Button
                 onClick={() => {
                   setShowConfirm(false);
                   setExtractedData(null);
                 }}
                 variant="outline"
-                className="flex-1 h-12 bg-white/5 border-white/15 text-white hover:bg-white/10 text-base"
+                className="flex-1 h-14 bg-white/5 border-white/15 text-white hover:bg-white/10 text-lg"
               >
                 Back to Edit
               </Button>
               <Button
                 onClick={handleGenerate}
-                className="flex-1 h-12 bg-purple-600 hover:bg-purple-500 text-white text-base font-semibold shadow-lg shadow-purple-600/25"
+                className="flex-1 h-14 bg-purple-600 hover:bg-purple-500 text-white text-lg font-semibold shadow-lg shadow-purple-600/25"
               >
                 Looks good — Generate Packet
               </Button>
@@ -737,32 +763,30 @@ export default function NewJob() {
 
         {/* Main Form */}
         {!showConfirm && (
-          <>
+          <div className="max-w-[1100px] mx-auto">
             <div className="mb-8 text-center">
-              <h1 className="text-4xl md:text-[46px] font-bold mb-3 text-white">
+              <h1 className="text-5xl font-bold mb-3 text-white">
                 Create a new job packet
               </h1>
-              <p className="text-lg md:text-xl text-white/60">
+              <p className="text-lg text-white/70">
                 Paste a job description — we’ll extract details automatically
               </p>
             </div>
 
-            <div className="rounded-2xl p-7 md:p-9 space-y-7 max-w-[980px] mx-auto border border-white/12 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
+            <div className="rounded-2xl p-9 space-y-7 border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
               {/* Resume Selector */}
               <div>
-                <label className="block text-base font-semibold mb-3 text-white">
+                <label className="block text-lg font-semibold mb-3 text-white">
                   Resume <span className="text-red-400">*</span>
                 </label>
 
                 {resumesLoading ? (
-                  <div
-                    className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.04]"
-                  >
+                  <div className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.05]">
                     <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
                   </div>
                 ) : hasResumes ? (
                   <Select value={selectedResume} onValueChange={setSelectedResume}>
-                    <SelectTrigger className="border-white/12 text-white h-12 text-base bg-white/[0.04]">
+                    <SelectTrigger className="border-white/12 text-white h-14 text-lg bg-white/[0.05]">
                       <SelectValue placeholder="Select resume" />
                     </SelectTrigger>
                     <SelectContent>
@@ -774,7 +798,7 @@ export default function NewJob() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.04]">
+                  <div className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.05]">
                     <p className="mb-3 text-sm text-white/60">No resumes found</p>
                     <Button
                       onClick={() => navigate(createPageUrl("Resumes"))}
@@ -788,36 +812,37 @@ export default function NewJob() {
 
               {/* AI Mode Selector */}
               <div>
-                <label className="block text-base font-semibold mb-2 text-white">
+                <label className="block text-lg font-semibold mb-2 text-white">
                   AI Mode <span className="text-red-400">*</span>
                 </label>
-                <p className="text-sm mb-4 text-white/55">
+                <p className="text-sm mb-4 text-white/65">
                   Choose how AI handles your resume content.
                 </p>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => setAiMode("standard")}
                     className={`p-7 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
                       aiMode === "standard"
-                        ? "border-green-500/50 bg-green-500/10 shadow-lg shadow-green-500/20"
+                        ? "border-green-500/55 bg-green-500/12 shadow-lg shadow-green-500/20"
                         : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-green-500/10"
                     }`}
                     style={{ minHeight: "220px" }}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg bg-green-600/20 flex items-center justify-center">
-                        <Check className="w-5 h-5 text-green-300" />
+                        <Check className="w-5 h-5 text-green-200" />
                       </div>
-                      <span className="font-bold text-lg text-white">Standard</span>
+                      <span className="font-bold text-xl text-white">Standard</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-200 mb-4 font-semibold border border-green-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-100 mb-4 font-semibold border border-green-500/20">
                       Recommended • Safe & ATS-friendly
                     </span>
-                    <ul className="text-sm leading-relaxed space-y-1.5 text-white/70">
+                    <ul className="text-base leading-relaxed space-y-1.5 text-white/75">
                       <li>• Improves clarity and impact of your existing bullets</li>
                       <li>• Rewrites descriptions to match the job</li>
                       <li>• Optimizes wording and keywords</li>
-                      <li className="font-semibold text-green-200/90">
+                      <li className="font-semibold text-green-100/90">
                         • Does NOT create fake experience
                       </li>
                     </ul>
@@ -827,32 +852,32 @@ export default function NewJob() {
                     onClick={() => setAiMode("elite")}
                     className={`p-7 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
                       aiMode === "elite"
-                        ? "border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/20"
+                        ? "border-amber-500/55 bg-amber-500/12 shadow-lg shadow-amber-500/20"
                         : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-amber-500/10"
                     }`}
                     style={{ minHeight: "220px" }}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg bg-amber-600/20 flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-amber-200" />
+                        <Sparkles className="w-5 h-5 text-amber-100" />
                       </div>
-                      <span className="font-bold text-lg text-white">Elite</span>
+                      <span className="font-bold text-xl text-white">Elite</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 mb-4 font-semibold border border-amber-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-100 mb-4 font-semibold border border-amber-500/20">
                       Advanced • Use with caution
                     </span>
-                    <ul className="text-sm leading-relaxed space-y-1.5 mb-3 text-white/70">
+                    <ul className="text-base leading-relaxed space-y-1.5 mb-3 text-white/75">
                       <li>• May create or enhance experience bullets</li>
                       <li>• Can infer responsibilities from context</li>
                       <li>• Designed to maximize callbacks</li>
-                      <li className="font-semibold text-amber-200/90">
+                      <li className="font-semibold text-amber-100/90">
                         • Higher risk if verified by employer
                       </li>
                     </ul>
                     {aiMode === "elite" && (
                       <div className="mt-4 pt-4 border-t border-amber-500/20">
-                        <p className="text-xs text-amber-200/90 flex items-start gap-2">
-                          <span className="text-amber-200 font-bold">⚠</span>
+                        <p className="text-xs text-amber-100/90 flex items-start gap-2">
+                          <span className="text-amber-100 font-bold">⚠</span>
                           <span>
                             Elite mode may generate inferred or mock experience.
                             Use responsibly.
@@ -865,7 +890,7 @@ export default function NewJob() {
               </div>
 
               {/* Student Mode Toggle */}
-              <div className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.04] border border-white/12">
+              <div className="flex items-start gap-3 p-5 rounded-xl bg-white/[0.05] border border-white/12">
                 <button
                   onClick={() => setStudentMode(!studentMode)}
                   className={`w-12 h-6 rounded-full transition-all relative ${
@@ -880,32 +905,30 @@ export default function NewJob() {
                 </button>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <GraduationCap className="w-4 h-4 text-white/70" />
-                    <span className="text-sm font-medium text-white">
+                    <GraduationCap className="w-5 h-5 text-white/70" />
+                    <span className="text-base font-medium text-white">
                       No experience / Student mode
                     </span>
                   </div>
-                  <p className="text-xs text-white/50">
-                    Emphasizes projects, coursework, and skills instead of work
-                    experience.
+                  <p className="text-sm text-white/55">
+                    Emphasizes projects, coursework, and skills instead of work experience.
                   </p>
                 </div>
               </div>
 
               {/* Job Description */}
               <div>
-                <label className="block text-base font-semibold mb-3 text-white">
+                <label className="block text-lg font-semibold mb-3 text-white">
                   Job Description <span className="text-red-400">*</span>
                 </label>
                 <Textarea
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
-                 
-                  className="min-h-[320px] border-white/12 text-white resize-none text-base bg-white/[0.04]"
+                  
+                  className="min-h-[340px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
                 />
-                <p className="text-xs mt-2 text-white/50">
-                  Paste the full job description. We’ll extract title, company,
-                  pay, and requirements.
+                <p className="text-sm mt-2 text-white/55">
+                  Paste the full job description. We’ll extract title, company, pay, and requirements.
                 </p>
               </div>
 
@@ -914,16 +937,16 @@ export default function NewJob() {
                 <Button
                   onClick={handleAnalyze}
                   disabled={!selectedResume || !jobDescription.trim()}
-                  className="w-full h-14 bg-purple-600 hover:bg-purple-500 text-white text-lg font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/30 transition-all"
+                  className="w-full h-16 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/30 transition-all"
                 >
                   Generate Packet
                 </Button>
-                <p className="text-center text-sm mt-3 text-white/50">
+                <p className="text-center text-sm mt-3 text-white/55">
                   Uses 1 credit
                 </p>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
