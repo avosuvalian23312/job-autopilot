@@ -350,14 +350,24 @@ export default function NewJob() {
   const renderPayPrimary = () => {
     const cur = extractedData?.payCurrency || "USD";
     const symbol = cur === "USD" ? "$" : `${cur} `;
-    const periodMap = { hour: "/hr", year: "/yr", month: "/mo", week: "/wk", day: "/day" };
-    const suffix = extractedData?.payPeriod ? periodMap[extractedData.payPeriod] || "" : "";
+    const periodMap = {
+      hour: "/hr",
+      year: "/yr",
+      month: "/mo",
+      week: "/wk",
+      day: "/day",
+    };
+    const suffix = extractedData?.payPeriod
+      ? periodMap[extractedData.payPeriod] || ""
+      : "";
 
     const min = fmtMoney(extractedData?.payMin);
     const max = fmtMoney(extractedData?.payMax);
 
     if (min && max) {
-      return min === max ? `${symbol}${min}${suffix}` : `${symbol}${min} – ${symbol}${max}${suffix}`;
+      return min === max
+        ? `${symbol}${min}${suffix}`
+        : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
     if (extractedData?.payText) return extractedData.payText;
     return null;
@@ -385,6 +395,12 @@ export default function NewJob() {
     const top = Math.round(100 - extractedData.payPercentile);
     return `Top ${top}% pay`;
   };
+
+  // ✅ “popup zoom” behavior shared by pill/card sections (scope-only UI)
+  const hoverZoom =
+    "transition-transform duration-200 will-change-transform hover:scale-[1.01] hover:-translate-y-[1px]";
+  const hoverZoomSoft =
+    "transition-transform duration-200 will-change-transform hover:scale-[1.01]";
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,6%)] text-white">
@@ -414,8 +430,8 @@ export default function NewJob() {
         </div>
       </header>
 
-      {/* Page wrapper: full-ish width for 1080p (fills screen better) */}
-      <div className="w-full px-6 py-10 min-h-[calc(100vh-4rem)]">
+      {/* Page wrapper */}
+      <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)]">
         {/* Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
@@ -461,7 +477,7 @@ export default function NewJob() {
         {/* Confirmation Screen */}
         {showConfirm && extractedData && (
           <div className="w-full">
-            <div className="mb-8 text-center">
+            <div className="mb-7 text-center">
               <h1 className="text-5xl font-bold text-white mb-2">
                 Confirm details
               </h1>
@@ -470,9 +486,7 @@ export default function NewJob() {
               </p>
             </div>
 
-            {/* 2-column on desktop to use screen better */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* LEFT: main details (bigger) */}
               <div className="lg:col-span-2 rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
                 <div className="h-1.5 bg-gradient-to-r from-purple-600/80 via-fuchsia-500/45 to-purple-600/80" />
                 <div className="p-8 md:p-10">
@@ -536,7 +550,9 @@ export default function NewJob() {
                                 className="bg-white/10 border-white/14 text-white h-11 text-base flex-1"
                               />
                             ) : (
-                              <span className="truncate">{extractedData.website}</span>
+                              <span className="truncate">
+                                {extractedData.website}
+                              </span>
                             )}
                           </div>
                         )}
@@ -556,7 +572,6 @@ export default function NewJob() {
                         )}
                       </div>
 
-                      {/* Job detail chips */}
                       <div className="mt-7">
                         <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
                           <Tag className="w-4 h-4" />
@@ -590,7 +605,6 @@ export default function NewJob() {
                         </div>
                       </div>
 
-                      {/* Compensation */}
                       {(extractedData.payText ||
                         extractedData.payMin != null ||
                         extractedData.payMax != null ||
@@ -611,12 +625,10 @@ export default function NewJob() {
                               <span className={chipBase}>{renderConfidence()}</span>
                             )}
 
-                            {/* add back annual estimate */}
                             {renderAnnual() && (
                               <span className={chipAmber}>{renderAnnual()}</span>
                             )}
 
-                            {/* add back % pay */}
                             {renderTopPay() && (
                               <span className={`${chipNeon} flex items-center gap-2`}>
                                 <Percent className="w-4 h-4" />
@@ -628,13 +640,13 @@ export default function NewJob() {
                           {typeof extractedData.payPercentile === "number" &&
                             extractedData.payPercentileSource && (
                               <p className="text-sm text-white/45 mt-3">
-                                Percentile is an estimate ({extractedData.payPercentileSource})
+                                Percentile is an estimate (
+                                {extractedData.payPercentileSource})
                               </p>
                             )}
                         </div>
                       )}
 
-                      {/* Skills */}
                       {extractedData.keywords?.length > 0 && (
                         <div className="mt-8">
                           <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
@@ -680,11 +692,12 @@ export default function NewJob() {
                 </div>
               </div>
 
-              {/* RIGHT: packet preview (fills space, makes screen feel “used”) */}
               <div className="rounded-2xl border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35 overflow-hidden">
                 <div className="h-1.5 bg-gradient-to-r from-purple-600/70 via-purple-400/25 to-purple-600/70" />
                 <div className="p-8">
-                  <h3 className="text-xl font-bold text-white mb-2">Packet preview</h3>
+                  <h3 className="text-xl font-bold text-white mb-2">
+                    Packet preview
+                  </h3>
                   <p className="text-sm text-white/60 mb-6">
                     What you’ll generate from this job post.
                   </p>
@@ -739,7 +752,6 @@ export default function NewJob() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="mt-7 flex flex-col sm:flex-row gap-4">
               <Button
                 onClick={() => {
@@ -763,9 +775,9 @@ export default function NewJob() {
 
         {/* Main Form */}
         {!showConfirm && (
-          <div className="max-w-[1100px] mx-auto">
-            <div className="mb-8 text-center">
-              <h1 className="text-5xl font-bold mb-3 text-white">
+          <div className="max-w-[1180px] mx-auto">
+            <div className="mb-5 text-center">
+              <h1 className="text-5xl font-bold mb-2 text-white">
                 Create a new job packet
               </h1>
               <p className="text-lg text-white/70">
@@ -773,72 +785,119 @@ export default function NewJob() {
               </p>
             </div>
 
-            <div className="rounded-2xl p-9 space-y-7 border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
-              {/* Resume Selector */}
-              <div>
-                <label className="block text-lg font-semibold mb-3 text-white">
-                  Resume <span className="text-red-400">*</span>
-                </label>
+            {/* ✅ tighter spacing so it fits 1920x1080 better */}
+            <div className="rounded-2xl p-7 border border-white/14 bg-[hsl(240,10%,10%)] shadow-xl shadow-black/35">
+              {/* TOP ROW: Resume + Student mode (side-by-side on desktop) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Resume Selector (with hover zoom + black dropdown) */}
+                <div className={`${hoverZoom} rounded-2xl`}>
+                  <label className="block text-lg font-semibold mb-2 text-white">
+                    Resume <span className="text-red-400">*</span>
+                  </label>
 
-                {resumesLoading ? (
-                  <div className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.05]">
-                    <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
-                  </div>
-                ) : hasResumes ? (
-                  <Select value={selectedResume} onValueChange={setSelectedResume}>
-                    <SelectTrigger className="border-white/12 text-white h-14 text-lg bg-white/[0.05]">
-                      <SelectValue placeholder="Select resume" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {resumes.map((resume) => (
-                        <SelectItem key={resume.id} value={resume.id.toString()}>
-                          {resume.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="p-5 rounded-xl border border-white/12 text-center bg-white/[0.05]">
-                    <p className="mb-3 text-sm text-white/60">No resumes found</p>
-                    <Button
-                      onClick={() => navigate(createPageUrl("Resumes"))}
-                      className="bg-purple-600 hover:bg-purple-500 text-white hover:scale-[1.02] transition-all"
+                  {resumesLoading ? (
+                    <div className="p-4 rounded-xl border border-white/12 text-center bg-white/[0.05]">
+                      <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
+                    </div>
+                  ) : hasResumes ? (
+                    <Select
+                      value={selectedResume}
+                      onValueChange={setSelectedResume}
                     >
-                      Upload Resume
-                    </Button>
+                      <SelectTrigger className="border-white/12 text-white h-14 text-lg bg-white/[0.05] transition-transform duration-200 hover:scale-[1.01]">
+                        <SelectValue placeholder="Select resume" />
+                      </SelectTrigger>
+
+                      {/* ✅ black picker background + visible highlight */}
+                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                        {resumes.map((resume) => (
+                          <SelectItem
+                            key={resume.id}
+                            value={resume.id.toString()}
+                            className={[
+                              "text-white/90",
+                              "focus:bg-purple-600/25 focus:text-white",
+                              "data-[highlighted]:bg-purple-600/25 data-[highlighted]:text-white",
+                              "hover:bg-purple-600/20",
+                              "transition-transform duration-150 hover:scale-[1.01]",
+                              "rounded-md",
+                            ].join(" ")}
+                          >
+                            {resume.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="p-4 rounded-xl border border-white/12 text-center bg-white/[0.05]">
+                      <p className="mb-3 text-sm text-white/60">No resumes found</p>
+                      <Button
+                        onClick={() => navigate(createPageUrl("Resumes"))}
+                        className="bg-purple-600 hover:bg-purple-500 text-white hover:scale-[1.02] transition-all"
+                      >
+                        Upload Resume
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Student Mode Toggle (card hover zoom) */}
+                <div className={`${hoverZoom} flex items-start gap-3 p-5 rounded-xl bg-white/[0.05] border border-white/12`}>
+                  <button
+                    onClick={() => setStudentMode(!studentMode)}
+                    className={`w-12 h-6 rounded-full transition-all relative ${
+                      studentMode ? "bg-purple-600" : "bg-white/25"
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
+                        studentMode ? "left-6" : "left-0.5"
+                      }`}
+                    />
+                  </button>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <GraduationCap className="w-5 h-5 text-white/70" />
+                      <span className="text-base font-medium text-white">
+                        No experience / Student mode
+                      </span>
+                    </div>
+                    <p className="text-sm text-white/55">
+                      Emphasizes projects, coursework, and skills instead of work experience.
+                    </p>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* AI Mode Selector */}
-              <div>
-                <label className="block text-lg font-semibold mb-2 text-white">
+              {/* AI Mode Selector (already has zoom; keep but tighter) */}
+              <div className={`${hoverZoomSoft}`}>
+                <label className="block text-lg font-semibold mb-1 text-white">
                   AI Mode <span className="text-red-400">*</span>
                 </label>
-                <p className="text-sm mb-4 text-white/65">
+                <p className="text-sm mb-3 text-white/65">
                   Choose how AI handles your resume content.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => setAiMode("standard")}
-                    className={`p-7 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
+                    className={`p-6 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
                       aiMode === "standard"
                         ? "border-green-500/55 bg-green-500/12 shadow-lg shadow-green-500/20"
                         : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-green-500/10"
                     }`}
-                    style={{ minHeight: "220px" }}
+                    style={{ minHeight: "200px" }}
                   >
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-2">
                       <div className="w-10 h-10 rounded-lg bg-green-600/20 flex items-center justify-center">
                         <Check className="w-5 h-5 text-green-200" />
                       </div>
                       <span className="font-bold text-xl text-white">Standard</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-100 mb-4 font-semibold border border-green-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-100 mb-3 font-semibold border border-green-500/20">
                       Recommended • Safe & ATS-friendly
                     </span>
-                    <ul className="text-base leading-relaxed space-y-1.5 text-white/75">
+                    <ul className="text-base leading-relaxed space-y-1 text-white/75">
                       <li>• Improves clarity and impact of your existing bullets</li>
                       <li>• Rewrites descriptions to match the job</li>
                       <li>• Optimizes wording and keywords</li>
@@ -850,23 +909,23 @@ export default function NewJob() {
 
                   <button
                     onClick={() => setAiMode("elite")}
-                    className={`p-7 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
+                    className={`p-6 rounded-xl border-2 transition-all text-left hover:scale-[1.01] relative ${
                       aiMode === "elite"
                         ? "border-amber-500/55 bg-amber-500/12 shadow-lg shadow-amber-500/20"
                         : "border-white/12 bg-white/[0.03] hover:border-white/20 hover:shadow-lg hover:shadow-amber-500/10"
                     }`}
-                    style={{ minHeight: "220px" }}
+                    style={{ minHeight: "200px" }}
                   >
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-2">
                       <div className="w-10 h-10 rounded-lg bg-amber-600/20 flex items-center justify-center">
                         <Sparkles className="w-5 h-5 text-amber-100" />
                       </div>
                       <span className="font-bold text-xl text-white">Elite</span>
                     </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-100 mb-4 font-semibold border border-amber-500/20">
+                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-100 mb-3 font-semibold border border-amber-500/20">
                       Advanced • Use with caution
                     </span>
-                    <ul className="text-base leading-relaxed space-y-1.5 mb-3 text-white/75">
+                    <ul className="text-base leading-relaxed space-y-1 mb-2 text-white/75">
                       <li>• May create or enhance experience bullets</li>
                       <li>• Can infer responsibilities from context</li>
                       <li>• Designed to maximize callbacks</li>
@@ -875,7 +934,7 @@ export default function NewJob() {
                       </li>
                     </ul>
                     {aiMode === "elite" && (
-                      <div className="mt-4 pt-4 border-t border-amber-500/20">
+                      <div className="mt-3 pt-3 border-t border-amber-500/20">
                         <p className="text-xs text-amber-100/90 flex items-start gap-2">
                           <span className="text-amber-100 font-bold">⚠</span>
                           <span>
@@ -889,36 +948,9 @@ export default function NewJob() {
                 </div>
               </div>
 
-              {/* Student Mode Toggle */}
-              <div className="flex items-start gap-3 p-5 rounded-xl bg-white/[0.05] border border-white/12">
-                <button
-                  onClick={() => setStudentMode(!studentMode)}
-                  className={`w-12 h-6 rounded-full transition-all relative ${
-                    studentMode ? "bg-purple-600" : "bg-white/25"
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
-                      studentMode ? "left-6" : "left-0.5"
-                    }`}
-                  />
-                </button>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <GraduationCap className="w-5 h-5 text-white/70" />
-                    <span className="text-base font-medium text-white">
-                      No experience / Student mode
-                    </span>
-                  </div>
-                  <p className="text-sm text-white/55">
-                    Emphasizes projects, coursework, and skills instead of work experience.
-                  </p>
-                </div>
-              </div>
-
-              {/* Job Description */}
-              <div>
-                <label className="block text-lg font-semibold mb-3 text-white">
+              {/* Job Description (card hover zoom + shorter height so page fits) */}
+              <div className={`${hoverZoom} mt-4`}>
+                <label className="block text-lg font-semibold mb-2 text-white">
                   Job Description <span className="text-red-400">*</span>
                 </label>
                 <Textarea
@@ -932,23 +964,23 @@ We are looking for a Software Engineer to join our team...
 Requirements:
 - 3+ years of experience with React
 - Strong problem-solving skills...`}
-                  className="min-h-[340px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
+                  className="min-h-[220px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
                 />
                 <p className="text-sm mt-2 text-white/55">
                   Paste the full job description. We’ll extract title, company, pay, and requirements.
                 </p>
               </div>
 
-              {/* Generate Button */}
-              <div className="pt-2">
+              {/* Generate Button (hover zoom) */}
+              <div className={`${hoverZoomSoft} pt-3`}>
                 <Button
                   onClick={handleAnalyze}
                   disabled={!selectedResume || !jobDescription.trim()}
-                  className="w-full h-16 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/30 transition-all"
+                  className="w-full h-14 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/30 transition-all"
                 >
                   Generate Packet
                 </Button>
-                <p className="text-center text-sm mt-3 text-white/55">
+                <p className="text-center text-sm mt-2 text-white/55">
                   Uses 1 credit
                 </p>
               </div>
