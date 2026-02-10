@@ -28,18 +28,25 @@ async function readJsonSafe(res) {
 async function apiJson(url, options = {}) {
   const res = await fetch(url, {
     ...options,
+    credentials: "include", // ✅ REQUIRED for SWA auth
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
   });
+
   const data = await readJsonSafe(res);
   if (!res.ok) {
-    const msg = data?.error || data?.message || data?.detail || `Request failed (${res.status})`;
+    const msg =
+      data?.error ||
+      data?.message ||
+      data?.detail ||
+      `Request failed (${res.status})`;
     throw new Error(msg);
   }
   return data;
 }
+
 
 function normalizeResume(doc) {
   const id = doc.id || doc._id || String(Date.now());
@@ -80,22 +87,18 @@ export default function Resumes() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadResumes = async () => {
-    try {
-      const res = await fetch("/api/resume/list");
-      if (!res.ok) {
-        setResumes([]);
-        return;
-      }
-      const data = await readJsonSafe(res);
-      const items = data?.resumes || [];
-      const normalized = Array.isArray(items) ? items.map(normalizeResume) : [];
-      setResumes(normalized);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load resumes");
-      setResumes([]);
-    }
-  };
+  try {
+    const data = await apiJson("/api/resume/list", { method: "GET" });
+    const items = data?.resumes || [];
+    const normalized = Array.isArray(items) ? items.map(normalizeResume) : [];
+    setResumes(normalized);
+  } catch (e) {
+    console.error(e);
+    toast.error("Failed to load resumes");
+    setResumes([]);
+  }
+};
+
 
   useEffect(() => {
     loadResumes();
