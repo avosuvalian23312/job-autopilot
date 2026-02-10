@@ -491,47 +491,54 @@ export default function NewJob() {
 {(extractedData.payText ||
   extractedData.payMin != null ||
   extractedData.payMax != null) && (
-  <div className="flex items-center gap-2">
-    <DollarSign className="w-4 h-4 text-white/40" />
-    <p className="text-sm text-white/60">
-      {(() => {
-        const cur = extractedData.payCurrency || "USD";
-        const symbol = cur === "USD" ? "$" : cur + " ";
+  <div>
+    <label className="text-xs text-white/40 mb-2 block flex items-center gap-2">
+      <DollarSign className="w-3 h-3" />
+      Compensation
+    </label>
 
-        const periodMap = {
-          hour: "/hr",
-          year: "/yr",
-          month: "/mo",
-          week: "/wk",
-          day: "/day",
-        };
-        const suffix = extractedData.payPeriod
-          ? periodMap[extractedData.payPeriod] || ""
-          : "";
+    <div className="flex flex-wrap gap-2">
+      <span className="px-3 py-1 rounded-full bg-green-600/20 text-green-400 text-xs font-medium">
+        {(() => {
+          const cur = extractedData.payCurrency || "USD";
+          const symbol = cur === "USD" ? "$" : `${cur} `;
 
-        const fmt = (n) =>
-          typeof n === "number"
-            ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-            : null;
+          const periodMap = {
+            hour: "/hr",
+            year: "/yr",
+            month: "/mo",
+            week: "/wk",
+            day: "/day",
+          };
+          const suffix = extractedData.payPeriod
+            ? periodMap[extractedData.payPeriod] || ""
+            : "";
 
-        const min = fmt(extractedData.payMin);
-        const max = fmt(extractedData.payMax);
+          const fmt = (n) =>
+            typeof n === "number"
+              ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+              : null;
 
-        // Prefer structured numeric range if we have it
-        if (min && max) {
-          return min === max
-            ? `${symbol}${min}${suffix}`
-            : `${symbol}${min} - ${symbol}${max}${suffix}`;
-        }
+          const min = fmt(extractedData.payMin);
+          const max = fmt(extractedData.payMax);
 
-        // Otherwise show the raw payText if present
-        if (extractedData.payText) return extractedData.payText;
+          // Preferred: numeric range
+          if (min && max) {
+            return min === max
+              ? `${symbol}${min}${suffix}`
+              : `${symbol}${min} – ${symbol}${max}${suffix}`;
+          }
 
-        return null;
-      })()}
-    </p>
+          // Fallback: raw text
+          if (extractedData.payText) return extractedData.payText;
+
+          return "Compensation not specified";
+        })()}
+      </span>
+    </div>
   </div>
 )}
+
 
                 {extractedData.keywords?.length > 0 && (
                   <div>
