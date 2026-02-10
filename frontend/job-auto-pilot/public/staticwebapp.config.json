@@ -1,4 +1,7 @@
 {
+  "platform": {
+    "apiRuntime": "node:20"
+  },
   "auth": {
     "identityProviders": {
       "customOpenIdConnectProviders": {
@@ -22,6 +25,16 @@
   },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/.auth/*", "/assets/*", "/*.css", "/*.js", "/*.ico", "/*.png", "/*.jpg", "/*.svg"]
+    "exclude": [
+      "/.auth/*",
+      "/api/*",
+      "/assets/*",
+      "/*.css",
+      "/*.js",
+      "/*.ico",
+      "/*.png",
+      "/*.jpg",
+      "/*.svg"
+    ]
   }
 }
