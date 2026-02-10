@@ -1,4 +1,4 @@
-// src/functions/resumeUploadUrl.js
+// src/functions/resumeUploadUrl.js (Azure Functions v4)
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -8,28 +8,29 @@ const {
 
 const { requireUser } = require("../lib/auth");
 
-module.exports = async function resumeUploadUrl(req, context) {
-  if (req.method === "OPTIONS") {
+module.exports = async function resumeUploadUrl(request, context) {
+  // NOTE: v4 uses `request`, not old-style `req`
+  if (request.method === "OPTIONS") {
     return { status: 204, headers: cors() };
   }
 
-  // --- AUTH: SWA principal header (no JWT) ---
+  // --- AUTH: SWA principal header ---
   let user;
   try {
-    user = requireUser(req);
+    // requireUser MUST read headers via request.headers.get(...)
+    user = requireUser(request);
   } catch (e) {
     return json(401, {
       ok: false,
       error: e.message,
       hint:
-        "Make sure you are logged in via Static Web Apps auth and call /api/* through the SWA site (not direct func host).",
+        "Make sure you are logged in via Static Web Apps auth and call /api/* through the SWA site.",
     });
   }
 
-  // --- MAIN LOGIC ---
   try {
-    const body = typeof req.json === "function" ? await req.json() : {};
-    const fileName = body.fileName;
+    const body = await safeJson(request);
+    const fileName = body?.fileName;
 
     if (!fileName) {
       return json(400, { ok: false, error: "fileName required" });
@@ -39,35 +40,29 @@ module.exports = async function resumeUploadUrl(req, context) {
     const containerName = process.env.RESUME_CONTAINER || "resumes";
 
     if (!conn) {
-      return json(500, {
-        ok: false,
-        error: "Missing AZURE_STORAGE_CONNECTION_STRING",
-      });
+      return json(500, { ok: false, error: "Missing AZURE_STORAGE_CONNECTION_STRING" });
     }
 
     const { accountName, accountKey } = parseConn(conn);
     if (!accountName || !accountKey) {
       return json(500, {
         ok: false,
-        error:
-          "Invalid AZURE_STORAGE_CONNECTION_STRING (missing AccountName/AccountKey)",
+        error: "Invalid AZURE_STORAGE_CONNECTION_STRING (missing AccountName/AccountKey)",
       });
     }
 
     const cred = new StorageSharedKeyCredential(accountName, accountKey);
-    const service = new BlobServiceClient(
-      `https://${accountName}.blob.core.windows.net`,
-      cred
-    );
+    const service = new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, cred);
 
     const container = service.getContainerClient(containerName);
     await container.createIfNotExists();
 
     // Safe naming
     const safeFile = String(fileName).replace(/[^\w.\-()+ ]+/g, "_");
-
-    // Use stable user id; make it path-safe
-    const userFolder = String(user.id).replace(/[^a-zA-Z0-9._-]+/g, "_");
+    const userFolder = String(user.id || user.userId || user.sub || "user").replace(
+      /[^a-zA-Z0-9._-]+/g,
+      "_"
+    );
 
     const blobName = `${userFolder}/${Date.now()}_${safeFile}`;
     const blob = container.getBlockBlobClient(blobName);
@@ -87,13 +82,22 @@ module.exports = async function resumeUploadUrl(req, context) {
       ok: true,
       blobName,
       uploadUrl: `${blob.url}?${sas}`,
-      userId: user.id, // helpful for debugging
+      userId: user.id || user.userId || null,
     });
   } catch (e) {
     context.log("resumeUploadUrl error", e);
-    return json(500, { ok: false, error: e.message });
+    return json(500, { ok: false, error: e?.message || "Server error" });
   }
 };
+
+async function safeJson(request) {
+  try {
+    // v4 request.json() throws if body empty or invalid
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
 
 function parseConn(c) {
   const m = {};
@@ -112,7 +116,6 @@ function parseConn(c) {
 function cors() {
   return {
     "Access-Control-Allow-Origin": "*",
-    // remove Authorization since we don't use it anymore
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
@@ -122,6 +125,8 @@ function json(status, body) {
   return {
     status,
     headers: { ...cors(), "Content-Type": "application/json" },
+    // Azure Functions v4 supports BOTH `body` (string) and `jsonBody` (object).
+    // Using `body` keeps your style consistent.
     body: JSON.stringify(body),
   };
 }

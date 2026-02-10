@@ -98,7 +98,7 @@ app.http("resumeSetDefault", {
 
 app.http("resumeReadUrl", {
   methods: ["POST", "OPTIONS"],
-  authLevel: "anonymous",
   route: "resume/read-url",
-  handler: resumeReadUrl,
+  authLevel: "anonymous",
+  handler: require("./src/functions/resumeReadUrl"),
 });
