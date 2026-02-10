@@ -46,9 +46,7 @@ export default function Landing() {
               href="#pricing"
               onClick={(e) => {
                 e.preventDefault();
-                document
-                  .getElementById("pricing")
-                  ?.scrollIntoView({ behavior: "smooth" });
+                document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
@@ -59,9 +57,7 @@ export default function Landing() {
               href="#features"
               onClick={(e) => {
                 e.preventDefault();
-                document
-                  .getElementById("features")
-                  ?.scrollIntoView({ behavior: "smooth" });
+                document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
@@ -72,9 +68,7 @@ export default function Landing() {
               href="#reviews"
               onClick={(e) => {
                 e.preventDefault();
-                document
-                  .getElementById("reviews")
-                  ?.scrollIntoView({ behavior: "smooth" });
+                document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth" });
               }}
               className="hover:text-white transition-colors cursor-pointer"
             >
@@ -200,13 +194,8 @@ export default function Landing() {
 
       <FooterSection />
 
-      {/* ✅ Anchored Social Proof Toasts (mock data) */}
-      <SocialProofToasts
-        position="bottom-left"
-        maxVisible={3}
-        intervalMs={5200}
-        hideOnMobile={false}
-      />
+      {/* ✅ Bottom-left popup social proof (single card) */}
+      {!authOpen && <SocialProofToasts intervalMs={6500} hideOnMobile={false} />}
 
       <AuthModal
         open={authOpen}
