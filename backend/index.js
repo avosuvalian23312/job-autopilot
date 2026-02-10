@@ -80,7 +80,7 @@ app.http("authExchange", {
 // ========================
 app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
-  route: "resume/upload-url",
+  route: "resume/upload-Url",
   authLevel: "anonymous",
   handler: require("./src/functions/resumeUploadUrl.js"),
 });
