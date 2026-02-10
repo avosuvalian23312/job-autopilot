@@ -204,13 +204,12 @@ ${skills}`;
 
         // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
        const sasResp = await apiFetch("/api/resume/upload-url", {
-  method: "POST",
-  body: JSON.stringify({
-    fileName: uploadedFile.name,
-    contentType: uploadedFile.type || "application/octet-stream",
-  }),
-});
-
+          method: "POST",
+          body: {
+            fileName: uploadedFile.name,
+            contentType: uploadedFile.type || "application/octet-stream",
+          },
+        });
 
         if (!sasResp.ok || !sasResp.data?.ok) {
           // Common case: not logged in -> backend returns 401
