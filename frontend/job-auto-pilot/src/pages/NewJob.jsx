@@ -24,6 +24,10 @@ import {
   Tag,
   DollarSign,
   Percent,
+  Briefcase,
+  Building2,
+  Clock,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -259,6 +263,14 @@ export default function NewJob() {
         seniority: extracted.seniority || null,
         keywords: extracted.keywords || [],
 
+        // ✅ NEW chips
+        employmentType: extracted.employmentType || null, // Full-time / Contract / Part-time / Internship
+        workModel: extracted.workModel || null, // Remote / Hybrid / On-site
+        experienceLevel: extracted.experienceLevel || null, // "0–2 yrs" / "3–5 yrs" / "5+ yrs"
+        complianceTags: Array.isArray(extracted.complianceTags)
+          ? extracted.complianceTags
+          : [],
+
         // ✅ pay fields (safe defaults)
         payText: extracted.payText || null,
         payMin:
@@ -348,6 +360,7 @@ export default function NewJob() {
   // (Optional) keep existing UI identical; this only ensures the selector has data
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
+  // update from here
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
       {/* Header */}
@@ -517,6 +530,58 @@ export default function NewJob() {
                     <p className="text-sm text-white/60">
                       {extractedData.seniority}
                     </p>
+                  </div>
+                )}
+
+                {/* ✅ NEW: Employment type / Work model / Experience / Compliance chips */}
+                {(extractedData.employmentType ||
+                  extractedData.workModel ||
+                  extractedData.experienceLevel ||
+                  (Array.isArray(extractedData.complianceTags) &&
+                    extractedData.complianceTags.length > 0)) && (
+                  <div>
+                    <label className="text-xs text-white/40 mb-2 block flex items-center gap-2">
+                      <Briefcase className="w-3 h-3" />
+                      Job Details
+                    </label>
+
+                    <div className="flex flex-wrap gap-2">
+                      {/* Employment Type */}
+                      {extractedData.employmentType && (
+                        <span className="px-3 py-1 rounded-full bg-white/10 text-white/80 text-xs font-medium flex items-center gap-1">
+                          <Briefcase className="w-3 h-3" />
+                          {extractedData.employmentType}
+                        </span>
+                      )}
+
+                      {/* Work Model */}
+                      {extractedData.workModel && (
+                        <span className="px-3 py-1 rounded-full bg-white/10 text-white/80 text-xs font-medium flex items-center gap-1">
+                          <Building2 className="w-3 h-3" />
+                          {extractedData.workModel}
+                        </span>
+                      )}
+
+                      {/* Experience Level */}
+                      {extractedData.experienceLevel && (
+                        <span className="px-3 py-1 rounded-full bg-white/10 text-white/80 text-xs font-medium flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {extractedData.experienceLevel}
+                        </span>
+                      )}
+
+                      {/* Compliance Tags */}
+                      {Array.isArray(extractedData.complianceTags) &&
+                        extractedData.complianceTags.slice(0, 6).map((tag, i) => (
+                          <span
+                            key={`${tag}-${i}`}
+                            className="px-3 py-1 rounded-full bg-amber-500/15 text-amber-200 text-xs font-medium flex items-center gap-1"
+                          >
+                            <ShieldCheck className="w-3 h-3" />
+                            {tag}
+                          </span>
+                        ))}
+                    </div>
                   </div>
                 )}
 

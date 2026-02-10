@@ -1,31 +1,144 @@
+// backend/src/functions/extractJob.js
+"use strict";
+
+/**
+ * -----------------------------
+ * Fallback parsers (no AI needed)
+ * -----------------------------
+ */
+
+function parseEmploymentType(text) {
+  const t = String(text || "");
+
+  // order matters (more specific first)
+  if (/(internship|intern\b|co-?op)/i.test(t)) return "Internship";
+  if (/(part[-\s]?time|\bPT\b)/i.test(t)) return "Part-time";
+  if (/(contract|contractor|1099|corp[-\s]?to[-\s]?corp|c2c|freelance)/i.test(t)) return "Contract";
+  if (/(full[-\s]?time|\bFT\b|w2|permanent|salary position)/i.test(t)) return "Full-time";
+
+  return null;
+}
+
+function parseWorkModel(text) {
+  const t = String(text || "");
+
+  // Hybrid first (often includes the word "remote" too)
+  if (/\bhybrid\b/i.test(t)) return "Hybrid";
+
+  // On-site patterns
+  if (/(on[-\s]?site|onsite|in[-\s]?office|office[-\s]?based|must be on site)/i.test(t)) return "On-site";
+
+  // Remote patterns
+  if (/\bremote\b/i.test(t) || /(work from home|wfh)/i.test(t)) return "Remote";
+
+  return null;
+}
+
+function parseExperience(text) {
+  const t = String(text || "").replace(/[–—]/g, "-");
+
+  // common patterns:
+  // "3+ years", "5 years of experience", "2-4 years", "minimum 7 years"
+  const range = t.match(/(\d{1,2})\s*-\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b/i);
+  const plus = t.match(/(\d{1,2})\s*\+\s*(?:years?|yrs?)\b/i);
+  const min = t.match(/(?:minimum|min\.)\s*(\d{1,2})\s*(?:years?|yrs?)\b/i);
+  const single = t.match(/(\d{1,2})\s*(?:years?|yrs?)\s+(?:of\s+)?experience\b/i);
+
+  const pick = (n) => {
+    const x = Number(n);
+    return Number.isFinite(x) ? x : null;
+  };
+
+  let lo = null;
+  let hi = null;
+
+  if (range) {
+    lo = pick(range[1]);
+    hi = pick(range[2]);
+  } else if (plus) {
+    lo = pick(plus[1]);
+    hi = null;
+  } else if (min) {
+    lo = pick(min[1]);
+    hi = null;
+  } else if (single) {
+    lo = pick(single[1]);
+    hi = null;
+  }
+
+  // Convert to a simple chip band
+  // You asked: “0–2 yrs”, “3–5 yrs”, “5+ yrs”
+  const years = lo;
+
+  if (years == null) return null;
+  if (years <= 2) return "0–2 yrs";
+  if (years <= 5) return "3–5 yrs";
+  return "5+ yrs";
+}
+
+function parseCompliance(text) {
+  const t = String(text || "");
+  const tags = new Set();
+
+  // Sponsorship / visa
+  if (/(no sponsorship|unable to sponsor|cannot sponsor|not able to sponsor|without sponsorship)/i.test(t)) {
+    tags.add("No sponsorship");
+  }
+  if (/(sponsorship available|visa sponsorship|we sponsor visas|sponsor H-?1B|H-?1B sponsorship)/i.test(t)) {
+    tags.add("Sponsorship available");
+  }
+
+  // US citizenship
+  if (/(u\.?s\.?\s*citizen|us citizen|citizenship required|must be a citizen)/i.test(t)) {
+    tags.add("US Citizen required");
+  }
+
+  // Clearance
+  if (/(security clearance|clearance required|must have.*clearance|secret clearance|top secret|TS\/SCI|TS SCI)/i.test(t)) {
+    tags.add("Clearance required");
+  }
+
+  // Background check (optional but helpful)
+  if (/(background check|drug test|e-?verify)/i.test(t)) {
+    tags.add("Background check");
+  }
+
+  return Array.from(tags);
+}
+
+/**
+ * -----------------------------
+ * Pay fallback (your existing logic)
+ * -----------------------------
+ */
 function parsePayFallback(text) {
   const t = String(text || "");
 
   // Normalize dashes
   const norm = t.replace(/[–—]/g, "-");
 
-  // Common patterns:
-  // $40/hr, $40 per hour, 40/hr, $85,000 - $105,000 a year, 85k-105k, $120k
-  const money = /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(?:\s*(k))?/gi;
-
+  // period detection helpers
   const periodHints = [
     { period: "hour", re: /(\/hr|per\s*hour|hourly)\b/i },
-    { period: "year", re: /(\/yr|per\s*year|annually|annual|a\s*year)\b/i },
+    { period: "year", re: /(\/yr|per\s*year|annually|annual|a\s*year|salary)\b/i },
     { period: "month", re: /(\/mo|per\s*month|monthly)\b/i },
     { period: "week", re: /(\/wk|per\s*week|weekly)\b/i },
     { period: "day", re: /(\/day|per\s*day|daily)\b/i },
   ];
 
-  // detect period
   let payPeriod = null;
   for (const p of periodHints) {
     if (p.re.test(norm)) { payPeriod = p.period; break; }
   }
 
-  // Try to capture a nearby money range first
-  // Examples: "$85k - $105k", "$85,000 - $105,000", "85-105k"
-  const rangeRe = /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?\s*-\s*(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
-  const rangeM = norm.match(rangeRe);
+  // Range patterns:
+  // "$85k - $105k", "$85,000 - $105,000", "85k-105k", "85000-105000"
+  const rangeRe =
+    /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?\s*-\s*(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
+
+  // Single patterns:
+  // "$120k", "$85,000", "85k"
+  const oneRe = /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
 
   const toNum = (raw, isK) => {
     if (!raw) return null;
@@ -39,6 +152,7 @@ function parsePayFallback(text) {
   let payCurrency = "USD";
   let payText = null;
 
+  const rangeM = norm.match(rangeRe);
   if (rangeM) {
     const minRaw = rangeM[2];
     const minK = !!rangeM[3] && /k/i.test(rangeM[3]);
@@ -47,15 +161,7 @@ function parsePayFallback(text) {
 
     payMin = toNum(minRaw, minK);
     payMax = toNum(maxRaw, maxK);
-
-    // Build a nice text
-    const sym = "$";
-    const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : "");
-    const suffix = payPeriod ? ({hour:"/hr",year:"/yr",month:"/mo",week:"/wk",day:"/day"}[payPeriod] || "") : "";
-    if (payMin && payMax) payText = `${sym}${fmt(payMin)} – ${sym}${fmt(payMax)}${suffix}`;
   } else {
-    // single value fallback
-    const oneRe = /(\$|usd\s*)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,3})(\s*k)?/i;
     const oneM = norm.match(oneRe);
     if (oneM) {
       const vRaw = oneM[2];
@@ -63,23 +169,32 @@ function parsePayFallback(text) {
       const val = toNum(vRaw, vK);
       payMin = val;
       payMax = val;
-
-      const sym = "$";
-      const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : "");
-      const suffix = payPeriod ? ({hour:"/hr",year:"/yr",month:"/mo",week:"/wk",day:"/day"}[payPeriod] || "") : "";
-      if (val) payText = `${sym}${fmt(val)}${suffix}`;
     }
   }
 
-  // Confidence: how sure are we about period?
-  // - if we saw explicit /hr or /yr -> high
-  // - if we only saw money with no period -> low
+  // If we found numbers, build a nice text
+  if (payMin != null || payMax != null) {
+    const sym = "$";
+    const fmt = (n) => (typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "");
+    const suffix = payPeriod ? ({hour:"/hr",year:"/yr",month:"/mo",week:"/wk",day:"/day"}[payPeriod] || "") : "";
+
+    if (payMin != null && payMax != null) {
+      payText = payMin === payMax
+        ? `${sym}${fmt(payMin)}${suffix}`
+        : `${sym}${fmt(payMin)} – ${sym}${fmt(payMax)}${suffix}`;
+    } else if (payMin != null) {
+      payText = `${sym}${fmt(payMin)}${suffix}`;
+    } else if (payMax != null) {
+      payText = `${sym}${fmt(payMax)}${suffix}`;
+    }
+  }
+
+  // Confidence
   let payConfidence = 0.2;
   if (payText && payPeriod) payConfidence = 0.85;
   else if (payText && !payPeriod) payConfidence = 0.35;
 
-  // Annualize estimates (common assumption)
-  // hourly -> 2080 hrs, weekly -> 52, monthly -> 12, daily -> 260 (5d*52)
+  // Annualize
   const annualFactor =
     payPeriod === "hour" ? 2080 :
     payPeriod === "week" ? 52 :
@@ -91,8 +206,7 @@ function parsePayFallback(text) {
   const payAnnualizedMin = (annualFactor && typeof payMin === "number") ? Math.round(payMin * annualFactor) : null;
   const payAnnualizedMax = (annualFactor && typeof payMax === "number") ? Math.round(payMax * annualFactor) : null;
 
-  // Percentile estimate (HEURISTIC, not real market data)
-  // Uses a rough banding based on annualized pay.
+  // Percentile heuristic
   const mid = (payAnnualizedMin && payAnnualizedMax)
     ? (payAnnualizedMin + payAnnualizedMax) / 2
     : (payAnnualizedMin || payAnnualizedMax || null);
@@ -116,7 +230,7 @@ function parsePayFallback(text) {
     payConfidence,
     payAnnualizedMin,
     payAnnualizedMax,
-    payPercentile, // 0-100 (heuristic)
+    payPercentile,
     payPercentileSource: payPercentile != null ? "heuristic-bands" : null,
   };
 }
@@ -176,7 +290,7 @@ function fallbackExtract(description) {
     if (re.test(text)) { seniority = lvl; break; }
   }
 
-  // Keywords (light)
+  // Keywords
   const skills = new Set();
   const commonSkills = ["React","Python","JavaScript","AWS","Docker","SQL","Node.js","Java","C++","TypeScript","Git","Azure"];
   for (const s of commonSkills) {
@@ -184,6 +298,13 @@ function fallbackExtract(description) {
     if (re.test(text)) skills.add(s);
   }
 
+  // NEW: chips
+  const employmentType = parseEmploymentType(text);
+  const workModel = parseWorkModel(text);
+  const experienceLevel = parseExperience(text);
+  const complianceTags = parseCompliance(text);
+
+  // Pay
   const pay = parsePayFallback(text);
 
   return {
@@ -194,12 +315,20 @@ function fallbackExtract(description) {
     seniority,
     keywords: Array.from(skills).slice(0, 10),
 
-    // ✅ NEW pay fields
+    employmentType,
+    workModel,
+    experienceLevel,
+    complianceTags,
+
     ...pay,
   };
 }
 
-
+/**
+ * -----------------------------
+ * Azure Function handler
+ * -----------------------------
+ */
 module.exports = async function (request, context) {
   try {
     if (request.method === "OPTIONS") return { status: 204 };
@@ -215,7 +344,7 @@ module.exports = async function (request, context) {
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
 
-    // NOTE: you said you don't have apiVersion in env — this hardcoded one is fine
+    // Hardcoded ok (you said you don't have apiVersion in env)
     const apiVersion = "2024-02-15-preview";
 
     if (!endpoint || !apiKey || !deployment) {
@@ -230,22 +359,29 @@ module.exports = async function (request, context) {
     const system = `
 You extract structured job posting fields from raw job descriptions.
 Return ONLY valid JSON with EXACT keys:
+
 jobTitle (string),
 company (string),
 website (string|null),
 location (string|null),
 seniority (string|null),
 keywords (string[]),
+
+employmentType (string|null),   // one of: "Full-time","Contract","Part-time","Internship"
+workModel (string|null),        // one of: "Remote","Hybrid","On-site"
+experienceLevel (string|null),  // one of: "0–2 yrs","3–5 yrs","5+ yrs"
+complianceTags (string[]),      // examples: ["US Citizen required","Clearance required","No sponsorship"]
+
 payText (string|null),
 payMin (number|null),
 payMax (number|null),
-payCurrency (string|null),        // ex: "USD"
-payPeriod (string|null),          // one of: "hour","year","month","week","day"
-payConfidence (number|null)       // 0..1 confidence about payPeriod
-No markdown, no commentary, no extra keys.
-If unknown: use null (or [] for keywords).
-`.trim();
+payCurrency (string|null),      // ex: "USD"
+payPeriod (string|null),        // one of: "hour","year","month","week","day"
+payConfidence (number|null)     // 0..1 confidence about payPeriod
 
+No markdown, no commentary, no extra keys.
+If unknown: use null (or [] for arrays).
+`.trim();
 
     const user = `JOB DESCRIPTION:\n${jobDescription}`;
 
@@ -261,7 +397,7 @@ If unknown: use null (or [] for keywords).
           { role: "user", content: user },
         ],
         temperature: 0.1,
-        max_tokens: 450,
+        max_tokens: 650,
       }),
     });
 
@@ -287,70 +423,67 @@ If unknown: use null (or [] for keywords).
       }
     }
 
-    const toNum = (v) => {
-      if (typeof v === "number" && Number.isFinite(v)) return v;
-      if (typeof v === "string") {
-        const n = Number(v.replace(/,/g, "").trim());
-        if (Number.isFinite(n)) return n;
-      }
-      return null;
-    };
-
+    const allowedEmployment = new Set(["Full-time", "Contract", "Part-time", "Internship"]);
+    const allowedWorkModel = new Set(["Remote", "Hybrid", "On-site"]);
+    const allowedExperience = new Set(["0–2 yrs", "3–5 yrs", "5+ yrs"]);
     const allowedPeriods = new Set(["hour", "year", "month", "week", "day"]);
 
     const safe = {
-  jobTitle: typeof parsed?.jobTitle === "string" && parsed.jobTitle.trim() ? parsed.jobTitle.trim() : null,
-  company: typeof parsed?.company === "string" && parsed.company.trim() ? parsed.company.trim() : null,
-  website: typeof parsed?.website === "string" && parsed.website.trim() ? parsed.website.trim() : null,
-  location: typeof parsed?.location === "string" && parsed.location.trim() ? parsed.location.trim() : null,
-  seniority: typeof parsed?.seniority === "string" && parsed.seniority.trim() ? parsed.seniority.trim() : null,
-  keywords: Array.isArray(parsed?.keywords) ? parsed.keywords.filter((k) => typeof k === "string" && k.trim()).slice(0, 12) : [],
+      jobTitle: typeof parsed?.jobTitle === "string" && parsed.jobTitle.trim() ? parsed.jobTitle.trim() : null,
+      company: typeof parsed?.company === "string" && parsed.company.trim() ? parsed.company.trim() : null,
+      website: typeof parsed?.website === "string" && parsed.website.trim() ? parsed.website.trim() : null,
+      location: typeof parsed?.location === "string" && parsed.location.trim() ? parsed.location.trim() : null,
+      seniority: typeof parsed?.seniority === "string" && parsed.seniority.trim() ? parsed.seniority.trim() : null,
+      keywords: Array.isArray(parsed?.keywords)
+        ? parsed.keywords.filter((k) => typeof k === "string" && k.trim()).slice(0, 12)
+        : [],
 
-  payText: typeof parsed?.payText === "string" && parsed.payText.trim() ? parsed.payText.trim() : null,
-  payMin: typeof parsed?.payMin === "number" && Number.isFinite(parsed.payMin) ? parsed.payMin : null,
-  payMax: typeof parsed?.payMax === "number" && Number.isFinite(parsed.payMax) ? parsed.payMax : null,
-  payCurrency: typeof parsed?.payCurrency === "string" && parsed.payCurrency.trim() ? parsed.payCurrency.trim() : "USD",
-  payPeriod: typeof parsed?.payPeriod === "string" && ["hour","year","month","week","day"].includes(parsed.payPeriod) ? parsed.payPeriod : null,
-  payConfidence: typeof parsed?.payConfidence === "number" && Number.isFinite(parsed.payConfidence)
-    ? Math.max(0, Math.min(1, parsed.payConfidence))
-    : null,
-};
+      employmentType: (typeof parsed?.employmentType === "string" && allowedEmployment.has(parsed.employmentType))
+        ? parsed.employmentType
+        : null,
+      workModel: (typeof parsed?.workModel === "string" && allowedWorkModel.has(parsed.workModel))
+        ? parsed.workModel
+        : null,
+      experienceLevel: (typeof parsed?.experienceLevel === "string" && allowedExperience.has(parsed.experienceLevel))
+        ? parsed.experienceLevel
+        : null,
+      complianceTags: Array.isArray(parsed?.complianceTags)
+        ? parsed.complianceTags.filter((x) => typeof x === "string" && x.trim()).slice(0, 6)
+        : [],
 
-// Annualize + Percentile (heuristic)
-const annualFactor =
-  safe.payPeriod === "hour" ? 2080 :
-  safe.payPeriod === "week" ? 52 :
-  safe.payPeriod === "month" ? 12 :
-  safe.payPeriod === "day" ? 260 :
-  safe.payPeriod === "year" ? 1 :
-  null;
+      payText: typeof parsed?.payText === "string" && parsed.payText.trim() ? parsed.payText.trim() : null,
+      payMin: (typeof parsed?.payMin === "number" && Number.isFinite(parsed.payMin)) ? parsed.payMin : null,
+      payMax: (typeof parsed?.payMax === "number" && Number.isFinite(parsed.payMax)) ? parsed.payMax : null,
+      payCurrency: typeof parsed?.payCurrency === "string" && parsed.payCurrency.trim() ? parsed.payCurrency.trim() : "USD",
+      payPeriod: (typeof parsed?.payPeriod === "string" && allowedPeriods.has(parsed.payPeriod)) ? parsed.payPeriod : null,
+      payConfidence: (typeof parsed?.payConfidence === "number" && Number.isFinite(parsed.payConfidence))
+        ? Math.max(0, Math.min(1, parsed.payConfidence))
+        : null,
+    };
 
-const payAnnualizedMin = (annualFactor && typeof safe.payMin === "number") ? Math.round(safe.payMin * annualFactor) : null;
-const payAnnualizedMax = (annualFactor && typeof safe.payMax === "number") ? Math.round(safe.payMax * annualFactor) : null;
-
-const mid = (payAnnualizedMin && payAnnualizedMax)
-  ? (payAnnualizedMin + payAnnualizedMax) / 2
-  : (payAnnualizedMin || payAnnualizedMax || null);
-
-let payPercentile = null;
-if (typeof mid === "number") {
-  if (mid < 45000) payPercentile = 20;
-  else if (mid < 65000) payPercentile = 40;
-  else if (mid < 85000) payPercentile = 55;
-  else if (mid < 110000) payPercentile = 70;
-  else if (mid < 140000) payPercentile = 82;
-  else payPercentile = 90;
-}
-
-safe.payAnnualizedMin = payAnnualizedMin;
-safe.payAnnualizedMax = payAnnualizedMax;
-safe.payPercentile = payPercentile;
-safe.payPercentileSource = payPercentile != null ? "heuristic-bands" : null;
-
-
-    // Normalize pay: if one exists, set both
+    // normalize pay range
     if (safe.payMin != null && safe.payMax == null) safe.payMax = safe.payMin;
     if (safe.payMax != null && safe.payMin == null) safe.payMin = safe.payMax;
+
+    // If payPeriod missing but we have numbers, let fallback infer period/annualization/percentile
+    const needPayFallback = (safe.payMin != null || safe.payMax != null) && !safe.payPeriod;
+
+    const payFromFallback = needPayFallback
+      ? parsePayFallback(jobDescription)
+      : null;
+
+    const mergedPay = {
+      payText: safe.payText ?? payFromFallback?.payText ?? null,
+      payMin: safe.payMin ?? payFromFallback?.payMin ?? null,
+      payMax: safe.payMax ?? payFromFallback?.payMax ?? null,
+      payCurrency: safe.payCurrency ?? payFromFallback?.payCurrency ?? "USD",
+      payPeriod: safe.payPeriod ?? payFromFallback?.payPeriod ?? null,
+      payConfidence: safe.payConfidence ?? payFromFallback?.payConfidence ?? null,
+      payAnnualizedMin: payFromFallback?.payAnnualizedMin ?? null,
+      payAnnualizedMax: payFromFallback?.payAnnualizedMax ?? null,
+      payPercentile: payFromFallback?.payPercentile ?? null,
+      payPercentileSource: payFromFallback?.payPercentileSource ?? null,
+    };
 
     const isMostlyEmpty =
       !safe.jobTitle &&
@@ -359,37 +492,54 @@ safe.payPercentileSource = payPercentile != null ? "heuristic-bands" : null;
       !safe.location &&
       !safe.seniority &&
       safe.keywords.length === 0 &&
-      safe.payMin == null &&
-      safe.payMax == null &&
-      !safe.payText;
+      (mergedPay.payMin == null && mergedPay.payMax == null && !mergedPay.payText) &&
+      !safe.employmentType &&
+      !safe.workModel &&
+      !safe.experienceLevel &&
+      (!safe.complianceTags || safe.complianceTags.length === 0);
 
-    const base = isMostlyEmpty ? fallbackExtract(jobDescription) : {
-      jobTitle: safe.jobTitle || "Position",
-      company: safe.company || "Company",
-      website: safe.website,
-      location: safe.location,
-      seniority: safe.seniority,
-      keywords: safe.keywords,
-      payMin: safe.payMin,
-      payMax: safe.payMax,
-      payCurrency: safe.payCurrency || "USD",
-      payPeriod: safe.payPeriod,
-      payText: safe.payText,
-      payMin: safe.payMin,
-payMax: safe.payMax,
-payCurrency: safe.payCurrency,
-payPeriod: safe.payPeriod,
-payConfidence: safe.payConfidence,
-payAnnualizedMin: safe.payAnnualizedMin,
-payAnnualizedMax: safe.payAnnualizedMax,
-payPercentile: safe.payPercentile,
-payPercentileSource: safe.payPercentileSource,
-    };
+    const base = isMostlyEmpty
+      ? fallbackExtract(jobDescription)
+      : {
+          jobTitle: safe.jobTitle || "Position",
+          company: safe.company || "Company",
+          website: safe.website,
+          location: safe.location,
+          seniority: safe.seniority,
+          keywords: safe.keywords,
+
+          employmentType: safe.employmentType,
+          workModel: safe.workModel,
+          experienceLevel: safe.experienceLevel,
+          complianceTags: safe.complianceTags,
+
+          ...mergedPay,
+        };
+
+    // If AI missed the chip fields, fallback-fill them (super helpful)
+    if (!base.employmentType) base.employmentType = parseEmploymentType(jobDescription);
+    if (!base.workModel) base.workModel = parseWorkModel(jobDescription);
+    if (!base.experienceLevel) base.experienceLevel = parseExperience(jobDescription);
+    if (!base.complianceTags || base.complianceTags.length === 0) base.complianceTags = parseCompliance(jobDescription);
+
+    // If AI missed pay entirely, fallback-fill it
+    if (!base.payText && base.payMin == null && base.payMax == null) {
+      const p = parsePayFallback(jobDescription);
+      base.payText = p.payText;
+      base.payMin = p.payMin;
+      base.payMax = p.payMax;
+      base.payCurrency = p.payCurrency;
+      base.payPeriod = p.payPeriod;
+      base.payConfidence = p.payConfidence;
+      base.payAnnualizedMin = p.payAnnualizedMin;
+      base.payAnnualizedMax = p.payAnnualizedMax;
+      base.payPercentile = p.payPercentile;
+      base.payPercentileSource = p.payPercentileSource;
+    }
 
     return { status: 200, jsonBody: base };
   } catch (err) {
     context.error("extractJob error:", err);
-    // super-safe fallback
     let raw = "";
     try { raw = await request.text(); } catch {}
     return { status: 200, jsonBody: fallbackExtract(raw) };
