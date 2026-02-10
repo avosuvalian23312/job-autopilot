@@ -251,6 +251,7 @@ export default function NewJob() {
 
     const payload = {
       userId,
+      resumeId: selectedResume, // ✅ important
       jobTitle: extractedData.jobTitle,
       company: extractedData.company,
       website: extractedData.website,
@@ -271,8 +272,8 @@ export default function NewJob() {
     if (!res.ok) throw new Error(await res.text());
     const job = await res.json();
 
-    // Store just the jobId
     localStorage.setItem("latestJobId", job.id);
+    localStorage.setItem("latestUserId", userId); // ✅ needed for PK=/userId
 
     navigate(createPageUrl("Packet"));
   } catch (e) {
@@ -280,6 +281,7 @@ export default function NewJob() {
     toast.error("Failed to create job.");
   }
 };
+
 
 
     navigate(createPageUrl("Packet"));

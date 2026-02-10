@@ -10,14 +10,44 @@ export default function Packet() {
   const [packetData, setPacketData] = useState(null);
 
   useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("latestPacket") || "null");
-    if (data) {
-      setPacketData(data);
-    } else {
-      // No packet data, redirect to home
-      navigate(createPageUrl("AppHome"));
+  const jobId = localStorage.getItem("latestJobId");
+  if (!jobId) {
+    navigate(createPageUrl("AppHome"));
+    return;
+  }
+
+  const run = async () => {
+    try {
+      // kick off generation
+      const startRes = await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" });
+      if (!startRes.ok) throw new Error(await startRes.text());
+
+      // poll status
+      const poll = async () => {
+        const r = await fetch(`/api/jobs/${jobId}`);
+        const j = await r.json();
+
+        if (j.status === "completed") {
+          setPacketData(j);
+          return;
+        }
+        if (j.status === "failed") {
+          toast.error("Generation failed.");
+          return;
+        }
+        setTimeout(poll, 1200);
+      };
+
+      poll();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not start generation.");
     }
-  }, [navigate]);
+  };
+
+  run();
+}, [navigate]);
+
 
   const handleDownloadCoverLetter = () => {
     // Simulate download

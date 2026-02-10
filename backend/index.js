@@ -124,3 +124,18 @@ app.http("userinfo", {
   authLevel: "anonymous",
   handler: require("./src/functions/userinfo.js"),
 });
+// Create job
+app.http("createJob", {
+  methods: ["POST", "OPTIONS"],
+  route: "jobs",
+  authLevel: "anonymous",
+  handler: require("./src/functions/createJob.js").createJob,
+});
+
+// Generate docs for a job (Packet.jsx calls this)
+app.http("generateJobDocuments", {
+  methods: ["POST", "OPTIONS"],
+  route: "jobs/{jobId}/generate",
+  authLevel: "anonymous",
+  handler: require("./src/functions/generateJobDocuments.js").generateJobDocuments,
+});
