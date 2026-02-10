@@ -92,7 +92,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
     triggerPulse();
 
     setTimeout(() => {
-      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
+      setErr(
+        "Email login is not enabled. Please use Google or Microsoft sign-in."
+      );
       setStep("start");
       setBusy(false);
     }, 180);
@@ -106,7 +108,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
     triggerPulse();
 
     setTimeout(() => {
-      setErr("Email login is not enabled. Please use Google or Microsoft sign-in.");
+      setErr(
+        "Email login is not enabled. Please use Google or Microsoft sign-in."
+      );
       setStep("start");
       setBusy(false);
     }, 180);
@@ -187,13 +191,15 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
               <div className="relative">
                 <h2 className="text-2xl font-bold text-white mb-2">Sign in</h2>
-                <p className="text-white/70 mb-6">Choose a provider to continue.</p>
+                <p className="text-white/70 mb-6">
+                  Choose a provider to continue.
+                </p>
 
                 <div className="space-y-3">
                   <Button
                     onClick={startGoogle}
                     disabled={busy}
-                    className="w-full"
+                    className="w-full bg-black text-white border border-white/10 hover:bg-black/90"
                   >
                     <span className="flex items-center justify-center gap-2">
                       <img
@@ -206,11 +212,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     </span>
                   </Button>
 
+                  {/* ✅ Microsoft now matches Google: black background + white text */}
                   <Button
                     onClick={startMicrosoft}
                     disabled={busy}
-                    className="w-full"
-                    variant="secondary"
+                    className="w-full bg-black text-white border border-white/10 hover:bg-black/90 hover:text-white"
                   >
                     <span className="flex items-center justify-center gap-2">
                       <img
@@ -225,7 +231,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 </div>
 
                 <div className="mt-6 border-t border-white/10 pt-6">
-                  <div className="text-white/70 text-sm mb-3">Or sign in with email</div>
+                  <div className="text-white/70 text-sm mb-3">
+                    Or sign in with email
+                  </div>
 
                   <Input
                     placeholder="Enter your email"
@@ -235,7 +243,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   />
 
                   {step === "start" && (
-                    <Button onClick={startEmail} disabled={busy} className="w-full mt-3">
+                    <Button
+                      onClick={startEmail}
+                      disabled={busy}
+                      className="w-full mt-3"
+                    >
                       <Mail className="mr-2 h-4 w-4" />
                       Send Login Code
                     </Button>
@@ -249,7 +261,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
                         onChange={(e) => setCode(e.target.value)}
                         className="mt-3"
                       />
-                      <Button onClick={verifyEmail} className="w-full mt-3" disabled={busy}>
+                      <Button
+                        onClick={verifyEmail}
+                        className="w-full mt-3"
+                        disabled={busy}
+                      >
                         Verify Code
                       </Button>
                     </>
@@ -258,7 +274,9 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
                 {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
 
-                {busy && <div className="mt-4 text-white/50 text-xs">Redirecting…</div>}
+                {busy && (
+                  <div className="mt-4 text-white/50 text-xs">Redirecting…</div>
+                )}
               </div>
             </motion.div>
           </motion.div>
