@@ -275,7 +275,7 @@ export default function NewJob() {
     localStorage.setItem("latestJobId", job.id);
     localStorage.setItem("latestUserId", userId); // ✅ needed for PK=/userId
 
-    navigate(createPageUrl("Packet"));
+    
   } catch (e) {
     console.error(e);
     toast.error("Failed to create job.");

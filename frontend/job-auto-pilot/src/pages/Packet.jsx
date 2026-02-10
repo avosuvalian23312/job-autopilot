@@ -2,78 +2,152 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
-import { Rocket, Download, CheckCircle2, ArrowLeft, FileText, Sparkles, Zap } from "lucide-react";
+import { Rocket, Download, CheckCircle2, ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Packet() {
   const navigate = useNavigate();
   const [packetData, setPacketData] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(true);
 
   useEffect(() => {
-  const jobId = localStorage.getItem("latestJobId");
-  if (!jobId) {
-    navigate(createPageUrl("AppHome"));
-    return;
-  }
+    const jobId = localStorage.getItem("latestJobId");
+    const userId = localStorage.getItem("latestUserId") || localStorage.getItem("userId");
 
-  const run = async () => {
-    try {
-      // kick off generation
-      const startRes = await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" });
-      if (!startRes.ok) throw new Error(await startRes.text());
-
-      // poll status
-      const poll = async () => {
-        const r = await fetch(`/api/jobs/${jobId}`);
-        const j = await r.json();
-
-        if (j.status === "completed") {
-          setPacketData(j);
-          return;
-        }
-        if (j.status === "failed") {
-          toast.error("Generation failed.");
-          return;
-        }
-        setTimeout(poll, 1200);
-      };
-
-      poll();
-    } catch (e) {
-      console.error(e);
-      toast.error("Could not start generation.");
+    if (!jobId || !userId) {
+      navigate(createPageUrl("AppHome"));
+      return;
     }
-  };
 
-  run();
-}, [navigate]);
+    let cancelled = false;
+    let timer = null;
 
+    const run = async () => {
+      try {
+        setIsGenerating(true);
 
-  const handleDownloadCoverLetter = () => {
-    // Simulate download
-    toast.success("Cover letter downloaded");
-    // In production, trigger actual file download
+        // Kick off generation (backend needs userId for PK=/userId)
+        const startRes = await fetch(`/api/jobs/${jobId}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        });
+        if (!startRes.ok) throw new Error(await startRes.text());
+
+        // Poll status (also needs userId)
+        const poll = async () => {
+          if (cancelled) return;
+
+          const r = await fetch(`/api/jobs/${jobId}?userId=${encodeURIComponent(userId)}`, {
+            method: "GET",
+          });
+
+          if (!r.ok) {
+            const msg = await r.text();
+            throw new Error(msg || `Status request failed (${r.status})`);
+          }
+
+          const payload = await r.json();
+          const job = payload?.job || payload; // support {job: {...}} or direct job
+
+          if (!job) throw new Error("Missing job payload");
+
+          if (job.status === "completed") {
+            setPacketData(job);
+            setIsGenerating(false);
+            return;
+          }
+
+          if (job.status === "failed") {
+            toast.error("Generation failed.");
+            setIsGenerating(false);
+            return;
+          }
+
+          timer = setTimeout(poll, 1200);
+        };
+
+        poll();
+      } catch (e) {
+        console.error(e);
+        toast.error("Could not start generation.");
+        setIsGenerating(false);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [navigate]);
+
+  // ✅ Real downloads (for now: downloads as .txt from the saved job outputs)
+  const downloadTextFile = (filename, text) => {
+    if (!text) return toast.error("No document available");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "document.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded");
   };
 
   const handleDownloadResume = () => {
-    // Simulate download
-    toast.success("Resume downloaded");
-    // In production, trigger actual file download
+    const resume = packetData?.outputs?.resume;
+    downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
+  };
+
+  const handleDownloadCoverLetter = () => {
+    const cover = packetData?.outputs?.coverLetter;
+    downloadTextFile(cover?.fileName || "cover-letter.txt", cover?.text || "");
   };
 
   const handleDownloadBoth = () => {
-    // Simulate download
-    toast.success("Both documents downloaded");
-    // In production, trigger actual file download for both
+    handleDownloadResume();
+    handleDownloadCoverLetter();
   };
 
   const handleReturnHome = () => {
     navigate(createPageUrl("AppHome"));
   };
 
-  if (!packetData) {
-    return null;
+  // Show generating state (keeps your style, not a redesign)
+  if (isGenerating && !packetData) {
+    return (
+      <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+        <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
+                <Rocket className="w-4 h-4 text-white" />
+              </div>
+              <span className="font-bold text-white text-lg">Job Autopilot</span>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-3xl mx-auto px-4 py-16 flex flex-col justify-center min-h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <div className="w-24 h-24 rounded-full bg-purple-600/10 flex items-center justify-center mx-auto mb-8">
+              <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
+            </div>
+            <h1 className="text-4xl font-bold text-white mb-3">Generating your packet…</h1>
+            <p className="text-lg text-white/40">This can take a few seconds</p>
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  if (!packetData) return null;
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
