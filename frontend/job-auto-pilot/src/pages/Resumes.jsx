@@ -468,36 +468,50 @@ export default function Resumes() {
       </motion.div>
 
       {/* Preview Dialog (same Dialog, no UI redesign) */}
-      <Dialog
-        open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) setPreviewResume(null);
-        }}
-      >
-        <DialogContent className="bg-[hsl(240,10%,6%)] border-white/10 text-white max-w-5xl h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">{previewResume?.name}</DialogTitle>
-            <DialogDescription className="text-white/40">Resume Preview</DialogDescription>
-          </DialogHeader>
+<Dialog
+  open={previewOpen}
+  onOpenChange={(open) => {
+    setPreviewOpen(open);
+    if (!open) setPreviewResume(null);
+  }}
+>
+  <DialogContent className="bg-[hsl(240,10%,6%)] border-white/10 text-white max-w-5xl h-[80vh] flex flex-col">
+    <DialogHeader className="shrink-0">
+      <DialogTitle className="text-xl font-bold">
+        {previewResume?.name}
+      </DialogTitle>
+      <DialogDescription className="text-white/40">
+        Resume Preview
+      </DialogDescription>
+    </DialogHeader>
 
-          {previewLoading ? (
-            <div className="flex items-center justify-center h-full text-white/40">Loading preview…</div>
-          ) : (previewResume?.content || "").trim() ? (
-            <div className="w-full h-full rounded-xl border border-white/10 bg-white/[0.02] overflow-auto p-4">
-              <pre className="whitespace-pre-wrap text-sm text-white/80">{previewResume.content}</pre>
-            </div>
-          ) : previewResume?.blobUrl ? (
-            <iframe
-              title="Resume Preview"
-              src={previewSrc}
-              className="w-full h-full rounded-xl border border-white/10"
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-white/40">No preview available</div>
-          )}
-        </DialogContent>
-      </Dialog>
+    {/* Body fills remaining space */}
+    <div className="flex-1 min-h-0">
+      {previewLoading ? (
+        <div className="flex items-center justify-center h-full text-white/40">
+          Loading preview…
+        </div>
+      ) : (previewResume?.content || "").trim() ? (
+        <div className="w-full h-full rounded-xl border border-white/10 bg-white/[0.02] overflow-auto p-4">
+          <pre className="whitespace-pre-wrap text-sm text-white/80">
+            {previewResume.content}
+          </pre>
+        </div>
+      ) : previewResume?.blobUrl ? (
+        <iframe
+          title="Resume Preview"
+          src={previewSrc}
+          className="w-full h-full rounded-xl border border-white/10"
+        />
+      ) : (
+        <div className="flex items-center justify-center h-full text-white/40">
+          No preview available
+        </div>
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
+
 
       {/* Upload Dialog */}
       <Dialog
