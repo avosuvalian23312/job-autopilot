@@ -25,13 +25,10 @@ import { format } from "date-fns";
 
 /**
  * ✅ Fixes included (NO UI changes):
- * - Moves preview state inside component (your code had it outside -> crashes)
- * - Adds preview Dialog (PDF/DOCX) without changing existing UI layout
- * - Fixes "Upload Resume doesn't work" by:
- *   - Ensuring file input is wired correctly
- *   - Allowing click/drag-drop selection
- *   - Uploading via SAS: /api/resume/upload-url -> PUT -> /api/resume/save
- *   - Better error handling + readable errors
+ * - Adds preview on card click for PDF / Office docs / text files
+ * - Text resumes (paste) preview inline even without blobUrl
+ * - If list API doesn't return blobUrl, tries to fetch a short-lived read URL:
+ *   POST /api/resume/read-url (fallback /download-url, /get-url)
  * - Stops card click from breaking buttons (buttons stopPropagation)
  * - loadResumes expects GET /api/resume/list => { ok:true, resumes:[...] }
  */
@@ -56,7 +53,11 @@ async function apiJson(url, options = {}) {
   });
   const data = await readJsonSafe(res);
   if (!res.ok) {
-    const msg = data?.error || data?.message || data?.detail || `Request failed (${res.status})`;
+    const msg =
+      data?.error ||
+      data?.message ||
+      data?.detail ||
+      `Request failed (${res.status})`;
     throw new Error(msg);
   }
   return data;
@@ -64,7 +65,8 @@ async function apiJson(url, options = {}) {
 
 function normalizeResume(doc) {
   const id = doc.id || doc._id || doc.resumeId || doc.blobName || String(Date.now());
-  const name = doc.name || doc.resumeName || doc.originalName || doc.fileName || "Resume";
+  const name =
+    doc.name || doc.resumeName || doc.originalName || doc.fileName || "Resume";
   const updated =
     doc.updated_date ||
     doc.updatedDate ||
@@ -106,6 +108,7 @@ export default function Resumes() {
   // ✅ preview state MUST be inside component
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewResume, setPreviewResume] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadResumes = async () => {
     try {
@@ -319,32 +322,116 @@ export default function Resumes() {
     }
   };
 
-  const openPreview = (resume) => {
-    // Needs a blobUrl to preview
-    if (!resume?.blobUrl) {
+  const tryGetReadUrl = async (resume) => {
+    // If backend doesn't return a blobUrl in /api/resume/list, we can generate a short-lived read URL here.
+    // Expected backend response shape: { ok:true, url:"https://...SAS..." } or { url:"..." }.
+    const blobName = resume?.blobName || resume?._raw?.blobName || resume?._raw?.blobPath;
+    if (!blobName) return "";
+
+    const candidates = [
+      "/api/resume/read-url",
+      "/api/resume/download-url",
+      "/api/resume/get-url",
+    ];
+
+    for (const endpoint of candidates) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: resume?.id, blobName }),
+        });
+
+        if (!res.ok) continue;
+        const data = await readJsonSafe(res);
+        const url = data?.url || data?.blobUrl || data?.downloadUrl || data?.readUrl;
+        if (url) return url;
+      } catch {
+        // keep trying other endpoints
+      }
+    }
+
+    return "";
+  };
+
+  const openPreview = async (resume) => {
+    if (!resume) return;
+
+    // Text-based resumes can preview immediately (no backend needed)
+    const ct = (resume.contentType || "").toLowerCase();
+    const name = (resume.originalName || "").toLowerCase();
+    const isText =
+      ct.startsWith("text/") ||
+      ct.includes("json") ||
+      ct.includes("xml") ||
+      ct.includes("csv") ||
+      name.endsWith(".txt") ||
+      name.endsWith(".md") ||
+      name.endsWith(".json") ||
+      name.endsWith(".csv");
+
+    if (isText && (resume.content || "").trim()) {
+      setPreviewResume(resume);
+      setPreviewOpen(true);
+      return;
+    }
+
+    // File-based preview: we need a URL (ideally SAS)
+    let blobUrl = resume.blobUrl;
+
+    if (!blobUrl) {
+      setPreviewLoading(true);
+      blobUrl = await tryGetReadUrl(resume);
+      setPreviewLoading(false);
+    }
+
+    if (!blobUrl) {
       toast.error("No preview available yet");
       return;
     }
-    setPreviewResume(resume);
+
+    setPreviewResume({ ...resume, blobUrl });
     setPreviewOpen(true);
   };
 
-  const previewSrc = (() => {
+  const previewMeta = (() => {
     const r = previewResume;
-    if (!r?.blobUrl) return "";
-    const ct = (r.contentType || "").toLowerCase();
-    const name = (r.originalName || "").toLowerCase();
+    const blobUrl = r?.blobUrl || "";
+    const ct = (r?.contentType || "").toLowerCase();
+    const name = (r?.originalName || "").toLowerCase();
 
-    // PDF: native
-    if (ct.includes("pdf") || name.endsWith(".pdf")) return r.blobUrl;
+    const isPdf = ct.includes("pdf") || name.endsWith(".pdf");
+    const isOfficeDoc =
+      ct.includes("word") ||
+      ct.includes("officedocument") ||
+      name.endsWith(".doc") ||
+      name.endsWith(".docx") ||
+      name.endsWith(".ppt") ||
+      name.endsWith(".pptx") ||
+      name.endsWith(".xls") ||
+      name.endsWith(".xlsx");
 
-    // DOCX: office viewer (needs publicly reachable URL; SAS works)
-    if (ct.includes("word") || name.endsWith(".doc") || name.endsWith(".docx")) {
-      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(r.blobUrl)}`;
+    const isText =
+      ct.startsWith("text/") ||
+      ct.includes("json") ||
+      ct.includes("xml") ||
+      ct.includes("csv") ||
+      name.endsWith(".txt") ||
+      name.endsWith(".md") ||
+      name.endsWith(".json") ||
+      name.endsWith(".csv");
+
+    let iframeSrc = "";
+    if (blobUrl) {
+      if (isPdf) iframeSrc = blobUrl;
+      else if (isOfficeDoc)
+        iframeSrc = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+          blobUrl
+        )}`;
+      else iframeSrc = blobUrl;
     }
 
-    // else: download / open
-    return r.blobUrl;
+    return { blobUrl, isPdf, isOfficeDoc, isText, iframeSrc };
   })();
 
   return (
@@ -469,17 +556,33 @@ export default function Resumes() {
       </motion.div>
 
       {/* ✅ Preview Dialog (no UI redesign; same Dialog components) */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) setPreviewResume(null);
+        }}
+      >
         <DialogContent className="bg-[hsl(240,10%,6%)] border-white/10 text-white max-w-5xl h-[80vh]">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{previewResume?.name}</DialogTitle>
             <DialogDescription className="text-white/40">Resume Preview</DialogDescription>
           </DialogHeader>
 
-          {previewResume?.blobUrl ? (
+          {previewLoading ? (
+            <div className="flex items-center justify-center h-full text-white/40">
+              Loading preview…
+            </div>
+          ) : previewMeta.isText && (previewResume?.content || "").trim() ? (
+            <div className="w-full h-full rounded-xl border border-white/10 bg-white/[0.02] overflow-auto p-4">
+              <pre className="whitespace-pre-wrap text-sm text-white/80">
+                {previewResume.content}
+              </pre>
+            </div>
+          ) : previewMeta.blobUrl ? (
             <iframe
               title="Resume Preview"
-              src={previewSrc}
+              src={previewMeta.iframeSrc}
               className="w-full h-full rounded-xl border border-white/10"
             />
           ) : (

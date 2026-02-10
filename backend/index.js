@@ -95,3 +95,4 @@ app.http("resumeSetDefault", {
   authLevel: "anonymous",
   handler: require("./src/functions/resumeSetDefault"),
 });
+
