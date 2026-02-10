@@ -146,26 +146,27 @@ export default function Applications() {
   };
 
   const loadJobs = async () => {
-  setIsLoading(true);
-  try {
-    // ✅ single source of truth (matches your backend route: route: "jobs")
-    const data = await apiFetch("/api/jobs", { method: "GET" });
+    setIsLoading(true);
+    try {
+      // ✅ listJobs requires userId query string (your backend listJobs.js enforces this)
+      const userId = localStorage.getItem("userId") || "demo-user";
+      const data = await apiFetch(
+        `/api/jobs?userId=${encodeURIComponent(userId)}`,
+        { method: "GET" }
+      );
 
-    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
-    const normalized = list
-      .map(normalizeJob)
-      .filter((x) => x?.id != null);
+      const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
+      const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
 
-    setApplications(normalized);
-  } catch (e) {
-    console.error(e);
-    toast.error("Failed to load applications.");
-    setApplications([]);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+      setApplications(normalized);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load applications.");
+      setApplications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadJobs();
@@ -280,19 +281,12 @@ export default function Applications() {
     if (selected?.id === id) setSelected((s) => ({ ...s, status: nextStatus }));
 
     try {
-      // try PATCH /api/jobs/:id
-      try {
-        await apiFetch(`/api/jobs/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: nextStatus }),
-        });
-      } catch {
-        // fallback #1
-        await apiFetch(`/api/jobs/status`, {
-          method: "POST",
-          body: JSON.stringify({ id, status: nextStatus }),
-        });
-      }
+      // ✅ correct backend route:
+      // route: "jobs/{jobId}/status" methods: PUT,PATCH
+      await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
@@ -441,7 +435,10 @@ export default function Applications() {
                 {Array(6)
                   .fill(0)
                   .map((_, i) => (
-                    <div key={i} className="rounded-xl p-4 bg-black/25 border border-white/10">
+                    <div
+                      key={i}
+                      className="rounded-xl p-4 bg-black/25 border border-white/10"
+                    >
                       <Skeleton className="h-5 w-64 bg-white/5 mb-3" />
                       <Skeleton className="h-4 w-40 bg-white/5" />
                     </div>
@@ -511,7 +508,9 @@ export default function Applications() {
 
                         {/* Pills row (more pills like NewJob confirm) */}
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                          <span
+                            className={`${pillBrand} inline-flex items-center gap-2`}
+                          >
                             <Tag className="w-3.5 h-3.5" />
                             {statusLabel(app.status)}
                           </span>
@@ -538,7 +537,9 @@ export default function Applications() {
                           )}
 
                           {payPrimary && (
-                            <span className={`${pillGood} inline-flex items-center gap-2`}>
+                            <span
+                              className={`${pillGood} inline-flex items-center gap-2`}
+                            >
                               <DollarSign className="w-3.5 h-3.5" />
                               {payPrimary}
                             </span>
@@ -547,7 +548,9 @@ export default function Applications() {
                           {payConf && <span className={pill}>{payConf}</span>}
                           {payAnnual && <span className={pillWarn}>{payAnnual}</span>}
                           {topPay && (
-                            <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                            <span
+                              className={`${pillBrand} inline-flex items-center gap-2`}
+                            >
                               <Percent className="w-3.5 h-3.5" />
                               {topPay}
                             </span>
@@ -739,8 +742,12 @@ export default function Applications() {
                     </span>
                   )}
 
-                  {renderAnnual(selected) && <span className={pillWarn}>{renderAnnual(selected)}</span>}
-                  {renderConfidence(selected) && <span className={pill}>{renderConfidence(selected)}</span>}
+                  {renderAnnual(selected) && (
+                    <span className={pillWarn}>{renderAnnual(selected)}</span>
+                  )}
+                  {renderConfidence(selected) && (
+                    <span className={pill}>{renderConfidence(selected)}</span>
+                  )}
                   {renderTopPay(selected) && (
                     <span className={`${pillBrand} inline-flex items-center gap-2`}>
                       <Percent className="w-3.5 h-3.5" />
@@ -750,7 +757,10 @@ export default function Applications() {
 
                   {Array.isArray(selected.complianceTags) &&
                     selected.complianceTags.slice(0, 6).map((t, i) => (
-                      <span key={`sel-ct-${i}`} className={`${pillBrand} inline-flex items-center gap-2`}>
+                      <span
+                        key={`sel-ct-${i}`}
+                        className={`${pillBrand} inline-flex items-center gap-2`}
+                      >
                         <ShieldCheck className="w-3.5 h-3.5" />
                         {t}
                       </span>
@@ -776,7 +786,9 @@ export default function Applications() {
                   <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-black/25 border border-white/10 px-4 py-3">
                     <div className="min-w-0">
                       <div className="text-xs text-white/50 mb-1">Job link</div>
-                      <div className="text-sm text-white/85 truncate">{selected.website}</div>
+                      <div className="text-sm text-white/85 truncate">
+                        {selected.website}
+                      </div>
                     </div>
                     <motion.a
                       whileHover={{ scale: 1.02 }}
