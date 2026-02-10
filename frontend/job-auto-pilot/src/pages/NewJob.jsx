@@ -23,6 +23,7 @@ import {
   BarChart2,
   Tag,
   DollarSign,
+  Percent,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -109,7 +110,9 @@ export default function NewJob() {
 
         // Fallback: keep the app usable even if API fails
         console.error(e);
-        toast.error("Could not load resumes from cloud. Falling back to local resumes.");
+        toast.error(
+          "Could not load resumes from cloud. Falling back to local resumes."
+        );
 
         const local = JSON.parse(localStorage.getItem("resumes") || "[]");
         setResumes(local);
@@ -227,92 +230,120 @@ export default function NewJob() {
   };
 
   const handleAnalyze = async () => {
-  if (!selectedResume) {
-    toast.error("Please select a resume");
-    return;
-  }
-  if (!jobDescription.trim()) {
-    toast.error("Please enter a job description");
-    return;
-  }
+    if (!selectedResume) {
+      toast.error("Please select a resume");
+      return;
+    }
+    if (!jobDescription.trim()) {
+      toast.error("Please enter a job description");
+      return;
+    }
 
-  setIsAnalyzing(true);
+    setIsAnalyzing(true);
 
-  try {
-    const res = await fetch("/api/jobs/extract", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobDescription }),
-    });
+    try {
+      const res = await fetch("/api/jobs/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobDescription }),
+      });
 
-    if (!res.ok) throw new Error(await res.text());
-    const extracted = await res.json();
+      if (!res.ok) throw new Error(await res.text());
+      const extracted = await res.json();
 
-    setExtractedData({
-      jobTitle: extracted.jobTitle || "Position",
-      company: extracted.company || "Company",
-      website: extracted.website || null,
-      location: extracted.location || null,
-      seniority: extracted.seniority || null,
-      keywords: extracted.keywords || [],
-    });
+      setExtractedData({
+        jobTitle: extracted.jobTitle || "Position",
+        company: extracted.company || "Company",
+        website: extracted.website || null,
+        location: extracted.location || null,
+        seniority: extracted.seniority || null,
+        keywords: extracted.keywords || [],
 
-    setShowConfirm(true);
-  } catch (e) {
-    console.error(e);
+        // ✅ pay fields (safe defaults)
+        payText: extracted.payText || null,
+        payMin:
+          typeof extracted.payMin === "number" && Number.isFinite(extracted.payMin)
+            ? extracted.payMin
+            : null,
+        payMax:
+          typeof extracted.payMax === "number" && Number.isFinite(extracted.payMax)
+            ? extracted.payMax
+            : null,
+        payCurrency: extracted.payCurrency || "USD",
+        payPeriod: extracted.payPeriod || null,
+        payConfidence:
+          typeof extracted.payConfidence === "number" &&
+          Number.isFinite(extracted.payConfidence)
+            ? extracted.payConfidence
+            : null,
+        payAnnualizedMin:
+          typeof extracted.payAnnualizedMin === "number" &&
+          Number.isFinite(extracted.payAnnualizedMin)
+            ? extracted.payAnnualizedMin
+            : null,
+        payAnnualizedMax:
+          typeof extracted.payAnnualizedMax === "number" &&
+          Number.isFinite(extracted.payAnnualizedMax)
+            ? extracted.payAnnualizedMax
+            : null,
+        payPercentile:
+          typeof extracted.payPercentile === "number" &&
+          Number.isFinite(extracted.payPercentile)
+            ? extracted.payPercentile
+            : null,
+        payPercentileSource: extracted.payPercentileSource || null,
+      });
 
-    // fallback to your regex if backend fails
-    const fallback = extractJobDetails(jobDescription);
-    setExtractedData(fallback);
-    setShowConfirm(true);
+      setShowConfirm(true);
+    } catch (e) {
+      console.error(e);
 
-    toast.error("AI extract failed — used fallback extraction.");
-  } finally {
-    setIsAnalyzing(false);
-  }
-};
+      // fallback to your regex if backend fails
+      const fallback = extractJobDetails(jobDescription);
+      setExtractedData(fallback);
+      setShowConfirm(true);
 
+      toast.error("AI extract failed — used fallback extraction.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
- const handleGenerate = async () => {
-  try {
-    const userId = localStorage.getItem("userId") || "demo-user";
+  const handleGenerate = async () => {
+    try {
+      const userId = localStorage.getItem("userId") || "demo-user";
 
-    const payload = {
-      userId,
-      resumeId: selectedResume, // ✅ important
-      jobTitle: extractedData.jobTitle,
-      company: extractedData.company,
-      website: extractedData.website,
-      location: extractedData.location,
-      seniority: extractedData.seniority,
-      keywords: extractedData.keywords,
-      jobDescription,
-      aiMode,
-      studentMode,
-    };
+      const payload = {
+        userId,
+        resumeId: selectedResume, // ✅ important
+        jobTitle: extractedData.jobTitle,
+        company: extractedData.company,
+        website: extractedData.website,
+        location: extractedData.location,
+        seniority: extractedData.seniority,
+        keywords: extractedData.keywords,
+        jobDescription,
+        aiMode,
+        studentMode,
+      };
 
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (!res.ok) throw new Error(await res.text());
-    const job = await res.json();
+      if (!res.ok) throw new Error(await res.text());
+      const job = await res.json();
 
-    localStorage.setItem("latestJobId", job.id);
-    localStorage.setItem("latestUserId", userId); // ✅ needed for PK=/userId
-    navigate(createPageUrl("Packet"));
-    
-  } catch (e) {
-    console.error(e);
-    toast.error("Failed to create job.");
-  }
-};
-
-
-
- 
+      localStorage.setItem("latestJobId", job.id);
+      localStorage.setItem("latestUserId", userId); // ✅ needed for PK=/userId
+      navigate(createPageUrl("Packet"));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to create job.");
+    }
+  };
 
   // (Optional) keep existing UI identical; this only ensures the selector has data
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
@@ -488,57 +519,113 @@ export default function NewJob() {
                     </p>
                   </div>
                 )}
-{(extractedData.payText ||
-  extractedData.payMin != null ||
-  extractedData.payMax != null) && (
-  <div>
-    <label className="text-xs text-white/40 mb-2 block flex items-center gap-2">
-      <DollarSign className="w-3 h-3" />
-      Compensation
-    </label>
 
-    <div className="flex flex-wrap gap-2">
-      <span className="px-3 py-1 rounded-full bg-green-600/20 text-green-400 text-xs font-medium">
-        {(() => {
-          const cur = extractedData.payCurrency || "USD";
-          const symbol = cur === "USD" ? "$" : `${cur} `;
+                {/* ✅ Compensation chips */}
+                {(extractedData.payText ||
+                  extractedData.payMin != null ||
+                  extractedData.payMax != null) && (
+                  <div>
+                    <label className="text-xs text-white/40 mb-2 block flex items-center gap-2">
+                      <DollarSign className="w-3 h-3" />
+                      Compensation
+                    </label>
 
-          const periodMap = {
-            hour: "/hr",
-            year: "/yr",
-            month: "/mo",
-            week: "/wk",
-            day: "/day",
-          };
-          const suffix = extractedData.payPeriod
-            ? periodMap[extractedData.payPeriod] || ""
-            : "";
+                    <div className="flex flex-wrap gap-2">
+                      {/* Pay (range or text) */}
+                      <span className="px-3 py-1 rounded-full bg-green-600/20 text-green-400 text-xs font-medium">
+                        {(() => {
+                          const cur = extractedData.payCurrency || "USD";
+                          const symbol = cur === "USD" ? "$" : `${cur} `;
 
-          const fmt = (n) =>
-            typeof n === "number"
-              ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-              : null;
+                          const periodMap = {
+                            hour: "/hr",
+                            year: "/yr",
+                            month: "/mo",
+                            week: "/wk",
+                            day: "/day",
+                          };
+                          const suffix = extractedData.payPeriod
+                            ? periodMap[extractedData.payPeriod] || ""
+                            : "";
 
-          const min = fmt(extractedData.payMin);
-          const max = fmt(extractedData.payMax);
+                          const fmt = (n) =>
+                            typeof n === "number"
+                              ? n.toLocaleString(undefined, {
+                                  maximumFractionDigits: 0,
+                                })
+                              : null;
 
-          // Preferred: numeric range
-          if (min && max) {
-            return min === max
-              ? `${symbol}${min}${suffix}`
-              : `${symbol}${min} – ${symbol}${max}${suffix}`;
-          }
+                          const min = fmt(extractedData.payMin);
+                          const max = fmt(extractedData.payMax);
 
-          // Fallback: raw text
-          if (extractedData.payText) return extractedData.payText;
+                          // Preferred: numeric range
+                          if (min && max) {
+                            return min === max
+                              ? `${symbol}${min}${suffix}`
+                              : `${symbol}${min} – ${symbol}${max}${suffix}`;
+                          }
 
-          return "Compensation not specified";
-        })()}
-      </span>
-    </div>
-  </div>
-)}
+                          // Fallback: raw text
+                          if (extractedData.payText) return extractedData.payText;
 
+                          return "Compensation not specified";
+                        })()}
+                      </span>
+
+                      {/* Confidence */}
+                      {typeof extractedData.payConfidence === "number" && (
+                        <span className="px-3 py-1 rounded-full bg-white/10 text-white/70 text-xs font-medium">
+                          {(() => {
+                            const c = extractedData.payConfidence;
+                            if (c >= 0.8) return "High confidence";
+                            if (c >= 0.5) return "Medium confidence";
+                            return "Low confidence";
+                          })()}
+                        </span>
+                      )}
+
+                      {/* Annualized estimate */}
+                      {(extractedData.payAnnualizedMin != null ||
+                        extractedData.payAnnualizedMax != null) && (
+                        <span className="px-3 py-1 rounded-full bg-emerald-600/15 text-emerald-300 text-xs font-medium">
+                          {(() => {
+                            const fmt = (n) =>
+                              typeof n === "number"
+                                ? n.toLocaleString(undefined, {
+                                    maximumFractionDigits: 0,
+                                  })
+                                : null;
+
+                            const min = fmt(extractedData.payAnnualizedMin);
+                            const max = fmt(extractedData.payAnnualizedMax);
+
+                            if (min && max) return `Est. $${min} – $${max} /yr`;
+                            if (min) return `Est. $${min} /yr`;
+                            if (max) return `Est. $${max} /yr`;
+                            return null;
+                          })()}
+                        </span>
+                      )}
+
+                      {/* Top X% pay (heuristic) */}
+                      {typeof extractedData.payPercentile === "number" && (
+                        <span className="px-3 py-1 rounded-full bg-purple-600/15 text-purple-300 text-xs font-medium flex items-center gap-1">
+                          <Percent className="w-3 h-3" />
+                          {`Top ${Math.round(
+                            100 - extractedData.payPercentile
+                          )}% pay`}
+                        </span>
+                      )}
+                    </div>
+
+                    {typeof extractedData.payPercentile === "number" &&
+                      extractedData.payPercentileSource && (
+                        <p className="text-xs text-white/30 mt-2">
+                          Percentile is an estimate ({extractedData.payPercentileSource})
+                        </p>
+                      )}
+                  </div>
+                )}
 
                 {extractedData.keywords?.length > 0 && (
                   <div>
@@ -628,7 +715,10 @@ export default function NewJob() {
                     </p>
                   </div>
                 ) : hasResumes ? (
-                  <Select value={selectedResume} onValueChange={setSelectedResume}>
+                  <Select
+                    value={selectedResume}
+                    onValueChange={setSelectedResume}
+                  >
                     <SelectTrigger
                       className="border-white/12 text-white py-6 text-base"
                       style={{ background: "#141414" }}
@@ -637,7 +727,10 @@ export default function NewJob() {
                     </SelectTrigger>
                     <SelectContent>
                       {resumes.map((resume) => (
-                        <SelectItem key={resume.id} value={resume.id.toString()}>
+                        <SelectItem
+                          key={resume.id}
+                          value={resume.id.toString()}
+                        >
                           {resume.name}
                         </SelectItem>
                       ))}
@@ -700,7 +793,9 @@ export default function NewJob() {
                       className="text-sm leading-relaxed space-y-1.5"
                       style={{ color: "#B3B3B8" }}
                     >
-                      <li>• Improves clarity and impact of your existing bullets</li>
+                      <li>
+                        • Improves clarity and impact of your existing bullets
+                      </li>
                       <li>• Rewrites descriptions to match the job</li>
                       <li>• Optimizes wording and keywords</li>
                       <li className="font-semibold text-green-400/80">
@@ -748,7 +843,8 @@ export default function NewJob() {
                         <p className="text-xs text-amber-400/90 flex items-start gap-2">
                           <span className="text-amber-400 font-bold">⚠</span>
                           <span>
-                            Elite mode may generate inferred or mock experience. Use responsibly.
+                            Elite mode may generate inferred or mock experience.
+                            Use responsibly.
                           </span>
                         </p>
                       </div>
@@ -779,7 +875,8 @@ export default function NewJob() {
                     </span>
                   </div>
                   <p className="text-xs text-white/40">
-                    Emphasizes projects, coursework, and skills instead of work experience.
+                    Emphasizes projects, coursework, and skills instead of work
+                    experience.
                   </p>
                 </div>
               </div>
@@ -807,7 +904,8 @@ Requirements:
                   style={{ background: "#141414" }}
                 />
                 <p className="text-xs mt-2" style={{ color: "#8A8A92" }}>
-                  Paste the full job description. We'll automatically extract role, company, and requirements.
+                  Paste the full job description. We'll automatically extract
+                  role, company, and requirements.
                 </p>
               </div>
 
@@ -820,7 +918,10 @@ Requirements:
                 >
                   Generate Packet
                 </Button>
-                <p className="text-center text-sm mt-3" style={{ color: "#8A8A92" }}>
+                <p
+                  className="text-center text-sm mt-3"
+                  style={{ color: "#8A8A92" }}
+                >
                   Uses 1 credit
                 </p>
               </div>
