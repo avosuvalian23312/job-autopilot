@@ -1,6 +1,8 @@
 // backend/src/functions/listJobs.js
 "use strict";
+
 const { CosmosClient } = require("@azure/cosmos");
+const { getSwaUser } = require("../lib/swaUser"); // <-- adjust path if your lib folder differs
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
@@ -9,26 +11,37 @@ const container = cosmos
 
 async function listJobs(request, context) {
   try {
-    // IMPORTANT: With PK=/userId, list should be user-scoped.
-    // For now we accept userId via querystring (later derive from auth).
-    const userId = request.query?.get?.("userId") || request.query?.userId;
-    if (!userId) {
-      return { status: 400, jsonBody: { error: "Missing userId" } };
+    // ✅ SWA auth user (do NOT accept userId from query/body)
+    const user = getSwaUser(request);
+    if (!user?.userId) {
+      return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
 
+    const userId = user.userId;
+
+    // ✅ If your container PK is /userId, pass partitionKey for speed + correctness
     const { resources } = await container.items
-      .query({
-        query: "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC",
-        parameters: [{ name: "@userId", value: userId }],
-      })
+      .query(
+        {
+          query: "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC",
+          parameters: [{ name: "@userId", value: userId }],
+        },
+        {
+          partitionKey: userId,
+        }
+      )
       .fetchAll();
 
-    return { status: 200, jsonBody: { jobs: resources || [] } };
+    return { status: 200, jsonBody: { ok: true, jobs: resources || [] } };
   } catch (err) {
     context.error("listJobs error:", err);
     return {
       status: 500,
-      jsonBody: { error: "Failed to list jobs", details: err?.message || "Unknown error" },
+      jsonBody: {
+        ok: false,
+        error: "Failed to list jobs",
+        details: err?.message || "Unknown error",
+      },
     };
   }
 }

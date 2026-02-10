@@ -1,4 +1,4 @@
-\// backend/index.js (Azure Functions v4 - code-first model)
+// backend/index.js (Azure Functions v4 - code-first model)
 // Single place to register ALL HTTP routes.
 console.log("✅ backend/index.js loaded");
 
@@ -34,11 +34,7 @@ app.http("health", {
 // ========================
 
 // ✅ IMPORTANT:
-// Azure Functions code-first routing can behave badly when you register the SAME route ("jobs")
-// twice under different function names (GET listJobs + POST createJob).
-// That can cause GET /api/jobs to 404 or POST /api/jobs to shadow the other.
-// Fix: register ONE "jobs" route that supports GET + POST and dispatch by method.
-
+// Register ONE "jobs" route for GET + POST and dispatch by method.
 app.http("jobs", {
   methods: ["GET", "POST", "OPTIONS"],
   route: "jobs",
@@ -47,7 +43,8 @@ app.http("jobs", {
     if (request.method === "OPTIONS") return { status: 204 };
 
     if (request.method === "GET") {
-      return require("./src/functions/listJobs.js")(request, context);
+      // ✅ FIX: listJobs is exported as { listJobs }
+      return require("./src/functions/listJobs.js").listJobs(request, context);
     }
 
     if (request.method === "POST") {
@@ -78,14 +75,14 @@ app.http("authExchange", {
 // ========================
 // Resume APIs
 // ========================
+
+// ✅ FIX: route casing (use all-lowercase consistently)
 app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
-  route: "resume/upload-Url",
+  route: "resume/upload-url",
   authLevel: "anonymous",
   handler: require("./src/functions/resumeUploadUrl.js"),
 });
-
-
 
 app.http("resumeSave", {
   methods: ["POST", "OPTIONS"],
@@ -140,7 +137,6 @@ app.http("userinfo", {
 // Job sub-routes
 // ========================
 
-// Generate docs for a job (Packet.jsx calls this)
 app.http("generateJobDocuments", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/{jobId}/generate",
