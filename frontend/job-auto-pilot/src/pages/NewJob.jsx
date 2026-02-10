@@ -55,6 +55,10 @@ export default function NewJob() {
   const [resumes, setResumes] = useState([]);
   const [resumesLoading, setResumesLoading] = useState(true);
 
+  // ✅ NEW: preview state (micro-previews + estimated time)
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(path, {
       ...options,
@@ -219,6 +223,121 @@ export default function NewJob() {
     };
   };
 
+  // ✅ NEW: frontend-safe fallback previews (if /api/jobs/preview fails)
+  const buildPreviewFallback = ({
+    jobTitle,
+    company,
+    keywords,
+    studentMode: sm,
+  }) => {
+    const role = String(jobTitle || "this role").trim() || "this role";
+    const org = String(company || "the company").trim() || "the company";
+    const ks = Array.from(
+      new Set((keywords || []).map((x) => String(x || "").trim()).filter(Boolean))
+    ).slice(0, 6);
+
+    const skillHint = ks.length ? ` (${ks.join(", ")})` : "";
+    const studentHint = sm
+      ? "projects, labs, and skills"
+      : "experience, ownership, and measurable outcomes";
+
+    return {
+      estimatedSeconds: 15,
+      resumePreview: {
+        bullets: [
+          `Tailored bullets to ${role} at ${org}${skillHint}, emphasizing ATS coverage + impact.`,
+          `Reordered highlights to surface the most relevant ${studentHint} first for recruiter scan.`,
+        ],
+      },
+      coverLetterPreview: {
+        firstSentence: `I’m excited to apply for the ${role} role at ${org} and contribute quickly with reliable execution.`,
+      },
+      checklistPreview: {
+        items: [
+          ks.length
+            ? `Ensure top keywords appear in Skills + Experience: ${ks
+                .slice(0, 4)
+                .join(", ")}.`
+            : "Ensure top keywords appear in Skills + Experience sections.",
+          sm
+            ? "Add 1–2 quantified project outcomes (latency, uptime, automation, tickets)."
+            : "Add 1–2 quantified wins (time saved, incidents reduced, SLA improved).",
+        ],
+      },
+    };
+  };
+
+  // ✅ NEW: fetch micro-previews from backend
+  const fetchPreviews = async ({
+    jobTitle,
+    company,
+    keywords,
+    jobDescription: jd,
+    aiMode: mode,
+    studentMode: sm,
+  }) => {
+    setPreviewLoading(true);
+    try {
+      const res = await fetch("/api/jobs/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobTitle,
+          company,
+          keywords,
+          jobDescription: jd,
+          aiMode: mode,
+          studentMode: sm,
+        }),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      // Light validation + normalize
+      const bullets = Array.isArray(data?.resumePreview?.bullets)
+        ? data.resumePreview.bullets.filter(Boolean).slice(0, 2)
+        : [];
+      const firstSentence =
+        typeof data?.coverLetterPreview?.firstSentence === "string"
+          ? data.coverLetterPreview.firstSentence
+          : "";
+      const items = Array.isArray(data?.checklistPreview?.items)
+        ? data.checklistPreview.items.filter(Boolean).slice(0, 2)
+        : [];
+
+      const estimatedSeconds =
+        typeof data?.estimatedSeconds === "number" &&
+        Number.isFinite(data.estimatedSeconds)
+          ? data.estimatedSeconds
+          : 15;
+
+      if (bullets.length < 2 || items.length < 2 || !firstSentence.trim()) {
+        throw new Error("Preview payload incomplete");
+      }
+
+      setPreviewData({
+        estimatedSeconds,
+        resumePreview: { bullets },
+        coverLetterPreview: { firstSentence },
+        checklistPreview: { items },
+      });
+    } catch (e) {
+      console.error(e);
+      // fallback so UI still shows something
+      setPreviewData(
+        buildPreviewFallback({
+          jobTitle,
+          company,
+          keywords,
+          studentMode: sm,
+        })
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!selectedResume) {
       toast.error("Please select a resume");
@@ -232,6 +351,9 @@ export default function NewJob() {
     setIsAnalyzing(true);
 
     try {
+      // reset previews on new analyze
+      setPreviewData(null);
+
       const res = await fetch("/api/jobs/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -241,7 +363,7 @@ export default function NewJob() {
       if (!res.ok) throw new Error(await res.text());
       const extracted = await res.json();
 
-      setExtractedData({
+      const nextExtracted = {
         jobTitle: extracted.jobTitle || "Position",
         company: extracted.company || "Company",
         website: extracted.website || null,
@@ -321,13 +443,25 @@ export default function NewJob() {
                     : null,
               }
             : null,
-      });
+      };
 
+      setExtractedData(nextExtracted);
       setShowConfirm(true);
+
+      // ✅ NEW: fetch micro-previews after extraction (does not block UI)
+      fetchPreviews({
+        jobTitle: nextExtracted.jobTitle,
+        company: nextExtracted.company,
+        keywords: nextExtracted.keywords,
+        jobDescription,
+        aiMode,
+        studentMode,
+      });
     } catch (e) {
       console.error(e);
       const fallback = extractJobDetails(jobDescription);
-      setExtractedData({
+
+      const nextExtracted = {
         ...fallback,
         payText: "Unknown",
         employmentType: null,
@@ -335,8 +469,21 @@ export default function NewJob() {
         experienceLevel: null,
         complianceTags: [],
         requirements: null,
-      });
+      };
+
+      setExtractedData(nextExtracted);
       setShowConfirm(true);
+
+      // ✅ NEW: still attempt previews (fallback will fill)
+      fetchPreviews({
+        jobTitle: nextExtracted.jobTitle,
+        company: nextExtracted.company,
+        keywords: nextExtracted.keywords,
+        jobDescription,
+        aiMode,
+        studentMode,
+      });
+
       toast.error("AI extract failed — used fallback extraction.");
     } finally {
       setIsAnalyzing(false);
@@ -393,7 +540,8 @@ export default function NewJob() {
   const brandRing =
     "ring-1 ring-violet-400/20 border-violet-400/20"; // subtle brand identity
   const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
-  const ambient = "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
+  const ambient =
+    "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
   const neonLine =
     "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
@@ -481,6 +629,30 @@ export default function NewJob() {
       req.yearsExperienceMin != null ||
       req.certificationsPreferred?.length ||
       req.workModelRequired);
+
+  // ✅ NEW: preview blur styles (micro-previews)
+  const previewBlurLine =
+    "text-xs text-white/65 leading-relaxed blur-sm select-none";
+  const previewBlurBlock =
+    "mt-2 space-y-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]";
+
+  const previewSafe = previewData || null;
+  const estSeconds =
+    typeof previewSafe?.estimatedSeconds === "number" &&
+    Number.isFinite(previewSafe.estimatedSeconds)
+      ? Math.round(previewSafe.estimatedSeconds)
+      : 15;
+
+  const resumePreviewBullets = Array.isArray(previewSafe?.resumePreview?.bullets)
+    ? previewSafe.resumePreview.bullets.slice(0, 2)
+    : [];
+  const coverPreviewSentence =
+    typeof previewSafe?.coverLetterPreview?.firstSentence === "string"
+      ? previewSafe.coverLetterPreview.firstSentence
+      : "";
+  const checklistPreviewItems = Array.isArray(previewSafe?.checklistPreview?.items)
+    ? previewSafe.checklistPreview.items.slice(0, 2)
+    : [];
 
   return (
     <div className={`min-h-screen ${pageBg} text-white`}>
@@ -958,11 +1130,30 @@ export default function NewJob() {
                       ].join(" ")}
                     >
                       <FileText className="w-5 h-5 text-cyan-200 mt-0.5" />
-                      <div>
+                      <div className="w-full">
                         <p className="font-semibold text-white">Tailored Resume</p>
                         <p className="text-sm text-white/60">
                           Optimized bullets + keywords for ATS.
                         </p>
+
+                        {/* ✅ NEW: Resume micro-preview */}
+                        <div className={previewBlurBlock}>
+                          {previewLoading && !previewSafe ? (
+                            <>
+                              <div className="h-3 rounded bg-white/10 w-[92%]" />
+                              <div className="h-3 rounded bg-white/10 w-[84%]" />
+                            </>
+                          ) : (
+                            <>
+                              <div className={previewBlurLine}>
+                                • {resumePreviewBullets?.[0] || "Tailored bullet line preview…"}
+                              </div>
+                              <div className={previewBlurLine}>
+                                • {resumePreviewBullets?.[1] || "Second bullet line preview…"}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -976,11 +1167,22 @@ export default function NewJob() {
                       ].join(" ")}
                     >
                       <Wand2 className="w-5 h-5 text-violet-200 mt-0.5" />
-                      <div>
+                      <div className="w-full">
                         <p className="font-semibold text-white">Cover Letter</p>
                         <p className="text-sm text-white/60">
                           Matching tone to role + company.
                         </p>
+
+                        {/* ✅ NEW: Cover letter micro-preview */}
+                        <div className={previewBlurBlock}>
+                          {previewLoading && !previewSafe ? (
+                            <div className="h-3 rounded bg-white/10 w-[88%]" />
+                          ) : (
+                            <div className={previewBlurLine}>
+                              {coverPreviewSentence || "First sentence preview…"}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -994,13 +1196,38 @@ export default function NewJob() {
                       ].join(" ")}
                     >
                       <ClipboardCheck className="w-5 h-5 text-indigo-200 mt-0.5" />
-                      <div>
+                      <div className="w-full">
                         <p className="font-semibold text-white">Checklist</p>
                         <p className="text-sm text-white/60">
                           Next steps + quick apply notes.
                         </p>
+
+                        {/* ✅ NEW: Checklist micro-preview */}
+                        <div className={previewBlurBlock}>
+                          {previewLoading && !previewSafe ? (
+                            <>
+                              <div className="h-3 rounded bg-white/10 w-[78%]" />
+                              <div className="h-3 rounded bg-white/10 w-[86%]" />
+                            </>
+                          ) : (
+                            <>
+                              <div className={previewBlurLine}>
+                                • {checklistPreviewItems?.[0] || "Checklist item preview…"}
+                              </div>
+                              <div className={previewBlurLine}>
+                                • {checklistPreviewItems?.[1] || "Second checklist item preview…"}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* ✅ NEW: Estimated generation time */}
+                  <div className="mt-5 flex items-center gap-2 text-xs text-white/60">
+                    <Clock className="w-4 h-4 text-cyan-200" />
+                    Generates in ~{estSeconds} seconds
                   </div>
 
                   <div
@@ -1036,6 +1263,8 @@ export default function NewJob() {
                 onClick={() => {
                   setShowConfirm(false);
                   setExtractedData(null);
+                  // ✅ reset previews when leaving confirm
+                  setPreviewData(null);
                 }}
                 variant="outline"
                 className={[

@@ -1,154 +1,883 @@
-import React, { useState } from "react";
-import { useEffect, useState as useReactState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AppNav from "@/components/app/AppNav";
-import ApplicationCard from "@/components/app/ApplicationCard";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, FileText, Building2, Calendar, Sparkles } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Search,
+  FileText,
+  Building2,
+  Calendar,
+  MapPin,
+  Globe,
+  Tag,
+  DollarSign,
+  Percent,
+  Briefcase,
+  Clock,
+  ShieldCheck,
+  X,
+  ExternalLink,
+} from "lucide-react";
+import { toast } from "sonner";
 
 export default function Applications() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState(null);
+
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Mock data with more entries
-    setApplications([
-      { id: 1, job_title: "Senior Frontend Engineer", company: "Stripe", status: "interview", created_date: "2026-02-01" },
-      { id: 2, job_title: "Staff Software Engineer", company: "Vercel", status: "applied", created_date: "2026-02-03" },
-      { id: 3, job_title: "Engineering Manager", company: "Notion", status: "offer", created_date: "2026-01-28" },
-      { id: 4, job_title: "Full Stack Developer", company: "Linear", status: "generated", created_date: "2026-02-05" },
-      { id: 5, job_title: "Senior Product Engineer", company: "Figma", status: "rejected", created_date: "2026-01-25" },
-      { id: 6, job_title: "Principal Engineer", company: "Datadog", status: "applied", created_date: "2026-02-02" },
-      { id: 7, job_title: "Frontend Tech Lead", company: "Shopify", status: "interview", created_date: "2026-01-30" },
-      { id: 8, job_title: "Backend Engineer", company: "Airbnb", status: "applied", created_date: "2026-01-20" },
-      { id: 9, job_title: "DevOps Engineer", company: "GitHub", status: "interview", created_date: "2026-01-18" },
-      { id: 10, job_title: "Senior Full Stack Engineer", company: "Atlassian", status: "generated", created_date: "2026-02-06" },
-      { id: 11, job_title: "Software Engineer", company: "Twilio", status: "applied", created_date: "2026-01-15" },
-      { id: 12, job_title: "Lead Frontend Developer", company: "Coinbase", status: "offer", created_date: "2026-01-22" },
-      { id: 13, job_title: "Platform Engineer", company: "Heroku", status: "rejected", created_date: "2026-01-12" },
-      { id: 14, job_title: "Senior Backend Engineer", company: "Spotify", status: "interview", created_date: "2026-01-26" },
-      { id: 15, job_title: "Machine Learning Engineer", company: "OpenAI", status: "applied", created_date: "2026-02-04" },
-      { id: 16, job_title: "iOS Developer", company: "Uber", status: "generated", created_date: "2026-02-07" },
-      { id: 17, job_title: "Android Developer", company: "Lyft", status: "applied", created_date: "2026-01-29" },
-      { id: 18, job_title: "Data Engineer", company: "Snowflake", status: "interview", created_date: "2026-01-24" },
-      { id: 19, job_title: "Site Reliability Engineer", company: "Netflix", status: "offer", created_date: "2026-01-19" },
-      { id: 20, job_title: "Security Engineer", company: "Cloudflare", status: "applied", created_date: "2026-01-16" },
-      { id: 21, job_title: "Product Engineer", company: "Slack", status: "rejected", created_date: "2026-01-10" },
-      { id: 22, job_title: "Senior Developer", company: "Square", status: "generated", created_date: "2026-02-01" },
-      { id: 23, job_title: "Full Stack Engineer", company: "Discord", status: "applied", created_date: "2026-01-27" },
-      { id: 24, job_title: "Frontend Architect", company: "Dropbox", status: "interview", created_date: "2026-01-23" },
-      { id: 25, job_title: "Infrastructure Engineer", company: "Splunk", status: "applied", created_date: "2026-01-14" },
-      { id: 26, job_title: "Senior DevOps Engineer", company: "Elastic", status: "offer", created_date: "2026-01-21" },
-      { id: 27, job_title: "Technical Lead", company: "MongoDB", status: "interview", created_date: "2026-01-17" },
-      { id: 28, job_title: "Software Development Engineer", company: "Salesforce", status: "generated", created_date: "2026-02-03" },
-      { id: 29, job_title: "React Developer", company: "Meta", status: "applied", created_date: "2026-01-11" },
-      { id: 30, job_title: "Cloud Engineer", company: "HashiCorp", status: "rejected", created_date: "2026-01-08" },
-      { id: 31, job_title: "Senior Solutions Architect", company: "Adobe", status: "interview", created_date: "2026-01-31" },
-      { id: 32, job_title: "QA Engineer", company: "Asana", status: "applied", created_date: "2026-01-13" },
-      { id: 33, job_title: "Staff Engineer", company: "Zoom", status: "generated", created_date: "2026-02-02" },
-      { id: 34, job_title: "Principal Software Engineer", company: "Okta", status: "offer", created_date: "2026-01-25" },
-      { id: 35, job_title: "Backend Developer", company: "Auth0", status: "applied", created_date: "2026-01-09" },
-    ]);
-    setIsLoading(false);
-  }, []);
+  const apiFetch = async (path, options = {}) => {
+    const res = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
 
-  const updateStatus = (id, status) => {
-    setApplications(prev => prev.map(app => app.id === id ? { ...app, status } : app));
+    if (!res.ok) {
+      let msg = `Request failed (${res.status})`;
+      try {
+        const t = await res.text();
+        if (t) msg = t;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
   };
 
-  const filtered = applications.filter((app) => {
-    const matchesSearch =
-      app.job_title?.toLowerCase().includes(search.toLowerCase()) ||
-      app.company?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "all" || app.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const normalizeJob = (job) => {
+    const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
+    const jobTitle =
+      job?.jobTitle ?? job?.job_title ?? job?.title ?? job?.position ?? "Position";
+    const company =
+      job?.company ?? job?.companyName ?? job?.company_name ?? "Company";
+
+    const created =
+      job?.createdAt ??
+      job?.created_at ??
+      job?.created_date ??
+      job?.createdDate ??
+      null;
+
+    const status =
+      job?.status ??
+      job?.applicationStatus ??
+      job?.application_status ??
+      "generated";
+
+    return {
+      ...job,
+      id,
+      job_title: jobTitle,
+      company,
+      created_date: created,
+      status: String(status || "generated").toLowerCase(),
+      website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
+      location: job?.location ?? null,
+      seniority: job?.seniority ?? job?.experienceLevel ?? job?.experience_level ?? null,
+
+      // extra pills (if available)
+      employmentType: job?.employmentType ?? job?.employment_type ?? null,
+      workModel: job?.workModel ?? job?.work_model ?? null,
+      experienceLevel: job?.experienceLevel ?? job?.experience_level ?? null,
+      complianceTags: Array.isArray(job?.complianceTags)
+        ? job.complianceTags
+        : Array.isArray(job?.compliance_tags)
+        ? job.compliance_tags
+        : [],
+
+      keywords: Array.isArray(job?.keywords) ? job.keywords : [],
+      payText: job?.payText ?? job?.pay_text ?? null,
+      payMin:
+        typeof job?.payMin === "number"
+          ? job.payMin
+          : typeof job?.pay_min === "number"
+          ? job.pay_min
+          : null,
+      payMax:
+        typeof job?.payMax === "number"
+          ? job.payMax
+          : typeof job?.pay_max === "number"
+          ? job.pay_max
+          : null,
+      payCurrency: job?.payCurrency ?? job?.pay_currency ?? "USD",
+      payPeriod: job?.payPeriod ?? job?.pay_period ?? null,
+      payConfidence:
+        typeof job?.payConfidence === "number"
+          ? job.payConfidence
+          : typeof job?.pay_confidence === "number"
+          ? job.pay_confidence
+          : null,
+      payAnnualizedMin:
+        typeof job?.payAnnualizedMin === "number"
+          ? job.payAnnualizedMin
+          : typeof job?.pay_annualized_min === "number"
+          ? job.pay_annualized_min
+          : null,
+      payAnnualizedMax:
+        typeof job?.payAnnualizedMax === "number"
+          ? job.payAnnualizedMax
+          : typeof job?.pay_annualized_max === "number"
+          ? job.pay_annualized_max
+          : null,
+      payPercentile:
+        typeof job?.payPercentile === "number"
+          ? job.payPercentile
+          : typeof job?.pay_percentile === "number"
+          ? job.pay_percentile
+          : null,
+
+      jobDescription: job?.jobDescription ?? job?.job_description ?? null,
+    };
+  };
+
+  const loadJobs = async () => {
+    setIsLoading(true);
+    try {
+      // primary: "listjobs"
+      let data = null;
+      try {
+        data = await apiFetch("/api/jobs/list", { method: "GET" });
+      } catch {
+        // fallback #1
+        data = await apiFetch("/api/jobs", { method: "GET" });
+      }
+
+      const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
+      const normalized = list
+        .map(normalizeJob)
+        .filter((x) => x?.id != null);
+
+      setApplications(normalized);
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not load applications from cloud.");
+      setApplications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const statusLabel = (s) => {
+    const v = String(s || "").toLowerCase();
+    if (v === "generated") return "Generated";
+    if (v === "applied") return "Applied";
+    if (v === "interview") return "Interview";
+    if (v === "offer") return "Offer";
+    if (v === "rejected") return "Rejected";
+    return v ? v[0].toUpperCase() + v.slice(1) : "Generated";
+  };
+
+  const statusPill = (s) => {
+    const v = String(s || "").toLowerCase();
+    if (v === "interview")
+      return "bg-amber-500/14 text-amber-100 border border-amber-400/25";
+    if (v === "applied")
+      return "bg-sky-500/14 text-sky-100 border border-sky-400/25";
+    if (v === "offer")
+      return "bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
+    if (v === "rejected")
+      return "bg-rose-500/14 text-rose-100 border border-rose-400/25";
+    return "bg-violet-500/15 text-violet-100 border border-violet-400/25";
+  };
+
+  const fmtMoney = (n) =>
+    typeof n === "number"
+      ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : null;
+
+  const renderPayPrimary = (job) => {
+    const cur = job?.payCurrency || "USD";
+    const symbol = cur === "USD" ? "$" : `${cur} `;
+    const periodMap = {
+      hour: "/hr",
+      year: "/yr",
+      month: "/mo",
+      week: "/wk",
+      day: "/day",
+    };
+    const suffix = job?.payPeriod ? periodMap[job.payPeriod] || "" : "";
+
+    const min = fmtMoney(job?.payMin);
+    const max = fmtMoney(job?.payMax);
+
+    if (min && max) {
+      return min === max
+        ? `${symbol}${min}${suffix}`
+        : `${symbol}${min} – ${symbol}${max}${suffix}`;
+    }
+    if (job?.payText) return job.payText;
+    return null;
+  };
+
+  const renderAnnual = (job) => {
+    const min = fmtMoney(job?.payAnnualizedMin);
+    const max = fmtMoney(job?.payAnnualizedMax);
+    if (min && max) return `Est. $${min} – $${max} /yr`;
+    if (min) return `Est. $${min} /yr`;
+    if (max) return `Est. $${max} /yr`;
+    return null;
+  };
+
+  const renderConfidence = (job) => {
+    if (typeof job?.payConfidence !== "number") return null;
+    const c = job.payConfidence;
+    if (c >= 0.8) return "High confidence";
+    if (c >= 0.5) return "Medium confidence";
+    return "Low confidence";
+  };
+
+  const renderTopPay = (job) => {
+    if (typeof job?.payPercentile !== "number") return null;
+    const top = Math.round(100 - job.payPercentile);
+    return `Top ${top}% pay`;
+  };
+
+  const formatDate = (d) => {
+    try {
+      if (!d) return null;
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return null;
+      return format(dt, "MMM d, yyyy");
+    } catch {
+      return null;
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return applications.filter((app) => {
+      const matchesSearch =
+        !q ||
+        app.job_title?.toLowerCase().includes(q) ||
+        app.company?.toLowerCase().includes(q);
+      const matchesStatus = statusFilter === "all" || app.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [applications, search, statusFilter]);
+
+  const updateStatus = async (id, status) => {
+    const nextStatus = String(status || "").toLowerCase();
+
+    // optimistic update
+    setApplications((prev) =>
+      prev.map((app) => (app.id === id ? { ...app, status: nextStatus } : app))
+    );
+    if (selected?.id === id) setSelected((s) => ({ ...s, status: nextStatus }));
+
+    try {
+      // try PATCH /api/jobs/:id
+      try {
+        await apiFetch(`/api/jobs/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: nextStatus }),
+        });
+      } catch {
+        // fallback #1
+        await apiFetch(`/api/jobs/status`, {
+          method: "POST",
+          body: JSON.stringify({ id, status: nextStatus }),
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to update status in cloud.");
+      // revert by reloading source of truth
+      loadJobs();
+    }
+  };
+
+  // ---------------------------
+  // Brand system (match NewJob look)
+  // ---------------------------
+  const pageBg =
+    "bg-[radial-gradient(1100px_700px_at_10%_-10%,rgba(99,102,241,0.22),transparent_55%),radial-gradient(900px_600px_at_95%_0%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_650px_at_50%_110%,rgba(168,85,247,0.18),transparent_55%),linear-gradient(180deg,hsl(240,10%,6%),hsl(240,12%,5%))]";
+  const surface =
+    "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
+  const edge = "border border-white/10 ring-1 ring-white/5";
+  const brandRing = "ring-1 ring-violet-400/20 border-violet-400/20";
+  const ambient =
+    "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
+  const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
+  const neonLine =
+    "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
+
+  const hoverLift =
+    "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
+  const pressFx = "active:scale-[0.99]";
+  const glowHover =
+    "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.22),0_18px_60px_rgba(0,0,0,0.55),0_0_40px_rgba(34,211,238,0.10)]";
+
+  const pill =
+    "px-3 py-1.5 rounded-full text-xs font-medium bg-white/[0.06] text-white/85 border border-white/10";
+  const pillBrand =
+    "px-3 py-1.5 rounded-full text-xs font-semibold bg-violet-500/15 text-violet-100 border border-violet-400/25";
+  const pillGood =
+    "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
+  const pillWarn =
+    "px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+    <div className={`min-h-screen ${pageBg}`}>
       <AppNav currentPage="Applications" />
-      <motion.div 
-        initial={{ opacity: 0, x: 20 }}
+
+      <motion.div
+        initial={{ opacity: 0, x: 18 }}
         animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.3 }}
+        exit={{ opacity: 0, x: -18 }}
+        transition={{ duration: 0.28 }}
         className="max-w-7xl mx-auto px-4 sm:px-6 py-8"
       >
         <div className="mb-8 text-center">
-          <h1 className="text-2xl md:text-3xl font-bold text-white mb-3">Applications</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-3">
+            Applications
+          </h1>
           <div className="flex items-center justify-center gap-2">
             <div className="w-8 h-8 rounded-full bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-              <span className="text-sm font-bold text-purple-400">{applications.length}</span>
+              <span className="text-sm font-bold text-purple-200">
+                {applications.length}
+              </span>
             </div>
-            <span className="text-white/40 text-sm">total applications tracked</span>
+            <span className="text-white/40 text-sm">
+              total applications tracked
+            </span>
           </div>
         </div>
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <div className="relative flex-1 transition-all duration-200 hover:scale-[1.01]">
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            className="relative flex-1"
+          >
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30" />
             <Input
               placeholder="Search by role or company…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/30 pl-12 py-6 rounded-xl text-base hover:bg-white/[0.05] hover:border-purple-500/40 hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-200"
+              className="bg-black/30 border-white/10 text-white placeholder:text-white/30 pl-12 py-6 rounded-xl text-base hover:bg-white/[0.05] hover:border-violet-400/40 hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200"
             />
-          </div>
-          <div className="transition-all duration-200 hover:scale-[1.01]">
+          </motion.div>
+
+          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48 bg-white/[0.03] border-white/10 text-white/70 rounded-xl py-6 text-base hover:bg-white/[0.05] hover:border-purple-500/40 hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-200">
+              <SelectTrigger className="w-48 bg-black/30 border-white/10 text-white/80 rounded-xl py-6 text-base hover:bg-white/[0.05] hover:border-violet-400/40 hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="generated">Generated</SelectItem>
-                <SelectItem value="applied">Applied</SelectItem>
-                <SelectItem value="interview">Interview</SelectItem>
-                <SelectItem value="offer">Offer</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
+
+              {/* ✅ black dropdown, white text */}
+              <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                <SelectItem
+                  value="all"
+                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                >
+                  All Status
+                </SelectItem>
+                <SelectItem
+                  value="generated"
+                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                >
+                  Generated
+                </SelectItem>
+                <SelectItem
+                  value="applied"
+                  className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                >
+                  Applied
+                </SelectItem>
+                <SelectItem
+                  value="interview"
+                  className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                >
+                  Interview
+                </SelectItem>
+                <SelectItem
+                  value="offer"
+                  className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                >
+                  Offer
+                </SelectItem>
+                <SelectItem
+                  value="rejected"
+                  className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                >
+                  Rejected
+                </SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </motion.div>
         </div>
 
-        {/* Full-width list */}
-        <div className="space-y-0 [&>*:nth-child(even)>div]:bg-white/[0.01]">
-          {isLoading ? (
-            Array(5).fill(0).map((_, i) => (
-              <div key={i} className="glass-card rounded-xl p-6">
-                <Skeleton className="h-5 w-64 bg-white/5 mb-3" />
-                <Skeleton className="h-4 w-40 bg-white/5" />
+        {/* List */}
+        <div
+          className={[
+            "rounded-2xl overflow-hidden",
+            surface,
+            edge,
+            brandRing,
+            ambient,
+          ].join(" ")}
+        >
+          <div className={`h-1.5 ${neonLine}`} />
+
+          <div className="divide-y divide-white/10">
+            {isLoading ? (
+              <div className="p-6 space-y-4">
+                {Array(6)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div key={i} className="rounded-xl p-4 bg-black/25 border border-white/10">
+                      <Skeleton className="h-5 w-64 bg-white/5 mb-3" />
+                      <Skeleton className="h-4 w-40 bg-white/5" />
+                    </div>
+                  ))}
               </div>
-            ))
-          ) : filtered.length === 0 ? (
-            <div className="glass-card rounded-2xl p-16 text-center">
-              <FileText className="w-14 h-14 text-white/10 mx-auto mb-4" />
-              <p className="text-white/40 text-lg">No applications found</p>
-            </div>
-          ) : (
-            filtered.map((app, index) => (
-              <motion.div
-                key={app.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03, duration: 0.2 }}
-              >
-                <ApplicationCard
-                  application={app}
-                  onStatusChange={updateStatus}
-                />
-              </motion.div>
-            ))
-          )}
+            ) : filtered.length === 0 ? (
+              <div className="p-16 text-center">
+                <FileText className="w-14 h-14 text-white/10 mx-auto mb-4" />
+                <p className="text-white/40 text-lg">No applications found</p>
+              </div>
+            ) : (
+              filtered.map((app, index) => {
+                const dateStr = formatDate(app.created_date);
+                const payPrimary = renderPayPrimary(app);
+                const payAnnual = renderAnnual(app);
+                const payConf = renderConfidence(app);
+                const topPay = renderTopPay(app);
+
+                return (
+                  <motion.div
+                    key={app.id}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.02, duration: 0.22 }}
+                    className={[
+                      "px-6 py-5 bg-black/10",
+                      "hover:bg-white/[0.03]",
+                      "transition-colors",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start justify-between gap-6">
+                      {/* Left */}
+                      <button
+                        onClick={() => setSelected(app)}
+                        className="text-left flex-1 min-w-0 group"
+                      >
+                        <div className="text-white font-semibold text-lg leading-tight group-hover:text-white">
+                          {app.job_title}
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/55">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Building2 className="w-4 h-4" />
+                            {app.company}
+                          </span>
+                          {dateStr && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Calendar className="w-4 h-4" />
+                              {dateStr}
+                            </span>
+                          )}
+                          {app.location && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="w-4 h-4" />
+                              {app.location}
+                            </span>
+                          )}
+                          {app.website && (
+                            <span className="inline-flex items-center gap-1.5 truncate">
+                              <Globe className="w-4 h-4" />
+                              <span className="truncate max-w-[360px]">
+                                {app.website}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Pills row (more pills like NewJob confirm) */}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                            <Tag className="w-3.5 h-3.5" />
+                            {statusLabel(app.status)}
+                          </span>
+
+                          {app.employmentType && (
+                            <span className={`${pill} inline-flex items-center gap-2`}>
+                              <Briefcase className="w-3.5 h-3.5 text-white/60" />
+                              {app.employmentType}
+                            </span>
+                          )}
+
+                          {app.workModel && (
+                            <span className={`${pill} inline-flex items-center gap-2`}>
+                              <Building2 className="w-3.5 h-3.5 text-white/60" />
+                              {app.workModel}
+                            </span>
+                          )}
+
+                          {app.experienceLevel && (
+                            <span className={`${pill} inline-flex items-center gap-2`}>
+                              <Clock className="w-3.5 h-3.5 text-white/60" />
+                              {app.experienceLevel}
+                            </span>
+                          )}
+
+                          {payPrimary && (
+                            <span className={`${pillGood} inline-flex items-center gap-2`}>
+                              <DollarSign className="w-3.5 h-3.5" />
+                              {payPrimary}
+                            </span>
+                          )}
+
+                          {payConf && <span className={pill}>{payConf}</span>}
+                          {payAnnual && <span className={pillWarn}>{payAnnual}</span>}
+                          {topPay && (
+                            <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                              <Percent className="w-3.5 h-3.5" />
+                              {topPay}
+                            </span>
+                          )}
+
+                          {Array.isArray(app.complianceTags) &&
+                            app.complianceTags.slice(0, 3).map((t, i) => (
+                              <span
+                                key={`${app.id}-ct-${i}`}
+                                className={`${pillBrand} inline-flex items-center gap-2`}
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                {t}
+                              </span>
+                            ))}
+                        </div>
+
+                        {/* Keywords mini row */}
+                        {Array.isArray(app.keywords) && app.keywords.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {app.keywords.slice(0, 6).map((k, i) => (
+                              <span key={`${app.id}-kw-${i}`} className={pill}>
+                                {k}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+
+                      {/* Right: Status dropdown */}
+                      <div className="shrink-0">
+                        <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                          <Select
+                            value={app.status}
+                            onValueChange={(v) => updateStatus(app.id, v)}
+                          >
+                            <SelectTrigger
+                              className={[
+                                "w-40 rounded-xl py-5 text-sm font-semibold",
+                                "bg-black/40 border-white/10",
+                                "text-white",
+                                "hover:bg-white/[0.05] hover:border-violet-400/40",
+                                "transition-all",
+                                statusPill(app.status),
+                              ].join(" ")}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+
+                            {/* ✅ black dropdown, white/neon highlight */}
+                            <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                              <SelectItem
+                                value="generated"
+                                className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                              >
+                                Generated
+                              </SelectItem>
+                              <SelectItem
+                                value="applied"
+                                className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                              >
+                                Applied
+                              </SelectItem>
+                              <SelectItem
+                                value="interview"
+                                className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                              >
+                                Interview
+                              </SelectItem>
+                              <SelectItem
+                                value="offer"
+                                className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                              >
+                                Offer
+                              </SelectItem>
+                              <SelectItem
+                                value="rejected"
+                                className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                              >
+                                Rejected
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </motion.div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
         </div>
       </motion.div>
+
+      {/* ✅ Popup (zoom animation) */}
+      <AnimatePresence>
+        {selected && (
+          <motion.div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-md px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setSelected(null);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 10 }}
+              transition={{ duration: 0.22 }}
+              className={[
+                "w-full max-w-2xl rounded-2xl overflow-hidden",
+                surface,
+                edge,
+                brandRing,
+                cardShadow,
+              ].join(" ")}
+            >
+              <div className={`h-1.5 ${neonLine}`} />
+              <div className="p-6 md:p-7">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-white font-bold text-2xl leading-tight">
+                      {selected.job_title}
+                    </div>
+                    <div className="mt-2 text-white/70 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-white/55" />
+                        {selected.company}
+                      </span>
+                      {formatDate(selected.created_date) && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-white/55" />
+                          {formatDate(selected.created_date)}
+                        </span>
+                      )}
+                      {selected.location && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin className="w-4 h-4 text-white/55" />
+                          {selected.location}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setSelected(null)}
+                    className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 text-white/70 hover:text-white hover:bg-white/5 flex items-center justify-center"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </motion.button>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                    <Tag className="w-3.5 h-3.5" />
+                    {statusLabel(selected.status)}
+                  </span>
+
+                  {selected.employmentType && (
+                    <span className={`${pill} inline-flex items-center gap-2`}>
+                      <Briefcase className="w-3.5 h-3.5 text-white/60" />
+                      {selected.employmentType}
+                    </span>
+                  )}
+
+                  {selected.workModel && (
+                    <span className={`${pill} inline-flex items-center gap-2`}>
+                      <Building2 className="w-3.5 h-3.5 text-white/60" />
+                      {selected.workModel}
+                    </span>
+                  )}
+
+                  {selected.experienceLevel && (
+                    <span className={`${pill} inline-flex items-center gap-2`}>
+                      <Clock className="w-3.5 h-3.5 text-white/60" />
+                      {selected.experienceLevel}
+                    </span>
+                  )}
+
+                  {renderPayPrimary(selected) && (
+                    <span className={`${pillGood} inline-flex items-center gap-2`}>
+                      <DollarSign className="w-3.5 h-3.5" />
+                      {renderPayPrimary(selected)}
+                    </span>
+                  )}
+
+                  {renderAnnual(selected) && <span className={pillWarn}>{renderAnnual(selected)}</span>}
+                  {renderConfidence(selected) && <span className={pill}>{renderConfidence(selected)}</span>}
+                  {renderTopPay(selected) && (
+                    <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                      <Percent className="w-3.5 h-3.5" />
+                      {renderTopPay(selected)}
+                    </span>
+                  )}
+
+                  {Array.isArray(selected.complianceTags) &&
+                    selected.complianceTags.slice(0, 6).map((t, i) => (
+                      <span key={`sel-ct-${i}`} className={`${pillBrand} inline-flex items-center gap-2`}>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {t}
+                      </span>
+                    ))}
+                </div>
+
+                {Array.isArray(selected.keywords) && selected.keywords.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                      Key skills
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selected.keywords.slice(0, 16).map((k, i) => (
+                        <span key={`sel-kw-${i}`} className={pill}>
+                          {k}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selected.website && (
+                  <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-black/25 border border-white/10 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-white/50 mb-1">Job link</div>
+                      <div className="text-sm text-white/85 truncate">{selected.website}</div>
+                    </div>
+                    <motion.a
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      href={selected.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-white/85 hover:bg-white/[0.10] hover:border-violet-400/25"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Open
+                    </motion.a>
+                  </div>
+                )}
+
+                {selected.jobDescription && (
+                  <div className="mt-5">
+                    <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                      Job description (saved)
+                    </div>
+                    <div className="rounded-xl bg-black/25 border border-white/10 p-4 max-h-[240px] overflow-auto text-sm text-white/70 leading-relaxed">
+                      {String(selected.jobDescription)}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                    <Select
+                      value={selected.status}
+                      onValueChange={(v) => updateStatus(selected.id, v)}
+                    >
+                      <SelectTrigger
+                        className={[
+                          "w-48 rounded-xl py-5 text-sm font-semibold",
+                          "bg-black/40 border-white/10 text-white",
+                          "hover:bg-white/[0.05] hover:border-violet-400/40 transition-all",
+                          statusPill(selected.status),
+                        ].join(" ")}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                        <SelectItem
+                          value="generated"
+                          className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                        >
+                          Generated
+                        </SelectItem>
+                        <SelectItem
+                          value="applied"
+                          className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                        >
+                          Applied
+                        </SelectItem>
+                        <SelectItem
+                          value="interview"
+                          className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                        >
+                          Interview
+                        </SelectItem>
+                        <SelectItem
+                          value="offer"
+                          className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                        >
+                          Offer
+                        </SelectItem>
+                        <SelectItem
+                          value="rejected"
+                          className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                        >
+                          Rejected
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </motion.div>
+
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setSelected(null)}
+                    className={[
+                      "px-4 py-3 rounded-xl text-sm font-semibold",
+                      "bg-white/[0.06] border border-white/10 text-white/85",
+                      "hover:bg-white/[0.10] hover:border-violet-400/25",
+                      "transition-all",
+                    ].join(" ")}
+                  >
+                    Done
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
