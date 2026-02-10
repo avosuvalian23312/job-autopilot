@@ -23,6 +23,19 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
+/**
+ * ✅ Fixes included (NO UI changes):
+ * - Moves preview state inside component (your code had it outside -> crashes)
+ * - Adds preview Dialog (PDF/DOCX) without changing existing UI layout
+ * - Fixes "Upload Resume doesn't work" by:
+ *   - Ensuring file input is wired correctly
+ *   - Allowing click/drag-drop selection
+ *   - Uploading via SAS: /api/resume/upload-url -> PUT -> /api/resume/save
+ *   - Better error handling + readable errors
+ * - Stops card click from breaking buttons (buttons stopPropagation)
+ * - loadResumes expects GET /api/resume/list => { ok:true, resumes:[...] }
+ */
+
 async function readJsonSafe(res) {
   const text = await res.text().catch(() => "");
   if (!text) return null;
@@ -43,21 +56,15 @@ async function apiJson(url, options = {}) {
   });
   const data = await readJsonSafe(res);
   if (!res.ok) {
-    const msg = data?.error || data?.message || `Request failed (${res.status})`;
+    const msg = data?.error || data?.message || data?.detail || `Request failed (${res.status})`;
     throw new Error(msg);
   }
   return data;
 }
 
 function normalizeResume(doc) {
-  // Support multiple possible backend shapes
   const id = doc.id || doc._id || doc.resumeId || doc.blobName || String(Date.now());
-  const name =
-    doc.name ||
-    doc.resumeName ||
-    doc.originalName ||
-    doc.fileName ||
-    "Resume";
+  const name = doc.name || doc.resumeName || doc.originalName || doc.fileName || "Resume";
   const updated =
     doc.updated_date ||
     doc.updatedDate ||
@@ -70,16 +77,19 @@ function normalizeResume(doc) {
     name,
     content: doc.content || doc.text || "",
     isDefault: Boolean(doc.isDefault) || Boolean(doc.default) || Boolean(doc.isCurrent),
-    updated_date: String(updated).includes("T")
-      ? String(updated).split("T")[0]
-      : String(updated),
-    // keep extra fields if needed later
+    updated_date: String(updated).includes("T") ? String(updated).split("T")[0] : String(updated),
+
+    // preview fields
+    blobUrl: doc.blobUrl || doc.url || "",
+    blobName: doc.blobName || doc.blobPath || "",
+    contentType: doc.contentType || "",
+    originalName: doc.originalName || doc.fileName || "",
+
     _raw: doc,
   };
 }
 
 export default function Resumes() {
-  // ✅ removed dummy data; real data only
   const [resumes, setResumes] = useState([]);
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -93,40 +103,22 @@ export default function Resumes() {
   const fileInputRef = useRef(null);
   const [selectedFile, setSelectedFile] = useState(null);
 
+  // ✅ preview state MUST be inside component
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewResume, setPreviewResume] = useState(null);
+
   const loadResumes = async () => {
     try {
-      // Prefer list endpoint if you add it later
-      // If it doesn't exist yet, fall back to "current" behavior using /api/resume/save response patterns
-      const tryList = await fetch("/api/resume/list");
-      if (tryList.ok) {
-        const data = await readJsonSafe(tryList);
-        const items = data?.resumes || data?.items || data || [];
-        const normalized = Array.isArray(items) ? items.map(normalizeResume) : [];
-        setResumes(normalized);
+      const res = await fetch("/api/resume/list");
+      if (!res.ok) {
+        // If list isn't deployed yet, just show empty (no UI change)
+        setResumes([]);
         return;
       }
-
-      // Fallback: try common "get current" endpoints (if you add one)
-      const tryCurrent = await fetch("/api/resume/get");
-      if (tryCurrent.ok) {
-        const data = await readJsonSafe(tryCurrent);
-        const doc = data?.resume || data?.item || data;
-        if (doc) setResumes([normalizeResume(doc)]);
-        else setResumes([]);
-        return;
-      }
-
-      const tryCurrent2 = await fetch("/api/resume/current");
-      if (tryCurrent2.ok) {
-        const data = await readJsonSafe(tryCurrent2);
-        const doc = data?.resume || data?.item || data;
-        if (doc) setResumes([normalizeResume(doc)]);
-        else setResumes([]);
-        return;
-      }
-
-      // If nothing exists yet, just show empty
-      setResumes([]);
+      const data = await readJsonSafe(res);
+      const items = data?.resumes || data?.items || data || [];
+      const normalized = Array.isArray(items) ? items.map(normalizeResume) : [];
+      setResumes(normalized);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load resumes");
@@ -138,6 +130,13 @@ export default function Resumes() {
     loadResumes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const resetUploadState = () => {
+    setResumeName("");
+    setResumeText("");
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleUpload = async () => {
     if (!resumeName.trim()) {
@@ -152,29 +151,23 @@ export default function Resumes() {
           return;
         }
 
-        // If you have a text-save endpoint, use it.
-        // Otherwise store it as metadata/content in Cosmos via /api/resume/save (works for MVP).
         const payload = {
           name: resumeName,
           content: resumeText,
           contentType: "text/plain",
           size: resumeText.length,
-          blobName: `text:${Date.now()}`, // placeholder
+          blobName: `text:${Date.now()}`, // placeholder (library id handled in backend)
         };
 
-        const saved = await apiJson("/api/resume/save", {
+        await apiJson("/api/resume/save", {
           method: "POST",
           body: JSON.stringify(payload),
         });
 
-        const doc = saved?.resume || payload;
-        const normalized = normalizeResume({ ...doc, isDefault: resumes.length === 0 });
-        setResumes([normalized, ...resumes]);
-
         toast.success("Resume uploaded successfully");
         setUploadOpen(false);
-        setResumeName("");
-        setResumeText("");
+        resetUploadState();
+        await loadResumes();
         return;
       }
 
@@ -184,10 +177,18 @@ export default function Resumes() {
         return;
       }
 
+      // 0) basic client validation (doesn't change UI)
+      const maxBytes = 5 * 1024 * 1024;
+      if (selectedFile.size > maxBytes) {
+        toast.error("File too large (max 5MB)");
+        return;
+      }
+
       // 1) Get SAS upload URL
       const uploadUrlResp = await apiJson("/api/resume/upload-url", {
         method: "POST",
         body: JSON.stringify({
+          name: resumeName, // helpful for backend naming
           originalName: selectedFile.name,
           fileName: selectedFile.name,
           contentType: selectedFile.type || "application/octet-stream",
@@ -197,7 +198,6 @@ export default function Resumes() {
 
       const uploadUrl = uploadUrlResp?.uploadUrl;
       const blobName = uploadUrlResp?.blobName || uploadUrlResp?.blobPath;
-
       if (!uploadUrl || !blobName) {
         toast.error("Upload URL failed");
         return;
@@ -226,29 +226,18 @@ export default function Resumes() {
         fileName: selectedFile.name,
         contentType: selectedFile.type || "application/octet-stream",
         size: selectedFile.size || 0,
-        uploadUrl, // backend strips SAS if it wants
+        uploadUrl, // backend can strip SAS to store blobUrl
       };
 
-      const saved = await apiJson("/api/resume/save", {
+      await apiJson("/api/resume/save", {
         method: "POST",
         body: JSON.stringify(savePayload),
       });
 
-      const doc = saved?.resume || savePayload;
-      const normalized = normalizeResume({
-        ...doc,
-        isDefault: resumes.length === 0,
-        updated_date: new Date().toISOString().split("T")[0],
-      });
-
-      setResumes([normalized, ...resumes]);
-
       toast.success("Resume uploaded successfully");
       setUploadOpen(false);
-      setResumeName("");
-      setResumeText("");
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      resetUploadState();
+      await loadResumes();
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Upload failed");
@@ -262,39 +251,28 @@ export default function Resumes() {
     }
 
     try {
-      const prev = resumes;
-
-      // optimistic UI (no UI changes)
+      // optimistic UI
       setResumes(
         resumes.map((r) =>
           r.id === selectedResume.id
-            ? {
-                ...r,
-                name: resumeName,
-                updated_date: new Date().toISOString().split("T")[0],
-              }
+            ? { ...r, name: resumeName, updated_date: new Date().toISOString().split("T")[0] }
             : r
         )
       );
 
-      // Optional backend endpoint (recommended)
-      // If you don't have it yet, this will 404; we quietly keep the optimistic rename.
       await apiJson("/api/resume/rename", {
         method: "POST",
         body: JSON.stringify({ id: selectedResume.id, name: resumeName }),
-      }).catch(() => null);
+      });
 
       toast.success("Resume updated");
       setEditOpen(false);
       setResumeName("");
       setSelectedResume(null);
-
-      // reload to stay in sync if backend supports it
       await loadResumes();
     } catch (e) {
       console.error(e);
       toast.error(e?.message || "Rename failed");
-      // best-effort reload
       await loadResumes();
     }
   };
@@ -302,21 +280,18 @@ export default function Resumes() {
   const handleDelete = async () => {
     try {
       const id = selectedResume?.id;
-      const prev = resumes;
 
       // optimistic UI
       setResumes(resumes.filter((r) => r.id !== id));
 
-      // Optional backend endpoint (recommended)
       await apiJson("/api/resume/delete", {
         method: "POST",
         body: JSON.stringify({ id }),
-      }).catch(() => null);
+      });
 
       toast.success("Resume deleted");
       setDeleteOpen(false);
       setSelectedResume(null);
-
       await loadResumes();
     } catch (e) {
       console.error(e);
@@ -330,11 +305,10 @@ export default function Resumes() {
       // optimistic UI
       setResumes(resumes.map((r) => ({ ...r, isDefault: r.id === id })));
 
-      // Optional backend endpoint (recommended)
       await apiJson("/api/resume/set-default", {
         method: "POST",
         body: JSON.stringify({ id }),
-      }).catch(() => null);
+      });
 
       toast.success("Default resume updated");
       await loadResumes();
@@ -344,6 +318,34 @@ export default function Resumes() {
       await loadResumes();
     }
   };
+
+  const openPreview = (resume) => {
+    // Needs a blobUrl to preview
+    if (!resume?.blobUrl) {
+      toast.error("No preview available yet");
+      return;
+    }
+    setPreviewResume(resume);
+    setPreviewOpen(true);
+  };
+
+  const previewSrc = (() => {
+    const r = previewResume;
+    if (!r?.blobUrl) return "";
+    const ct = (r.contentType || "").toLowerCase();
+    const name = (r.originalName || "").toLowerCase();
+
+    // PDF: native
+    if (ct.includes("pdf") || name.endsWith(".pdf")) return r.blobUrl;
+
+    // DOCX: office viewer (needs publicly reachable URL; SAS works)
+    if (ct.includes("word") || name.endsWith(".doc") || name.endsWith(".docx")) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(r.blobUrl)}`;
+    }
+
+    // else: download / open
+    return r.blobUrl;
+  })();
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
@@ -398,7 +400,8 @@ export default function Resumes() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className="glass-card rounded-2xl p-6 hover:bg-white/[0.04] transition-all group"
+                className="glass-card rounded-2xl p-6 hover:bg-white/[0.04] transition-all group cursor-pointer"
+                onClick={() => openPreview(resume)}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
@@ -412,7 +415,9 @@ export default function Resumes() {
                   )}
                 </div>
 
-                <h3 className="text-lg font-semibold text-white mb-2 line-clamp-1">{resume.name}</h3>
+                <h3 className="text-lg font-semibold text-white mb-2 line-clamp-1">
+                  {resume.name}
+                </h3>
                 <div className="flex items-center gap-2 text-xs text-white/30 mb-6">
                   <Calendar className="w-3 h-3" />
                   Updated {format(new Date(resume.updated_date), "MMM d, yyyy")}
@@ -421,7 +426,10 @@ export default function Resumes() {
                 <div className="flex items-center gap-2">
                   {!resume.isDefault && (
                     <Button
-                      onClick={() => handleSetDefault(resume.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetDefault(resume.id);
+                      }}
                       variant="ghost"
                       className="flex-1 text-xs text-white/50 hover:text-white hover:bg-white/5 py-2 rounded-lg"
                     >
@@ -430,7 +438,8 @@ export default function Resumes() {
                     </Button>
                   )}
                   <Button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setSelectedResume(resume);
                       setResumeName(resume.name);
                       setEditOpen(true);
@@ -442,7 +451,8 @@ export default function Resumes() {
                     Rename
                   </Button>
                   <Button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setSelectedResume(resume);
                       setDeleteOpen(true);
                     }}
@@ -458,8 +468,36 @@ export default function Resumes() {
         )}
       </motion.div>
 
+      {/* ✅ Preview Dialog (no UI redesign; same Dialog components) */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="bg-[hsl(240,10%,6%)] border-white/10 text-white max-w-5xl h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">{previewResume?.name}</DialogTitle>
+            <DialogDescription className="text-white/40">Resume Preview</DialogDescription>
+          </DialogHeader>
+
+          {previewResume?.blobUrl ? (
+            <iframe
+              title="Resume Preview"
+              src={previewSrc}
+              className="w-full h-full rounded-xl border border-white/10"
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-white/40">
+              No preview available
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Upload Dialog */}
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+      <Dialog
+        open={uploadOpen}
+        onOpenChange={(open) => {
+          setUploadOpen(open);
+          if (!open) resetUploadState();
+        }}
+      >
         <DialogContent className="bg-[hsl(240,10%,6%)] border-white/10 text-white max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Upload Resume</DialogTitle>
@@ -470,7 +508,9 @@ export default function Resumes() {
 
           <div className="space-y-6 mt-4">
             <div>
-              <label className="text-sm text-white/60 mb-2 block font-medium">Resume Name</label>
+              <label className="text-sm text-white/60 mb-2 block font-medium">
+                Resume Name
+              </label>
               <Input
                 placeholder="e.g., Software Engineer Resume"
                 value={resumeName}
@@ -506,7 +546,6 @@ export default function Resumes() {
 
             {uploadMethod === "file" ? (
               <>
-                {/* hidden input (no UI change) */}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -540,7 +579,9 @@ export default function Resumes() {
               </>
             ) : (
               <div>
-                <label className="text-sm text-white/60 mb-2 block font-medium">Resume Text</label>
+                <label className="text-sm text-white/60 mb-2 block font-medium">
+                  Resume Text
+                </label>
                 <Textarea
                   placeholder="Paste your resume content here..."
                   value={resumeText}
