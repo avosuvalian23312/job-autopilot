@@ -43,6 +43,7 @@ import { toast } from "sonner";
 
 export default function NewJob() {
   const navigate = useNavigate();
+
   const [selectedResume, setSelectedResume] = useState("");
   const [aiMode, setAiMode] = useState("standard");
   const [studentMode, setStudentMode] = useState(false);
@@ -55,48 +56,40 @@ export default function NewJob() {
   const [resumes, setResumes] = useState([]);
   const [resumesLoading, setResumesLoading] = useState(true);
 
-  // ✅ NEW: preview state (micro-previews + estimated time)
+  // ✅ preview state (micro-previews + estimated time)
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // ✅ SWA-safe JSON helper (cookie auth)
   const apiFetch = async (path, options = {}) => {
-  const res = await fetch(path, {
-    ...options,
-    credentials: "include", // ✅ SWA auth cookie
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
+    const res = await fetch(path, {
+      ...options,
+      credentials: "include", // ✅ SWA auth cookie
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
 
-  const text = await res.text().catch(() => "");
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!res.ok) {
-    const msg = data?.error || data?.message || data?.detail || text || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-
-  return data;
-};
-
+    const text = await res.text().catch(() => "");
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text };
+    }
 
     if (!res.ok) {
-      let msg = `Request failed (${res.status})`;
-      try {
-        const t = await res.text();
-        if (t) msg = t;
-      } catch {}
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        (typeof data?.raw === "string" ? data.raw : "") ||
+        `Request failed (${res.status})`;
       throw new Error(msg);
     }
 
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+    return data;
   };
 
   useEffect(() => {
@@ -105,6 +98,7 @@ export default function NewJob() {
     const load = async () => {
       try {
         setResumesLoading(true);
+
         const data = await apiFetch("/api/resume/list", { method: "GET" });
         const list = Array.isArray(data) ? data : data?.resumes || [];
 
@@ -122,9 +116,7 @@ export default function NewJob() {
       } catch (e) {
         if (cancelled) return;
         console.error(e);
-        toast.error(
-          "Could not load resumes from cloud. Falling back to local resumes."
-        );
+        toast.error("Could not load resumes from cloud. Falling back to local resumes.");
 
         const local = JSON.parse(localStorage.getItem("resumes") || "[]");
         setResumes(local);
@@ -153,6 +145,7 @@ export default function NewJob() {
       /(?:hiring|seeking|looking for)\s+(?:a|an)?\s*([^\n,]+?)(?:\s+at|\s+to|\s+in|\s*\n)/i,
       /^([A-Z][^\n]{10,60}?)(?:\s+at|\s+-|\s*\n)/m,
     ];
+
     let jobTitle = null;
     for (const pattern of titlePatterns) {
       const match = description.match(pattern);
@@ -167,6 +160,7 @@ export default function NewJob() {
       /(?:at|@)\s+([A-Z][a-zA-Z0-9\s&.]+?)(?:\s+is|\s+we|\s+-|\s*\n)/,
       /About\s+([A-Z][a-zA-Z0-9\s&.]+?)(?:\s*\n|:)/i,
     ];
+
     let company = null;
     for (const pattern of companyPatterns) {
       const match = description.match(pattern);
@@ -187,6 +181,7 @@ export default function NewJob() {
       /(?:in|at)\s+([A-Z][a-z]+,\s*[A-Z]{2})/,
       /(?:Remote|Hybrid|On-site)(?:\s+in\s+)?([A-Z][a-z]+(?:,\s*[A-Z]{2})?)/,
     ];
+
     let location = null;
     for (const pattern of locationPatterns) {
       const match = description.match(pattern);
@@ -202,6 +197,7 @@ export default function NewJob() {
       "Mid-Level": /mid.level|experienced|3\+?\s*years/i,
       Senior: /senior|lead|principal|staff|10\+?\s*years/i,
     };
+
     let seniority = null;
     for (const [level, pattern] of Object.entries(seniorityKeywords)) {
       if (pattern.test(description)) {
@@ -225,6 +221,7 @@ export default function NewJob() {
       "Git",
       "Azure",
     ];
+
     commonSkills.forEach((skill) => {
       if (new RegExp(`\\b${skill}\\b`, "i").test(description)) {
         skills.add(skill.replace(/\\\+/g, "+"));
@@ -241,13 +238,8 @@ export default function NewJob() {
     };
   };
 
-  // ✅ NEW: frontend-safe fallback previews (if /api/jobs/preview fails)
-  const buildPreviewFallback = ({
-    jobTitle,
-    company,
-    keywords,
-    studentMode: sm,
-  }) => {
+  // ✅ frontend-safe fallback previews (if /api/jobs/preview fails)
+  const buildPreviewFallback = ({ jobTitle, company, keywords, studentMode: sm }) => {
     const role = String(jobTitle || "this role").trim() || "this role";
     const org = String(company || "the company").trim() || "the company";
     const ks = Array.from(
@@ -255,9 +247,7 @@ export default function NewJob() {
     ).slice(0, 6);
 
     const skillHint = ks.length ? ` (${ks.join(", ")})` : "";
-    const studentHint = sm
-      ? "projects, labs, and skills"
-      : "experience, ownership, and measurable outcomes";
+    const studentHint = sm ? "projects, labs, and skills" : "experience, ownership, and measurable outcomes";
 
     return {
       estimatedSeconds: 15,
@@ -273,9 +263,7 @@ export default function NewJob() {
       checklistPreview: {
         items: [
           ks.length
-            ? `Ensure top keywords appear in Skills + Experience: ${ks
-                .slice(0, 4)
-                .join(", ")}.`
+            ? `Ensure top keywords appear in Skills + Experience: ${ks.slice(0, 4).join(", ")}.`
             : "Ensure top keywords appear in Skills + Experience sections.",
           sm
             ? "Add 1–2 quantified project outcomes (latency, uptime, automation, tickets)."
@@ -285,7 +273,7 @@ export default function NewJob() {
     };
   };
 
-  // ✅ NEW: fetch micro-previews from backend
+  // ✅ fetch micro-previews from backend
   const fetchPreviews = async ({
     jobTitle,
     company,
@@ -299,7 +287,7 @@ export default function NewJob() {
       const res = await fetch("/api/jobs/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", 
+        credentials: "include",
         body: JSON.stringify({
           jobTitle,
           company,
@@ -313,7 +301,6 @@ export default function NewJob() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // Light validation + normalize
       const bullets = Array.isArray(data?.resumePreview?.bullets)
         ? data.resumePreview.bullets.filter(Boolean).slice(0, 2)
         : [];
@@ -326,8 +313,7 @@ export default function NewJob() {
         : [];
 
       const estimatedSeconds =
-        typeof data?.estimatedSeconds === "number" &&
-        Number.isFinite(data.estimatedSeconds)
+        typeof data?.estimatedSeconds === "number" && Number.isFinite(data.estimatedSeconds)
           ? data.estimatedSeconds
           : 15;
 
@@ -343,7 +329,6 @@ export default function NewJob() {
       });
     } catch (e) {
       console.error(e);
-      // fallback so UI still shows something
       setPreviewData(
         buildPreviewFallback({
           jobTitle,
@@ -370,7 +355,6 @@ export default function NewJob() {
     setIsAnalyzing(true);
 
     try {
-      // reset previews on new analyze
       setPreviewData(null);
 
       const res = await fetch("/api/jobs/extract", {
@@ -391,7 +375,6 @@ export default function NewJob() {
         seniority: extracted.seniority || null,
         keywords: Array.isArray(extracted.keywords) ? extracted.keywords : [],
 
-        // pay
         payText: extracted.payText || null,
         payMin:
           typeof extracted.payMin === "number" && Number.isFinite(extracted.payMin)
@@ -404,36 +387,28 @@ export default function NewJob() {
         payCurrency: extracted.payCurrency || "USD",
         payPeriod: extracted.payPeriod || null,
         payConfidence:
-          typeof extracted.payConfidence === "number" &&
-          Number.isFinite(extracted.payConfidence)
+          typeof extracted.payConfidence === "number" && Number.isFinite(extracted.payConfidence)
             ? extracted.payConfidence
             : null,
         payAnnualizedMin:
-          typeof extracted.payAnnualizedMin === "number" &&
-          Number.isFinite(extracted.payAnnualizedMin)
+          typeof extracted.payAnnualizedMin === "number" && Number.isFinite(extracted.payAnnualizedMin)
             ? extracted.payAnnualizedMin
             : null,
         payAnnualizedMax:
-          typeof extracted.payAnnualizedMax === "number" &&
-          Number.isFinite(extracted.payAnnualizedMax)
+          typeof extracted.payAnnualizedMax === "number" && Number.isFinite(extracted.payAnnualizedMax)
             ? extracted.payAnnualizedMax
             : null,
         payPercentile:
-          typeof extracted.payPercentile === "number" &&
-          Number.isFinite(extracted.payPercentile)
+          typeof extracted.payPercentile === "number" && Number.isFinite(extracted.payPercentile)
             ? extracted.payPercentile
             : null,
         payPercentileSource: extracted.payPercentileSource || null,
 
-        // chips
         employmentType: extracted.employmentType || null,
         workModel: extracted.workModel || null,
         experienceLevel: extracted.experienceLevel || null,
-        complianceTags: Array.isArray(extracted.complianceTags)
-          ? extracted.complianceTags
-          : [],
+        complianceTags: Array.isArray(extracted.complianceTags) ? extracted.complianceTags : [],
 
-        // requirements (optional)
         requirements:
           extracted.requirements && typeof extracted.requirements === "object"
             ? {
@@ -452,9 +427,7 @@ export default function NewJob() {
                   Number.isFinite(extracted.requirements.yearsExperienceMin)
                     ? extracted.requirements.yearsExperienceMin
                     : null,
-                certificationsPreferred: Array.isArray(
-                  extracted.requirements.certificationsPreferred
-                )
+                certificationsPreferred: Array.isArray(extracted.requirements.certificationsPreferred)
                   ? extracted.requirements.certificationsPreferred
                   : [],
                 workModelRequired:
@@ -468,7 +441,6 @@ export default function NewJob() {
       setExtractedData(nextExtracted);
       setShowConfirm(true);
 
-      // ✅ NEW: fetch micro-previews after extraction (does not block UI)
       fetchPreviews({
         jobTitle: nextExtracted.jobTitle,
         company: nextExtracted.company,
@@ -494,7 +466,6 @@ export default function NewJob() {
       setExtractedData(nextExtracted);
       setShowConfirm(true);
 
-      // ✅ NEW: still attempt previews (fallback will fill)
       fetchPreviews({
         jobTitle: nextExtracted.jobTitle,
         company: nextExtracted.company,
@@ -510,27 +481,29 @@ export default function NewJob() {
     }
   };
 
- const payload = {
-  resumeId: selectedResume,
-  jobTitle: extractedData.jobTitle,
-  company: extractedData.company,
-  website: extractedData.website,
-  location: extractedData.location,
-  seniority: extractedData.seniority,
-  keywords: extractedData.keywords,
-  jobDescription,
-  aiMode,
-  studentMode,
-};
-
+  // ✅ FIXED: this MUST be inside an async function (your build failed because it wasn’t)
+  const handleGenerate = async () => {
+    try {
+      const payload = {
+        // ✅ no "demo-user" — backend should use SWA auth identity
+        resumeId: selectedResume,
+        jobTitle: extractedData.jobTitle,
+        company: extractedData.company,
+        website: extractedData.website,
+        location: extractedData.location,
+        seniority: extractedData.seniority,
+        keywords: extractedData.keywords,
+        jobDescription,
+        aiMode,
+        studentMode,
+      };
 
       const res = await fetch("/api/jobs", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  credentials: "include", // ✅
-  body: JSON.stringify(payload),
-});
-
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
 
       if (!res.ok) throw new Error(await res.text());
       const job = await res.json();
@@ -552,17 +525,14 @@ export default function NewJob() {
     "bg-[radial-gradient(1100px_700px_at_10%_-10%,rgba(99,102,241,0.22),transparent_55%),radial-gradient(900px_600px_at_95%_0%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_650px_at_50%_110%,rgba(168,85,247,0.18),transparent_55%),linear-gradient(180deg,hsl(240,10%,6%),hsl(240,12%,5%))]";
   const surface =
     "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
-  const edge =
-    "border border-white/10 ring-1 ring-white/5"; // crisp edges
-  const brandRing =
-    "ring-1 ring-violet-400/20 border-violet-400/20"; // subtle brand identity
+  const edge = "border border-white/10 ring-1 ring-white/5";
+  const brandRing = "ring-1 ring-violet-400/20 border-violet-400/20";
   const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
   const ambient =
     "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
   const neonLine =
     "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
-  // Interactive motion (unified)
   const hoverLift =
     "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
   const pressFx = "active:scale-[0.99]";
@@ -586,26 +556,15 @@ export default function NewJob() {
   const renderPayPrimary = () => {
     const cur = extractedData?.payCurrency || "USD";
     const symbol = cur === "USD" ? "$" : `${cur} `;
-    const periodMap = {
-      hour: "/hr",
-      year: "/yr",
-      month: "/mo",
-      week: "/wk",
-      day: "/day",
-    };
-    const suffix = extractedData?.payPeriod
-      ? periodMap[extractedData.payPeriod] || ""
-      : "";
+    const periodMap = { hour: "/hr", year: "/yr", month: "/mo", week: "/wk", day: "/day" };
+    const suffix = extractedData?.payPeriod ? periodMap[extractedData.payPeriod] || "" : "";
 
     const min = fmtMoney(extractedData?.payMin);
     const max = fmtMoney(extractedData?.payMax);
 
     if (min && max) {
-      return min === max
-        ? `${symbol}${min}${suffix}`
-        : `${symbol}${min} – ${symbol}${max}${suffix}`;
+      return min === max ? `${symbol}${min}${suffix}` : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
-
     if (extractedData?.payText) return extractedData.payText;
     return null;
   };
@@ -633,7 +592,6 @@ export default function NewJob() {
     return `Top ${top}% pay`;
   };
 
-  // default resume detection (star)
   const isDefaultResume = (r) =>
     r?.isDefault === true || r?.default === true || r?.is_default === true;
 
@@ -647,16 +605,13 @@ export default function NewJob() {
       req.certificationsPreferred?.length ||
       req.workModelRequired);
 
-  // ✅ NEW: preview blur styles (micro-previews)
-  const previewBlurLine =
-    "text-xs text-white/65 leading-relaxed blur-sm select-none";
+  const previewBlurLine = "text-xs text-white/65 leading-relaxed blur-sm select-none";
   const previewBlurBlock =
     "mt-2 space-y-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]";
 
   const previewSafe = previewData || null;
   const estSeconds =
-    typeof previewSafe?.estimatedSeconds === "number" &&
-    Number.isFinite(previewSafe.estimatedSeconds)
+    typeof previewSafe?.estimatedSeconds === "number" && Number.isFinite(previewSafe.estimatedSeconds)
       ? Math.round(previewSafe.estimatedSeconds)
       : 15;
 
@@ -702,7 +657,6 @@ export default function NewJob() {
               </div>
             </div>
 
-            {/* Reduced “exit anxiety” but still visible */}
             <Button
               variant="ghost"
               onClick={() => navigate(createPageUrl("AppHome"))}
@@ -741,9 +695,7 @@ export default function NewJob() {
                 <h2 className="text-2xl font-bold text-white mb-2">
                   Scanning job post…
                 </h2>
-                <p className="text-white/65 mb-7">
-                  Building your packet blueprint
-                </p>
+                <p className="text-white/65 mb-7">Building your packet blueprint</p>
 
                 <div className="space-y-3 text-left">
                   <div className="flex items-center gap-3 text-sm text-white/85">
@@ -935,7 +887,10 @@ export default function NewJob() {
                           )}
                           {Array.isArray(extractedData.complianceTags) &&
                             extractedData.complianceTags.slice(0, 6).map((tag, i) => (
-                              <span key={i} className={`${pillBrand} flex items-center gap-2`}>
+                              <span
+                                key={i}
+                                className={`${pillBrand} flex items-center gap-2`}
+                              >
                                 <ShieldCheck className="w-4 h-4 text-violet-100" />
                                 {tag}
                               </span>
@@ -1153,7 +1108,6 @@ export default function NewJob() {
                           Optimized bullets + keywords for ATS.
                         </p>
 
-                        {/* ✅ NEW: Resume micro-preview */}
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
                             <>
@@ -1190,7 +1144,6 @@ export default function NewJob() {
                           Matching tone to role + company.
                         </p>
 
-                        {/* ✅ NEW: Cover letter micro-preview */}
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
                             <div className="h-3 rounded bg-white/10 w-[88%]" />
@@ -1219,7 +1172,6 @@ export default function NewJob() {
                           Next steps + quick apply notes.
                         </p>
 
-                        {/* ✅ NEW: Checklist micro-preview */}
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
                             <>
@@ -1241,7 +1193,6 @@ export default function NewJob() {
                     </div>
                   </div>
 
-                  {/* ✅ NEW: Estimated generation time */}
                   <div className="mt-5 flex items-center gap-2 text-xs text-white/60">
                     <Clock className="w-4 h-4 text-cyan-200" />
                     Generates in ~{estSeconds} seconds
@@ -1280,7 +1231,6 @@ export default function NewJob() {
                 onClick={() => {
                   setShowConfirm(false);
                   setExtractedData(null);
-                  // ✅ reset previews when leaving confirm
                   setPreviewData(null);
                 }}
                 variant="outline"
@@ -1323,15 +1273,7 @@ export default function NewJob() {
               </p>
             </div>
 
-            <div
-              className={[
-                "rounded-2xl p-7",
-                surface,
-                edge,
-                brandRing,
-                ambient,
-              ].join(" ")}
-            >
+            <div className={[ "rounded-2xl p-7", surface, edge, brandRing, ambient ].join(" ")}>
               {/* Top row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {/* Resume selector */}
@@ -1592,9 +1534,7 @@ export default function NewJob() {
                 >
                   Generate Packet
                 </Button>
-                <p className="text-center text-sm mt-2 text-white/60">
-                  Uses 1 credit
-                </p>
+                <p className="text-center text-sm mt-2 text-white/60">Uses 1 credit</p>
               </div>
             </div>
           </div>

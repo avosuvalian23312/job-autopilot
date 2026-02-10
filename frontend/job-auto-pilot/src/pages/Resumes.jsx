@@ -620,12 +620,17 @@ export default function Resumes() {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleUpload}
-                className="flex-1 bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 font-semibold premium-button"
-              >
-                Upload Resume
-              </Button>
+             <Button
+  type="button"
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleUpload();
+  }}
+  className="flex-1 bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 font-semibold premium-button"
+>
+  Upload Resume
+</Button>
             </div>
           </div>
         </DialogContent>
