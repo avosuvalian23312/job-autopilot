@@ -1,3 +1,6 @@
+import { motion } from "framer-motion";
+
+
 const companies = [
   { name: "Microsoft", logo: "/logos/64px-Microsoft_logo.svg.png" },
   { name: "Amazon", logo: "/logos/64px-Amazon_logo.svg.png" },
