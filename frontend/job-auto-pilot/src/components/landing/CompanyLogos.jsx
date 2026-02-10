@@ -7,7 +7,7 @@ const companies = [
   { name: "Apple", logo: "/logos/64px-Apple_logo_black.svg.png" },
   { name: "Netflix", logo: "/logos/64px-Netflix_2015_logo.svg.png" },
   { name: "Stripe", logo: "/logos/64px-Stripe_logo_revised_2016.svg.png" },
-  { name: "Shopify", logo: "/logos/64px-Shopify_logo_2018.svg.png" },
+  { name: "Shopify", logo: "/logos/64px-Stripe_Logo,_revised_2016.svg.png" },
   { name: "LinkedIn", logo: "/logos/64px-LinkedIn_icon.svg.png" },
   { name: "Salesforce", logo: "/logos/64px-Salesforce.com_logo.svg.png" },
   { name: "Uber", logo: "/logos/64px-Uber_logo_2018.svg.png" },
