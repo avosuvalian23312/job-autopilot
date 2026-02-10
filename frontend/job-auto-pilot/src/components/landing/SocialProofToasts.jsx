@@ -1,7 +1,7 @@
 // SocialProofToasts.jsx
 // Bottom-left floating social-proof popups (stack) for dark theme.
 // - Generates randomized mock events every few seconds
-// - When NOT hovering: only the newest card is visible (no overlap mess)
+// - When NOT hovering: newest card visible + subtle ghost stack behind (illusion of multiple)
 // - When hovering: expands into a stacked list (like the example screenshot)
 // - Hover also pauses generation + adds a subtle zoom-in animation
 // - Dismissible per-card, and "Clear" to remove all
@@ -59,22 +59,27 @@ const JOB_TITLES = [
 
 const EVENT_TEMPLATES = [
   {
-    title: ({ city, countryCode }) => `Someone from ${city}, ${countryCode} generated a tailored resume`,
+    title: ({ city, countryCode }) =>
+      `Someone from ${city}, ${countryCode} generated a tailored resume`,
     subtitle: () => `ATS keywords + stronger bullets in under 60 seconds`,
     icon: "spark",
   },
   {
-    title: ({ city, countryCode }) => `Candidate in ${city}, ${countryCode} landed an interview`,
-    subtitle: ({ jobTitle }) => `Used Job Autopilot for ${jobTitle} prep + packet`,
+    title: ({ city, countryCode }) =>
+      `Candidate in ${city}, ${countryCode} landed an interview`,
+    subtitle: ({ jobTitle }) =>
+      `Used Job Autopilot for ${jobTitle} prep + packet`,
     icon: "check",
   },
   {
-    title: ({ city, countryCode }) => `New job packet created from ${city}, ${countryCode}`,
+    title: ({ city, countryCode }) =>
+      `New job packet created from ${city}, ${countryCode}`,
     subtitle: () => `Resume + cover letter + checklist ready to apply`,
     icon: "doc",
   },
   {
-    title: ({ city, countryCode }) => `Someone from ${city}, ${countryCode} improved their callback rate`,
+    title: ({ city, countryCode }) =>
+      `Someone from ${city}, ${countryCode} improved their callback rate`,
     subtitle: () => `Better targeting + cleaner bullets = more replies`,
     icon: "up",
   },
@@ -105,7 +110,6 @@ function makeEvent() {
   const country = pick(COUNTRIES);
   const city = pick(CITIES);
   const jobTitle = pick(JOB_TITLES);
-
   const template = pick(EVENT_TEMPLATES);
 
   const minutesAgo = randInt(2, 60 * 24 * 45); // up to ~45 days
@@ -187,7 +191,12 @@ function DocIcon({ className = "" }) {
         strokeWidth="1.8"
       />
       <path d="M14 3v4a2 2 0 0 0 2 2h4" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 13h8M8 17h8M8 9h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M8 13h8M8 17h8M8 9h4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -195,8 +204,20 @@ function DocIcon({ className = "" }) {
 function UpIcon({ className = "" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 17l4-4 3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M19 10V5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M7 17l4-4 3 3 5-6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M19 10V5h-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -216,7 +237,6 @@ function StarIcon({ className = "" }) {
 
 function EventIcon({ kind }) {
   const common = "h-5 w-5";
-  // Dark theme icon colors
   switch (kind) {
     case "spark":
       return <SparkIcon className={`${common} text-purple-300`} />;
@@ -238,12 +258,14 @@ export default function SocialProofToasts({
   left = 22,
   hideOnMobile = false,
   maxItems = 6,
+
+  // ✅ NEW: show subtle stacked “ghost” cards even when not hovered
+  showGhostStack = true,
+  ghostCount = 2, // how many cards behind the main one
 }) {
   const [items, setItems] = useState(() => {
-    // Start with 2-3 pre-filled items so it looks alive
     const startCount = 3;
-    const seed = Array.from({ length: startCount }, () => makeEvent());
-    return seed;
+    return Array.from({ length: startCount }, () => makeEvent());
   });
 
   const [dismissed, setDismissed] = useState(false);
@@ -253,8 +275,6 @@ export default function SocialProofToasts({
 
   useEffect(() => {
     if (dismissed) return;
-
-    // Pause generation while hovered (so user can read)
     if (hovered) return;
 
     timerRef.current = setInterval(() => {
@@ -269,12 +289,10 @@ export default function SocialProofToasts({
     };
   }, [dismissed, hovered, intervalMs, maxItems]);
 
-  const visible = useMemo(() => {
-    // Not hovered: show only the newest card
-    if (!hovered) return items.slice(0, 1);
-    // Hovered: show the whole stack
-    return items;
-  }, [items, hovered]);
+  const expandedList = useMemo(() => items, [items]);
+
+  // newest item
+  const top = items[0];
 
   if (dismissed) return null;
 
@@ -293,111 +311,83 @@ export default function SocialProofToasts({
         onMouseLeave={() => setHovered(false)}
       >
         <div className="relative">
-          {/* Stack */}
-          <div
-            className={[
-              "flex flex-col gap-3",
-              "transition-all duration-300",
-            ].join(" ")}
-          >
-            {visible.map((e, i) => {
-              const isTop = i === 0;
-              const collapsed = !hovered;
+          {/* ✅ Collapsed state: render main card + ghost stack behind */}
+          {!hovered && top && (
+            <div className="relative">
+              {/* Ghost cards behind (illusion) */}
+              {showGhostStack &&
+                items
+                  .slice(1, 1 + ghostCount)
+                  .map((e, i) => {
+                    // Make them look like “cards behind”:
+                    // slightly bigger, slightly down/right, more transparent
+                    const scale = 1 + (i + 1) * 0.03;
+                    const y = (i + 1) * 10;
+                    const x = (i + 1) * 6;
+                    const opacity = 0.20 - i * 0.06; // fades further back
 
-              // When hovered, show a neat vertical list.
-              // When not hovered, only 1 item rendered so no overlap.
-              return (
-                <div
-                  key={e.id}
-                  className={[
-                    "relative overflow-hidden rounded-2xl border",
-                    "bg-[rgba(10,10,14,0.88)]",
-                    "border-white/10",
-                    "shadow-[0_12px_32px_rgba(0,0,0,0.45)]",
-                    "backdrop-blur-xl",
-                    // hover zoom effect (like your example)
-                    "transition-transform duration-250",
-                    hovered ? "hover:scale-[1.02]" : "",
-                    // subtle entrance for new cards
-                    "animate-[toastIn_420ms_ease-out]",
-                  ].join(" ")}
-                  style={{
-                    // when expanded, keep full opacity
-                    opacity: hovered ? 1 : 1,
-                    // optional: slightly scale down lower items for depth
-                    transform: hovered && !isTop ? `scale(${1 - Math.min(i, 4) * 0.01})` : undefined,
-                  }}
-                >
-                  {/* top accent bar */}
-                  <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-purple-500/70 via-cyan-400/35 to-transparent" />
+                    return (
+                      <div
+                        key={e.id}
+                        className={[
+                          "absolute inset-0 rounded-2xl border border-white/10",
+                          "bg-[rgba(10,10,14,0.55)]",
+                          "shadow-[0_10px_26px_rgba(0,0,0,0.35)]",
+                          "backdrop-blur-xl",
+                        ].join(" ")}
+                        style={{
+                          transform: `translate(${x}px, ${y}px) scale(${scale})`,
+                          opacity: Math.max(opacity, 0.06),
+                          filter: "blur(0.2px)",
+                          zIndex: 0,
+                        }}
+                        aria-hidden="true"
+                      />
+                    );
+                  })}
 
-                  {/* Dismiss (per card) */}
-                  <button
-                    type="button"
-                    className={[
-                      "absolute top-3 right-3 rounded-lg px-2 py-1 text-[12px]",
-                      "text-white/50 hover:text-white/80 hover:bg-white/5 transition",
-                      // don't show close button on collapsed? keep it on top item only for cleanliness
-                      collapsed && !isTop ? "hidden" : "",
-                    ].join(" ")}
-                    aria-label="Dismiss"
-                    title="Dismiss"
-                    onClick={() => {
-                      setItems((prev) => prev.filter((x) => x.id !== e.id));
-                    }}
-                  >
-                    ✕
-                  </button>
+              {/* Main visible card (top) */}
+              <ToastCard
+                e={top}
+                hovered={false}
+                isTop
+                onDismiss={() => setItems((prev) => prev.filter((x) => x.id !== top.id))}
+              />
+            </div>
+          )}
 
-                  <div className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white">
-                        <EventIcon kind={e.icon} />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-semibold text-white/90 leading-snug">
-                          {e.title}
-                        </div>
-
-                        <div className="mt-1 text-[12px] text-white/60 leading-snug">
-                          {e.subtitle}
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-[11px] text-white/40">{e.timeAgo}</div>
-
-                          <div className="inline-flex items-center gap-1.5 text-[11px] text-white/55">
-                            <ShieldIcon className="h-4 w-4 text-blue-300/80" />
-                            {e.badge}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* soft inner ring */}
-                  <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/5" />
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Footer actions (only on hover, like a "panel") */}
-          {hovered && items.length > 1 && (
-            <div className="mt-2 flex items-center justify-between px-1">
-              <div className="text-[11px] text-white/35">
-                Live activity • updating every {Math.round(intervalMs / 1000)}s
+          {/* ✅ Hovered state: show full list (your original behavior) */}
+          {hovered && (
+            <>
+              <div className="flex flex-col gap-3 transition-all duration-300">
+                {expandedList.map((e, i) => (
+                  <ToastCard
+                    key={e.id}
+                    e={e}
+                    hovered={true}
+                    isTop={i === 0}
+                    onDismiss={() => setItems((prev) => prev.filter((x) => x.id !== e.id))}
+                    hideDismiss={!((i === 0) || hovered)}
+                  />
+                ))}
               </div>
 
-              <button
-                type="button"
-                className="text-[11px] text-white/50 hover:text-white/80 transition"
-                onClick={() => setItems((prev) => prev.slice(0, 1))}
-              >
-                Clear
-              </button>
-            </div>
+              {items.length > 1 && (
+                <div className="mt-2 flex items-center justify-between px-1">
+                  <div className="text-[11px] text-white/35">
+                    Live activity • updating every {Math.round(intervalMs / 1000)}s
+                  </div>
+
+                  <button
+                    type="button"
+                    className="text-[11px] text-white/50 hover:text-white/80 transition"
+                    onClick={() => setItems((prev) => prev.slice(0, 1))}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -408,6 +398,78 @@ export default function SocialProofToasts({
           }
         `}</style>
       </div>
+    </div>
+  );
+}
+
+function ToastCard({ e, hovered, isTop, onDismiss, hideDismiss }) {
+  const collapsed = !hovered;
+
+  return (
+    <div
+      className={[
+        "relative overflow-hidden rounded-2xl border",
+        "bg-[rgba(10,10,14,0.88)]",
+        "border-white/10",
+        "shadow-[0_12px_32px_rgba(0,0,0,0.45)]",
+        "backdrop-blur-xl",
+        "transition-transform duration-250",
+        hovered ? "hover:scale-[1.02]" : "",
+        "animate-[toastIn_420ms_ease-out]",
+      ].join(" ")}
+      style={{
+        // On expanded stack, slightly scale down lower items for depth
+        transform:
+          hovered && !isTop ? `scale(${1 - Math.min(1, 0.01)})` : undefined,
+      }}
+    >
+      {/* top accent bar */}
+      <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-purple-500/70 via-cyan-400/35 to-transparent" />
+
+      {/* Dismiss */}
+      <button
+        type="button"
+        className={[
+          "absolute top-3 right-3 rounded-lg px-2 py-1 text-[12px]",
+          "text-white/50 hover:text-white/80 hover:bg-white/5 transition",
+          collapsed && !isTop ? "hidden" : "",
+          hideDismiss ? "hidden" : "",
+        ].join(" ")}
+        aria-label="Dismiss"
+        title="Dismiss"
+        onClick={onDismiss}
+      >
+        ✕
+      </button>
+
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white">
+            <EventIcon kind={e.icon} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-white/90 leading-snug">
+              {e.title}
+            </div>
+
+            <div className="mt-1 text-[12px] text-white/60 leading-snug">
+              {e.subtitle}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between">
+              <div className="text-[11px] text-white/40">{e.timeAgo}</div>
+
+              <div className="inline-flex items-center gap-1.5 text-[11px] text-white/55">
+                <ShieldIcon className="h-4 w-4 text-blue-300/80" />
+                {e.badge}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/5" />
     </div>
   );
 }
