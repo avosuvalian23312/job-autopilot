@@ -1,18 +1,28 @@
-import React from "react";
-import { motion } from "framer-motion";
-
-const CompanyBadge = ({ name }) => {
-  return (
-    <div className="px-4 py-2 rounded-full border border-white/15 bg-white/5 backdrop-blur-sm hover:bg-white/10 hover:border-white/25 transition-all duration-300">
-      <span className="text-white/80 text-sm font-medium">{name}</span>
-    </div>
-  );
-};
-
 const companies = [
-  "Microsoft", "Amazon", "Meta", "Apple", "Netflix", "Stripe",
-  "Shopify", "LinkedIn", "Adobe", "Salesforce", "Uber", "Airbnb"
+  { name: "Microsoft", logo: "/logos/64px-Microsoft_logo.svg.png" },
+  { name: "Amazon", logo: "/logos/64px-Amazon_logo.svg.png" },
+  { name: "Apple", logo: "/logos/64px-Apple_logo_black.svg.png" },
+  { name: "Netflix", logo: "/logos/64px-Netflix_2015_logo.svg.png" },
+  { name: "Stripe", logo: "/logos/64px-Stripe_logo_revised_2016.svg.png" },
+  { name: "Shopify", logo: "/logos/64px-Shopify_logo_2018.svg.png" },
+  { name: "LinkedIn", logo: "/logos/64px-LinkedIn_icon.svg.png" },
+  { name: "Salesforce", logo: "/logos/64px-Salesforce.com_logo.svg.png" },
+  { name: "Uber", logo: "/logos/64px-Uber_logo_2018.svg.png" },
+  { name: "Airbnb", logo: "/logos/64px-Airbnb_Logo_Bélo.svg.png" },
+  { name: "Adobe", logo: "/logos/adobe.svg.png" },
 ];
+
+
+const LogoItem = ({ name, logo }) => (
+  <div className="mx-6 flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity duration-300">
+    <img
+      src={logo}
+      alt={name}
+      className="h-8 md:h-9 w-auto object-contain grayscale hover:grayscale-0 transition-all duration-300"
+      loading="lazy"
+    />
+  </div>
+);
 
 export default function CompanyLogos() {
   return (
@@ -30,13 +40,13 @@ export default function CompanyLogos() {
         </motion.div>
 
         <div className="relative">
-          <div className="flex animate-scroll">
+          <div className="flex animate-scroll items-center">
             {[...companies, ...companies].map((company, i) => (
-              <div key={i} className="flex-shrink-0 mx-3">
-                <CompanyBadge name={company} />
-              </div>
+              <LogoItem key={i} {...company} />
             ))}
           </div>
+
+          {/* edge fades */}
           <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-[hsl(240,10%,4%)] to-transparent pointer-events-none" />
           <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-[hsl(240,10%,4%)] to-transparent pointer-events-none" />
         </div>
