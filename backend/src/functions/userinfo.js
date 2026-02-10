@@ -1,18 +1,11 @@
-const auth = require("../lib/auth");
-
 module.exports = async (request, context) => {
   if (request.method === "OPTIONS") {
-    return {
-      status: 204,
-      headers: cors(),
-    };
+    return { status: 204, headers: cors() };
   }
 
-  let user;
-  try {
-    user = auth.requireAuth(request);
-  } catch (e) {
-    return json(401, { ok: false, error: e.message });
+  const user = getSwaUser(request);
+  if (!user) {
+    return json(401, { ok: false, error: "Not authenticated" });
   }
 
   return json(200, {
@@ -24,6 +17,30 @@ module.exports = async (request, context) => {
     },
   });
 };
+
+function getSwaUser(request) {
+  const header =
+    request.headers.get("x-ms-client-principal") ||
+    request.headers.get("X-MS-CLIENT-PRINCIPAL");
+  if (!header) return null;
+
+  try {
+    const decoded = Buffer.from(header, "base64").toString("utf8");
+    const principal = JSON.parse(decoded);
+
+    // principal.userId exists when logged in via SWA auth
+    return {
+      userId: principal.userId || null,
+      email:
+        principal.userDetails ||
+        principal.claims?.find((c) => c.typ === "emails")?.val ||
+        null,
+      provider: principal.identityProvider || null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function cors() {
   return {
