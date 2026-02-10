@@ -924,7 +924,14 @@ export default function NewJob() {
                 <Textarea
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
-                  
+                  placeholder={`Paste the full job description here...
+
+Example:
+We are looking for a Software Engineer to join our team...
+
+Requirements:
+- 3+ years of experience with React
+- Strong problem-solving skills...`}
                   className="min-h-[340px] border-white/12 text-white resize-none text-base bg-white/[0.05]"
                 />
                 <p className="text-sm mt-2 text-white/55">
