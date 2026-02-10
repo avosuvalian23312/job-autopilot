@@ -97,17 +97,32 @@ module.exports = async function (request, context) {
     const cosmos = new CosmosClient(COSMOS_CONNECTION_STRING);
     const container = cosmos.database(COSMOS_DB_NAME).container(COSMOS_RESUMES_CONTAINER_NAME);
 
-    const doc = {
-      id: `resume:current:${safeUserId(user.userId)}`,
-      userId: user.userId, // must match PK if your container is /userId
-      email: user.email,
-      blobName,
-      blobUrl,
-      originalName,
-      contentType,
-      size,
-      uploadedAt: new Date().toISOString(),
-    };
+    const now = new Date().toISOString();
+
+const doc = {
+  // UNIQUE per upload
+  id: `resume:${safeUserId(user.userId)}:${Date.now()}`,
+
+  // Partition key
+  userId: user.userId,
+
+  email: user.email,
+
+  // UI fields
+  name: body.name || originalName,
+  isDefault: body.isDefault ?? false,
+
+  // Blob info
+  blobName,
+  blobUrl,
+  originalName,
+  contentType,
+  size,
+
+  uploadedAt: now,
+  updated_date: now.split("T")[0],
+};
+
 
     await container.items.upsert(doc, { partitionKey: user.userId });
 

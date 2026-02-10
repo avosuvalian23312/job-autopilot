@@ -61,6 +61,13 @@ app.http("resumeSave", {
   authLevel: "anonymous",
   handler: require("./src/functions/resumeSave"),
 });
+// index.js
+app.http("resumeList", {
+  methods: ["GET", "OPTIONS"],
+  route: "resume/list",
+  authLevel: "anonymous",
+  handler: require("./src/functions/resumeList"),
+});
 
 // User info (requires Authorization Bearer token)
 app.http("userinfo", {
@@ -69,4 +76,22 @@ app.http("userinfo", {
   authLevel: "anonymous",
   handler: require("./src/functions/userinfo"),
 });
+app.http("resumeRename", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/rename",
+  authLevel: "anonymous",
+  handler: require("./src/functions/resumeRename"),
+});
 
+app.http("resumeDelete", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/delete",
+  authLevel: "anonymous",
+  handler: require("./src/functions/resumeDelete"),
+});
+app.http("resumeSetDefault", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/set-default",
+  authLevel: "anonymous",
+  handler: require("./src/functions/resumeSetDefault"),
+});
