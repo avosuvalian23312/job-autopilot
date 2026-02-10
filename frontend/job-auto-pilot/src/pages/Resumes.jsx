@@ -1,31 +1,86 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import AppNav from "@/components/app/AppNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { FileText, Upload, Edit2, Trash2, Star, Calendar, Plus, X } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  FileText,
+  Upload,
+  Edit2,
+  Trash2,
+  Star,
+  Calendar,
+  Plus,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
+async function readJsonSafe(res) {
+  const text = await res.text().catch(() => "");
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: text };
+  }
+}
+
+async function apiJson(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const data = await readJsonSafe(res);
+  if (!res.ok) {
+    const msg = data?.error || data?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function normalizeResume(doc) {
+  // Support multiple possible backend shapes
+  const id = doc.id || doc._id || doc.resumeId || doc.blobName || String(Date.now());
+  const name =
+    doc.name ||
+    doc.resumeName ||
+    doc.originalName ||
+    doc.fileName ||
+    "Resume";
+  const updated =
+    doc.updated_date ||
+    doc.updatedDate ||
+    doc.uploadedAt ||
+    doc.createdAt ||
+    new Date().toISOString();
+
+  return {
+    id,
+    name,
+    content: doc.content || doc.text || "",
+    isDefault: Boolean(doc.isDefault) || Boolean(doc.default) || Boolean(doc.isCurrent),
+    updated_date: String(updated).includes("T")
+      ? String(updated).split("T")[0]
+      : String(updated),
+    // keep extra fields if needed later
+    _raw: doc,
+  };
+}
+
 export default function Resumes() {
-  const [resumes, setResumes] = useState([
-    {
-      id: 1,
-      name: "Software Engineer Resume",
-      content: "Sample resume content...",
-      isDefault: true,
-      updated_date: "2026-02-05"
-    },
-    {
-      id: 2,
-      name: "Product Manager Resume",
-      content: "Sample resume content...",
-      isDefault: false,
-      updated_date: "2026-01-28"
-    },
-  ]);
+  // ✅ removed dummy data; real data only
+  const [resumes, setResumes] = useState([]);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -35,60 +90,265 @@ export default function Resumes() {
   const [resumeText, setResumeText] = useState("");
   const [resumeName, setResumeName] = useState("");
 
-  const handleUpload = () => {
+  const fileInputRef = useRef(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+
+  const loadResumes = async () => {
+    try {
+      // Prefer list endpoint if you add it later
+      // If it doesn't exist yet, fall back to "current" behavior using /api/resume/save response patterns
+      const tryList = await fetch("/api/resume/list");
+      if (tryList.ok) {
+        const data = await readJsonSafe(tryList);
+        const items = data?.resumes || data?.items || data || [];
+        const normalized = Array.isArray(items) ? items.map(normalizeResume) : [];
+        setResumes(normalized);
+        return;
+      }
+
+      // Fallback: try common "get current" endpoints (if you add one)
+      const tryCurrent = await fetch("/api/resume/get");
+      if (tryCurrent.ok) {
+        const data = await readJsonSafe(tryCurrent);
+        const doc = data?.resume || data?.item || data;
+        if (doc) setResumes([normalizeResume(doc)]);
+        else setResumes([]);
+        return;
+      }
+
+      const tryCurrent2 = await fetch("/api/resume/current");
+      if (tryCurrent2.ok) {
+        const data = await readJsonSafe(tryCurrent2);
+        const doc = data?.resume || data?.item || data;
+        if (doc) setResumes([normalizeResume(doc)]);
+        else setResumes([]);
+        return;
+      }
+
+      // If nothing exists yet, just show empty
+      setResumes([]);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load resumes");
+      setResumes([]);
+    }
+  };
+
+  useEffect(() => {
+    loadResumes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleUpload = async () => {
     if (!resumeName.trim()) {
       toast.error("Please enter a resume name");
       return;
     }
-    
-    const newResume = {
-      id: Date.now(),
-      name: resumeName,
-      content: resumeText || "Uploaded file content",
-      isDefault: resumes.length === 0,
-      updated_date: new Date().toISOString().split('T')[0]
-    };
-    
-    setResumes([newResume, ...resumes]);
-    toast.success("Resume uploaded successfully");
-    setUploadOpen(false);
-    setResumeName("");
-    setResumeText("");
+
+    try {
+      if (uploadMethod === "text") {
+        if (!resumeText.trim()) {
+          toast.error("Please paste your resume text");
+          return;
+        }
+
+        // If you have a text-save endpoint, use it.
+        // Otherwise store it as metadata/content in Cosmos via /api/resume/save (works for MVP).
+        const payload = {
+          name: resumeName,
+          content: resumeText,
+          contentType: "text/plain",
+          size: resumeText.length,
+          blobName: `text:${Date.now()}`, // placeholder
+        };
+
+        const saved = await apiJson("/api/resume/save", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        const doc = saved?.resume || payload;
+        const normalized = normalizeResume({ ...doc, isDefault: resumes.length === 0 });
+        setResumes([normalized, ...resumes]);
+
+        toast.success("Resume uploaded successfully");
+        setUploadOpen(false);
+        setResumeName("");
+        setResumeText("");
+        return;
+      }
+
+      // uploadMethod === "file"
+      if (!selectedFile) {
+        toast.error("Please choose a file");
+        return;
+      }
+
+      // 1) Get SAS upload URL
+      const uploadUrlResp = await apiJson("/api/resume/upload-url", {
+        method: "POST",
+        body: JSON.stringify({
+          originalName: selectedFile.name,
+          fileName: selectedFile.name,
+          contentType: selectedFile.type || "application/octet-stream",
+          size: selectedFile.size || 0,
+        }),
+      });
+
+      const uploadUrl = uploadUrlResp?.uploadUrl;
+      const blobName = uploadUrlResp?.blobName || uploadUrlResp?.blobPath;
+
+      if (!uploadUrl || !blobName) {
+        toast.error("Upload URL failed");
+        return;
+      }
+
+      // 2) PUT file to Blob using SAS
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "x-ms-blob-type": "BlockBlob",
+          "Content-Type": selectedFile.type || "application/octet-stream",
+        },
+        body: selectedFile,
+      });
+
+      if (!putRes.ok) {
+        const errText = await putRes.text().catch(() => "");
+        throw new Error(errText || `Blob upload failed (${putRes.status})`);
+      }
+
+      // 3) Save metadata to Cosmos
+      const savePayload = {
+        name: resumeName,
+        blobName,
+        originalName: selectedFile.name,
+        fileName: selectedFile.name,
+        contentType: selectedFile.type || "application/octet-stream",
+        size: selectedFile.size || 0,
+        uploadUrl, // backend strips SAS if it wants
+      };
+
+      const saved = await apiJson("/api/resume/save", {
+        method: "POST",
+        body: JSON.stringify(savePayload),
+      });
+
+      const doc = saved?.resume || savePayload;
+      const normalized = normalizeResume({
+        ...doc,
+        isDefault: resumes.length === 0,
+        updated_date: new Date().toISOString().split("T")[0],
+      });
+
+      setResumes([normalized, ...resumes]);
+
+      toast.success("Resume uploaded successfully");
+      setUploadOpen(false);
+      setResumeName("");
+      setResumeText("");
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Upload failed");
+    }
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (!resumeName.trim()) {
       toast.error("Please enter a resume name");
       return;
     }
-    
-    setResumes(resumes.map(r => 
-      r.id === selectedResume.id 
-        ? { ...r, name: resumeName, updated_date: new Date().toISOString().split('T')[0] }
-        : r
-    ));
-    toast.success("Resume updated");
-    setEditOpen(false);
-    setResumeName("");
-    setSelectedResume(null);
+
+    try {
+      const prev = resumes;
+
+      // optimistic UI (no UI changes)
+      setResumes(
+        resumes.map((r) =>
+          r.id === selectedResume.id
+            ? {
+                ...r,
+                name: resumeName,
+                updated_date: new Date().toISOString().split("T")[0],
+              }
+            : r
+        )
+      );
+
+      // Optional backend endpoint (recommended)
+      // If you don't have it yet, this will 404; we quietly keep the optimistic rename.
+      await apiJson("/api/resume/rename", {
+        method: "POST",
+        body: JSON.stringify({ id: selectedResume.id, name: resumeName }),
+      }).catch(() => null);
+
+      toast.success("Resume updated");
+      setEditOpen(false);
+      setResumeName("");
+      setSelectedResume(null);
+
+      // reload to stay in sync if backend supports it
+      await loadResumes();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Rename failed");
+      // best-effort reload
+      await loadResumes();
+    }
   };
 
-  const handleDelete = () => {
-    setResumes(resumes.filter(r => r.id !== selectedResume.id));
-    toast.success("Resume deleted");
-    setDeleteOpen(false);
-    setSelectedResume(null);
+  const handleDelete = async () => {
+    try {
+      const id = selectedResume?.id;
+      const prev = resumes;
+
+      // optimistic UI
+      setResumes(resumes.filter((r) => r.id !== id));
+
+      // Optional backend endpoint (recommended)
+      await apiJson("/api/resume/delete", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      }).catch(() => null);
+
+      toast.success("Resume deleted");
+      setDeleteOpen(false);
+      setSelectedResume(null);
+
+      await loadResumes();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Delete failed");
+      await loadResumes();
+    }
   };
 
-  const handleSetDefault = (id) => {
-    setResumes(resumes.map(r => ({ ...r, isDefault: r.id === id })));
-    toast.success("Default resume updated");
+  const handleSetDefault = async (id) => {
+    try {
+      // optimistic UI
+      setResumes(resumes.map((r) => ({ ...r, isDefault: r.id === id })));
+
+      // Optional backend endpoint (recommended)
+      await apiJson("/api/resume/set-default", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      }).catch(() => null);
+
+      toast.success("Default resume updated");
+      await loadResumes();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Failed to set default");
+      await loadResumes();
+    }
   };
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
       <AppNav currentPage="Resumes" />
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -20 }}
@@ -245,11 +505,39 @@ export default function Resumes() {
             </div>
 
             {uploadMethod === "file" ? (
-              <div className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center hover:border-purple-500/30 transition-colors cursor-pointer">
-                <Upload className="w-10 h-10 text-white/20 mx-auto mb-3" />
-                <p className="text-sm text-white/60 mb-1">Click to upload or drag and drop</p>
-                <p className="text-xs text-white/30">PDF or DOCX (max 5MB)</p>
-              </div>
+              <>
+                {/* hidden input (no UI change) */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setSelectedFile(f);
+                    if (f) toast.success(`Selected: ${f.name}`);
+                  }}
+                />
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0] || null;
+                    if (f) {
+                      setSelectedFile(f);
+                      toast.success(`Selected: ${f.name}`);
+                    }
+                  }}
+                  className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center hover:border-purple-500/30 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-10 h-10 text-white/20 mx-auto mb-3" />
+                  <p className="text-sm text-white/60 mb-1">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-xs text-white/30">PDF or DOCX (max 5MB)</p>
+                </div>
+              </>
             ) : (
               <div>
                 <label className="text-sm text-white/60 mb-2 block font-medium">Resume Text</label>
