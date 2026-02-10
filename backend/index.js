@@ -1,11 +1,24 @@
+// backend/index.js (Azure Functions v4)
+// Single place to register ALL HTTP routes.
+
 const { app } = require("@azure/functions");
 
-/*
-  RULES (important):
-  - Do NOT destructure imports
-  - Each function file must export the handler directly
-  - All routes must be registered here with app.http()
-*/
+// ========================
+// Health (useful to confirm API is deployed)
+// ========================
+app.http("health", {
+  methods: ["GET", "OPTIONS"],
+  route: "health",
+  authLevel: "anonymous",
+  handler: async (request) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+    return {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ok: true }),
+    };
+  },
+});
 
 // ========================
 // Core APIs
@@ -13,21 +26,23 @@ const { app } = require("@azure/functions");
 
 // Generate documents
 app.http("generateDocuments", {
-  methods: ["POST"],
+  methods: ["POST", "OPTIONS"],
+  route: "generate-documents",
   authLevel: "anonymous",
   handler: require("./src/functions/generateDocuments"),
 });
 
 // List jobs
 app.http("listJobs", {
-  methods: ["GET"],
+  methods: ["GET", "OPTIONS"],
+  route: "jobs",
   authLevel: "anonymous",
   handler: require("./src/functions/listJobs"),
 });
 
 // Update job status
 app.http("updateJobStatus", {
-  methods: ["PUT", "PATCH"],
+  methods: ["PUT", "PATCH", "OPTIONS"],
   route: "jobs/{jobId}/status",
   authLevel: "anonymous",
   handler: require("./src/functions/updateJobStatus"),
@@ -37,8 +52,6 @@ app.http("updateJobStatus", {
 // Auth APIs
 // ========================
 
-
-
 // Provider token → app JWT
 app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
@@ -46,6 +59,11 @@ app.http("authExchange", {
   authLevel: "anonymous",
   handler: require("./src/functions/authExchange"),
 });
+
+// ========================
+// Resume APIs
+// ========================
+
 // Resume upload SAS
 app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
@@ -61,7 +79,8 @@ app.http("resumeSave", {
   authLevel: "anonymous",
   handler: require("./src/functions/resumeSave"),
 });
-// index.js
+
+// List resumes
 app.http("resumeList", {
   methods: ["GET", "OPTIONS"],
   route: "resume/list",
@@ -69,13 +88,15 @@ app.http("resumeList", {
   handler: require("./src/functions/resumeList"),
 });
 
-// User info (requires Authorization Bearer token)
-app.http("userinfo", {
-  methods: ["GET", "OPTIONS"],
-  route: "userinfo",
+// Read resume content/SAS url
+app.http("resumeReadUrl", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/read-url",
   authLevel: "anonymous",
-  handler: require("./src/functions/userinfo"),
+  handler: require("./src/functions/resumeReadUrl"),
 });
+
+// Rename resume
 app.http("resumeRename", {
   methods: ["POST", "OPTIONS"],
   route: "resume/rename",
@@ -83,12 +104,15 @@ app.http("resumeRename", {
   handler: require("./src/functions/resumeRename"),
 });
 
+// Delete resume
 app.http("resumeDelete", {
   methods: ["POST", "OPTIONS"],
   route: "resume/delete",
   authLevel: "anonymous",
   handler: require("./src/functions/resumeDelete"),
 });
+
+// Set default resume
 app.http("resumeSetDefault", {
   methods: ["POST", "OPTIONS"],
   route: "resume/set-default",
@@ -96,9 +120,10 @@ app.http("resumeSetDefault", {
   handler: require("./src/functions/resumeSetDefault"),
 });
 
-app.http("resumeReadUrl", {
-  methods: ["POST", "OPTIONS"],
-  route: "resume/read-url",
+// User info
+app.http("userinfo", {
+  methods: ["GET", "OPTIONS"],
+  route: "userinfo",
   authLevel: "anonymous",
-  handler: require("./src/functions/resumeReadUrl"),
+  handler: require("./src/functions/userinfo"),
 });
