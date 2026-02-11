@@ -1,50 +1,49 @@
-// backend/src/functions/updateJobStatus.js
 "use strict";
 
 const { CosmosClient } = require("@azure/cosmos");
-const { getSwaUserId } = require("../lib/swaUser"); // returns STRING userId
+const { getSwaUserId } = require("../lib/swaUser");
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
   .database(process.env.COSMOS_DB_NAME)
-  .container(process.env.COSMOS_CONTAINER_NAME); // jobs container (PK=/userId)
+  .container(process.env.COSMOS_CONTAINER_NAME);
 
 async function updateJobStatus(request, context) {
   try {
     const jobId = request?.params?.jobId;
     if (!jobId) return { status: 400, jsonBody: { ok: false, error: "Missing jobId" } };
 
-    // ✅ userId from SWA only
+    // ✅ now a STRING
     const userId = getSwaUserId(request);
     if (!userId) return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
 
     let body = {};
-    try {
-      body = await request.json();
-    } catch {
-      body = {};
-    }
+    try { body = await request.json(); } catch {}
 
     const newStatus = body?.status;
     if (!newStatus) return { status: 400, jsonBody: { ok: false, error: "Missing status" } };
 
-    // ✅ read with PK=userId
-    const { resource: job } = await container.item(jobId, userId).read();
-    if (!job) return { status: 404, jsonBody: { ok: false, error: "Job not found" } };
+    // ✅ Cosmos throws on not found / wrong PK; handle 404 cleanly
+    let job;
+    try {
+      const resp = await container.item(jobId, userId).read();
+      job = resp.resource;
+    } catch (e) {
+      if (e.code === 404) {
+        return { status: 404, jsonBody: { ok: false, error: "Job not found" } };
+      }
+      throw e;
+    }
 
     job.status = newStatus;
     job.updatedAt = new Date().toISOString();
 
-    // ✅ replace with correct id + PK
     const { resource: saved } = await container.item(job.id, userId).replace(job);
 
     return { status: 200, jsonBody: { ok: true, job: saved } };
   } catch (err) {
     context.error("updateJobStatus error:", err);
-    return {
-      status: 500,
-      jsonBody: { ok: false, error: "Update failed", details: err?.message || "Unknown error" },
-    };
+    return { status: 500, jsonBody: { ok: false, error: "Update failed", details: err?.message || "Unknown error" } };
   }
 }
 

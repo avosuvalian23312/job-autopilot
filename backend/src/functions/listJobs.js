@@ -1,20 +1,19 @@
-// backend/src/functions/listJobs.js
 "use strict";
 
 const { CosmosClient } = require("@azure/cosmos");
-const { getSwaUserId } = require("../lib/swaUser"); // must match export
+const { getSwaUserId } = require("../lib/swaUser"); // returns STRING userId
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
   .database(process.env.COSMOS_DB_NAME)
-  .container(process.env.COSMOS_CONTAINER_NAME); // jobs container
+  .container(process.env.COSMOS_CONTAINER_NAME); // jobs container (PK = /userId)
 
 async function listJobs(request, context) {
   try {
-    // ✅ SWA auth user (do NOT accept userId from query/body)
-    const user = getSwaUserId(request);
+    // ✅ SWA auth user (DO NOT accept userId from frontend)
+    const userId = getSwaUserId(request); // STRING
 
-    if (!user?.userId) {
+    if (!userId) {
       return {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -22,14 +21,16 @@ async function listJobs(request, context) {
       };
     }
 
-    const userId = user.userId;
-
-    // (Optional but recommended) quick debug logs
-    context.log("DB:", process.env.COSMOS_DB_NAME);
+    // 🔎 Debug logs (safe to remove later)
+    context.log("Cosmos DB:", process.env.COSMOS_DB_NAME);
     context.log("Container:", process.env.COSMOS_CONTAINER_NAME);
-    context.log("UserId:", userId);
+    context.log("SWA userId:", userId);
+    context.log(
+      "Has principal header:",
+      !!request?.headers?.get?.("x-ms-client-principal")
+    );
 
-    // ✅ If your container PK is /userId, pass partitionKey for speed + correctness
+    // ✅ Query within the correct partition
     const { resources } = await container.items
       .query(
         {
