@@ -52,63 +52,72 @@ export default function Applications() {
 
   // ✅ SWA-safe fetch helper (cookies included)
   const apiFetch = async (path, options = {}) => {
-  const { body, headers, ...rest } = options;
+    const { body, headers, ...rest } = options;
 
-  const isJsonObject =
-    body != null && typeof body === "object" && !(body instanceof FormData);
+    const isJsonObject =
+      body != null && typeof body === "object" && !(body instanceof FormData);
 
-  const res = await fetch(path, {
-    ...rest,
-    credentials: "include", // ✅ REQUIRED for SWA auth cookies
-    headers: {
-      ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
-      ...(headers || {}),
-    },
-    body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
-  });
+    const res = await fetch(path, {
+      ...rest,
+      credentials: "include", // ✅ REQUIRED for SWA auth cookies
+      headers: {
+        ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
+        ...(headers || {}),
+      },
+      body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
+    });
 
-  const data = await readJsonSafe(res);
+    const data = await readJsonSafe(res);
 
-  if (!res.ok) {
-    const msg =
-      data?.error ||
-      data?.message ||
-      data?.detail ||
-      data?.raw ||
-      `Request failed (${res.status})`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
-
-  return data;
-};
-
-  // ✅ get SWA userId from /.auth/me (clientPrincipal)
-  // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
-const getSwaUserId = async () => {
-  if (swaUserIdRef.current) return swaUserIdRef.current;
-
-  try {
-    const me = await apiFetch("/.auth/me", { method: "GET" });
-
-    // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
-    const entry = Array.isArray(me) ? me[0] : null;
-    const cp = entry?.clientPrincipal || null;
-
-    const userId = cp?.userId || null;
-    if (userId) {
-      swaUserIdRef.current = String(userId);
-      return swaUserIdRef.current;
+    if (!res.ok) {
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        data?.raw ||
+        `Request failed (${res.status})`;
+      const err = new Error(msg);
+      err.status = res.status;
+      err.data = data;
+      throw err;
     }
-  } catch {
-    // ignore
-  }
 
-  return null; // ✅ logged out (no fake ids)
-};
+    return data;
+  };
 
+  // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
+  const getSwaUserId = async () => {
+    if (swaUserIdRef.current) return swaUserIdRef.current;
+
+    try {
+      const me = await apiFetch("/.auth/me", { method: "GET" });
+
+      // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
+      const entry = Array.isArray(me) ? me[0] : null;
+      const cp = entry?.clientPrincipal || null;
+
+      const userId = cp?.userId || null;
+      if (userId) {
+        swaUserIdRef.current = String(userId);
+        return swaUserIdRef.current;
+      }
+    } catch {
+      // ignore
+    }
+
+    return null; // ✅ logged out (no fake ids)
+  };
+
+  const redirectToSwaLogin = (provider = "google") => {
+    const returnTo =
+      window.location.pathname +
+      window.location.search +
+      window.location.hash;
+    const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(
+      returnTo
+    )}`;
+    window.location.assign(url);
+  };
 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
@@ -162,6 +171,8 @@ const getSwaUserId = async () => {
         : [],
 
       keywords: Array.isArray(job?.keywords) ? job.keywords : [],
+
+      // pay
       payText: job?.payText ?? job?.pay_text ?? null,
       payMin:
         typeof job?.payMin === "number"
@@ -209,56 +220,29 @@ const getSwaUserId = async () => {
   const loadJobs = async () => {
     setIsLoading(true);
     try {
-      // ✅ SWA userId from /.auth/me
-     const userId = await getSwaUserId();
-const redirectToSwaLogin = (provider = "google") => {
-  const returnTo = window.location.pathname + window.location.search + window.location.hash;
-  const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
-  window.location.assign(url);
-};
+      const userId = await getSwaUserId();
 
-const loadJobs = async () => {
-  setIsLoading(true);
-  try {
-    const userId = await getSwaUserId();
+      // If logged out (or SWA not seeing auth), go to SWA login properly
+      if (!userId) {
+        toast.error("Session expired — please sign in.");
+        redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
+        return;
+      }
 
-    // If logged out (or SWA not seeing auth), go to SWA login properly
-    if (!userId) {
-      toast.error("Session expired — please sign in.");
-      redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
-      return;
-    }
-
-    const data = await apiFetch("/api/jobs", { method: "GET" });
-    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
-    const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
-    setApplications(normalized);
-  } catch (e) {
-    console.error(e);
-
-    // If your API returns 401, also send them through SWA login
-    if (e?.status === 401) {
-      toast.error("Not authorized — please sign in again.");
-      redirectToSwaLogin("google");
-      return;
-    }
-
-    toast.error("Failed to load applications.");
-    setApplications([]);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-const data = await apiFetch("/api/jobs", { method: "GET" });
-
-
+      const data = await apiFetch("/api/jobs", { method: "GET" });
       const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
       const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
-
       setApplications(normalized);
     } catch (e) {
       console.error(e);
+
+      // If your API returns 401, also send them through SWA login
+      if (e?.status === 401) {
+        toast.error("Not authorized — please sign in again.");
+        redirectToSwaLogin("google");
+        return;
+      }
+
       toast.error("Failed to load applications.");
       setApplications([]);
     } finally {
@@ -271,65 +255,205 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ---------------------------
+  // Status meta + UI helpers
+  // ---------------------------
+  const STATUS_META = {
+    all: {
+      label: "All Status",
+      dot: "bg-white/45",
+      itemHover:
+        "hover:bg-white/[0.06] hover:border-white/18 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+      itemFocus:
+        "data-[highlighted]:bg-white/[0.08] data-[highlighted]:border-white/20 data-[highlighted]:shadow-[0_0_0_1px_rgba(255,255,255,0.10)]",
+    },
+    generated: {
+      label: "Generated",
+      dot: "bg-violet-400",
+      itemHover:
+        "hover:bg-violet-500/12 hover:border-violet-300/25 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.20)]",
+      itemFocus:
+        "data-[highlighted]:bg-violet-500/20 data-[highlighted]:border-violet-300/30 data-[highlighted]:shadow-[0_0_0_1px_rgba(167,139,250,0.22)]",
+    },
+    applied: {
+      label: "Applied",
+      dot: "bg-sky-400",
+      itemHover:
+        "hover:bg-sky-500/12 hover:border-sky-300/25 hover:shadow-[0_0_0_1px_rgba(125,211,252,0.18)]",
+      itemFocus:
+        "data-[highlighted]:bg-sky-500/20 data-[highlighted]:border-sky-300/30 data-[highlighted]:shadow-[0_0_0_1px_rgba(125,211,252,0.20)]",
+    },
+    interview: {
+      label: "Interview",
+      dot: "bg-amber-400",
+      itemHover:
+        "hover:bg-amber-500/12 hover:border-amber-300/25 hover:shadow-[0_0_0_1px_rgba(252,211,77,0.18)]",
+      itemFocus:
+        "data-[highlighted]:bg-amber-500/20 data-[highlighted]:border-amber-300/30 data-[highlighted]:shadow-[0_0_0_1px_rgba(252,211,77,0.20)]",
+    },
+    offer: {
+      label: "Offer",
+      dot: "bg-emerald-400",
+      itemHover:
+        "hover:bg-emerald-500/12 hover:border-emerald-300/25 hover:shadow-[0_0_0_1px_rgba(110,231,183,0.18)]",
+      itemFocus:
+        "data-[highlighted]:bg-emerald-500/20 data-[highlighted]:border-emerald-300/30 data-[highlighted]:shadow-[0_0_0_1px_rgba(110,231,183,0.20)]",
+    },
+    rejected: {
+      label: "Rejected",
+      dot: "bg-rose-400",
+      itemHover:
+        "hover:bg-rose-500/12 hover:border-rose-300/25 hover:shadow-[0_0_0_1px_rgba(251,113,133,0.18)]",
+      itemFocus:
+        "data-[highlighted]:bg-rose-500/20 data-[highlighted]:border-rose-300/30 data-[highlighted]:shadow-[0_0_0_1px_rgba(251,113,133,0.20)]",
+    },
+  };
+
   const statusLabel = (s) => {
     const v = String(s || "").toLowerCase();
-    if (v === "generated") return "Generated";
-    if (v === "applied") return "Applied";
-    if (v === "interview") return "Interview";
-    if (v === "offer") return "Offer";
-    if (v === "rejected") return "Rejected";
+    if (STATUS_META[v]?.label) return STATUS_META[v].label;
     return v ? v[0].toUpperCase() + v.slice(1) : "Generated";
   };
 
   const statusPill = (s) => {
     const v = String(s || "").toLowerCase();
     if (v === "interview")
-      return "bg-amber-500/14 text-amber-100 border border-amber-400/25";
+      return [
+        "bg-amber-500/14 text-amber-100 border border-amber-300/25",
+        "shadow-[0_0_0_1px_rgba(252,211,77,0.12),0_14px_45px_rgba(0,0,0,0.45)]",
+      ].join(" ");
     if (v === "applied")
-      return "bg-sky-500/14 text-sky-100 border border-sky-400/25";
+      return [
+        "bg-sky-500/14 text-sky-100 border border-sky-300/25",
+        "shadow-[0_0_0_1px_rgba(125,211,252,0.12),0_14px_45px_rgba(0,0,0,0.45)]",
+      ].join(" ");
     if (v === "offer")
-      return "bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
+      return [
+        "bg-emerald-500/14 text-emerald-100 border border-emerald-300/25",
+        "shadow-[0_0_0_1px_rgba(110,231,183,0.12),0_14px_45px_rgba(0,0,0,0.45)]",
+      ].join(" ");
     if (v === "rejected")
-      return "bg-rose-500/14 text-rose-100 border border-rose-400/25";
-    return "bg-violet-500/15 text-violet-100 border border-violet-400/25";
+      return [
+        "bg-rose-500/14 text-rose-100 border border-rose-300/25",
+        "shadow-[0_0_0_1px_rgba(251,113,133,0.12),0_14px_45px_rgba(0,0,0,0.45)]",
+      ].join(" ");
+    return [
+      "bg-violet-500/15 text-violet-100 border border-violet-300/25",
+      "shadow-[0_0_0_1px_rgba(167,139,250,0.12),0_14px_45px_rgba(0,0,0,0.45)]",
+    ].join(" ");
   };
 
+  const dropdownContentClass = [
+    "z-50",
+    "rounded-2xl p-2",
+    "bg-black/55 backdrop-blur-xl",
+    "border border-white/12",
+    "ring-1 ring-violet-400/25",
+    "shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_22px_70px_rgba(0,0,0,0.80)]",
+  ].join(" ");
+
+  const dropdownItemBase = [
+    "relative",
+    "flex cursor-default select-none items-center gap-2",
+    "rounded-xl px-3 py-2 text-sm",
+    "outline-none",
+    "border border-transparent",
+    "transition-all duration-150",
+    "hover:scale-[1.03]",
+  ].join(" ");
+
+  const StatusSelectItem = ({ value }) => {
+    const meta = STATUS_META[value] || STATUS_META.generated;
+    return (
+      <SelectItem
+        value={value}
+        className={[dropdownItemBase, meta.itemHover, meta.itemFocus].join(" ")}
+      >
+        <span
+          className={[
+            "inline-block w-2.5 h-2.5 rounded-full",
+            meta.dot,
+            "shadow-[0_0_0_1px_rgba(255,255,255,0.14)]",
+          ].join(" ")}
+        />
+        <span className="text-white/90">{meta.label}</span>
+      </SelectItem>
+    );
+  };
+
+  const StatusTriggerInner = ({ value, showTag = true }) => {
+    const v = String(value || "").toLowerCase();
+    return (
+      <span className="inline-flex items-center gap-2 min-w-0">
+        {showTag ? (
+          <Tag className="w-3.5 h-3.5 text-white/75 shrink-0" />
+        ) : null}
+        <span className="truncate">{statusLabel(v)}</span>
+      </span>
+    );
+  };
+
+  // ---------------------------
+  // Pay formatting (never blank pill)
+  // ---------------------------
   const fmtMoney = (n) =>
     typeof n === "number"
       ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
       : null;
 
-  const renderPayPrimary = (job) => {
-    const cur = job?.payCurrency || "USD";
-    const symbol = cur === "USD" ? "$" : `${cur} `;
-    const periodMap = {
-      hour: "/hr",
-      year: "/yr",
-      month: "/mo",
-      week: "/wk",
-      day: "/day",
-    };
-    const suffix = job?.payPeriod ? periodMap[job.payPeriod] || "" : "";
-
-    const min = fmtMoney(job?.payMin);
-    const max = fmtMoney(job?.payMax);
-
-    if (min && max) {
-      return min === max
-        ? `${symbol}${min}${suffix}`
-        : `${symbol}${min} – ${symbol}${max}${suffix}`;
-    }
-    if (job?.payText) return job.payText;
-    return null;
+  const periodSuffix = (p) => {
+    const v = String(p || "").trim().toLowerCase();
+    if (!v) return "";
+    // prioritize the two requested (hour/year) but keep safe extras
+    if (v === "hour" || v === "hr" || v === "hourly") return "/hr";
+    if (v === "year" || v === "yr" || v === "yearly" || v === "annual")
+      return "/yr";
+    if (v === "month" || v === "mo" || v === "monthly") return "/mo";
+    if (v === "week" || v === "wk" || v === "weekly") return "/wk";
+    if (v === "day" || v === "daily") return "/day";
+    return "";
   };
 
-  const renderAnnual = (job) => {
-    const min = fmtMoney(job?.payAnnualizedMin);
-    const max = fmtMoney(job?.payAnnualizedMax);
-    if (min && max) return `Est. $${min} – $${max} /yr`;
-    if (min) return `Est. $${min} /yr`;
-    if (max) return `Est. $${max} /yr`;
-    return null;
+  const renderPayPillText = (job) => {
+    // 1️⃣ payMin/payMax + payPeriod
+    const cur = String(job?.payCurrency || "USD").toUpperCase();
+    const symbol = cur === "USD" ? "$" : `${cur} `;
+    const suffix = periodSuffix(job?.payPeriod);
+
+    const minRaw = typeof job?.payMin === "number" ? job.payMin : null;
+    const maxRaw = typeof job?.payMax === "number" ? job.payMax : null;
+    const min = fmtMoney(minRaw);
+    const max = fmtMoney(maxRaw);
+
+    if (suffix && (min || max)) {
+      const a = min || max;
+      const b = max || min;
+      if (a && b && a !== b) return `${symbol}${a} – ${symbol}${b}${suffix}`;
+      return `${symbol}${a}${suffix}`;
+    }
+
+    // 2️⃣ payAnnualizedMin/payAnnualizedMax
+    const aminRaw =
+      typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
+    const amaxRaw =
+      typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
+    const amin = fmtMoney(aminRaw);
+    const amax = fmtMoney(amaxRaw);
+
+    if (amin || amax) {
+      const a = amin || amax;
+      const b = amax || amin;
+      if (a && b && a !== b) return `Est. ${symbol}${a} – ${symbol}${b} /yr`;
+      return `Est. ${symbol}${a} /yr`;
+    }
+
+    // 3️⃣ payText
+    const txt =
+      typeof job?.payText === "string" ? job.payText.trim() : "";
+    if (txt) return txt;
+
+    // 4️⃣ fallback (must render for newly generated packets)
+    return "Pay: Not provided";
   };
 
   const renderConfidence = (job) => {
@@ -382,11 +506,9 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
     try {
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
-  method: "PATCH",
-  body: { status: nextStatus },
-});
-
-
+        method: "PATCH",
+        body: { status: nextStatus },
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
@@ -413,10 +535,18 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
     "px-3 py-1.5 rounded-full text-xs font-medium bg-white/[0.06] text-white/85 border border-white/10";
   const pillBrand =
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-violet-500/15 text-violet-100 border border-violet-400/25";
-  const pillGood =
-    "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
   const pillWarn =
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
+
+  // ✅ Pay pill (emerald tint, always renders)
+  const pillPay =
+    "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25 shadow-[0_0_0_1px_rgba(110,231,183,0.10),0_14px_45px_rgba(0,0,0,0.45)]";
+
+  // ✅ Status pill + trigger unification
+  const statusPillBase =
+    "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md";
+  const statusTriggerBase =
+    "w-44 h-11 rounded-full px-3 text-xs font-semibold backdrop-blur-md transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_18px_55px_rgba(0,0,0,0.65)]";
 
   return (
     <div className={`min-h-screen ${pageBg}`}>
@@ -463,47 +593,32 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
 
           <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48 bg-black/30 border-white/10 text-white/80 rounded-xl py-6 text-base hover:bg-white/[0.05] hover:border-violet-400/40 hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200">
-                <SelectValue placeholder="Status" />
+              <SelectTrigger
+                className={[
+                  "w-52 h-12 rounded-full px-4",
+                  "bg-black/35 border border-white/12 text-white/85",
+                  "backdrop-blur-md",
+                  "hover:bg-white/[0.05] hover:border-violet-300/35",
+                  "shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_14px_45px_rgba(0,0,0,0.55)]",
+                  "transition-all duration-200",
+                ].join(" ")}
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Tag className="w-4 h-4 text-white/70 shrink-0" />
+                  <span className="truncate">
+                    {STATUS_META[statusFilter]?.label || "All Status"}
+                  </span>
+                </span>
+                <SelectValue className="hidden" placeholder="Status" />
               </SelectTrigger>
 
-              <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                <SelectItem
-                  value="all"
-                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                >
-                  All Status
-                </SelectItem>
-                <SelectItem
-                  value="generated"
-                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                >
-                  Generated
-                </SelectItem>
-                <SelectItem
-                  value="applied"
-                  className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
-                >
-                  Applied
-                </SelectItem>
-                <SelectItem
-                  value="interview"
-                  className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
-                >
-                  Interview
-                </SelectItem>
-                <SelectItem
-                  value="offer"
-                  className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
-                >
-                  Offer
-                </SelectItem>
-                <SelectItem
-                  value="rejected"
-                  className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
-                >
-                  Rejected
-                </SelectItem>
+              <SelectContent className={dropdownContentClass}>
+                <StatusSelectItem value="all" />
+                <StatusSelectItem value="generated" />
+                <StatusSelectItem value="applied" />
+                <StatusSelectItem value="interview" />
+                <StatusSelectItem value="offer" />
+                <StatusSelectItem value="rejected" />
               </SelectContent>
             </Select>
           </motion.div>
@@ -544,8 +659,7 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
             ) : (
               filtered.map((app, index) => {
                 const dateStr = formatDate(app.created_date);
-                const payPrimary = renderPayPrimary(app);
-                const payAnnual = renderAnnual(app);
+                const payPillText = renderPayPillText(app);
                 const payConf = renderConfidence(app);
                 const topPay = renderTopPay(app);
 
@@ -600,10 +714,14 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
 
                         {/* Pills row */}
                         <div className="mt-3 flex flex-wrap gap-2">
+                          {/* ✅ Row status pill matches trigger styling */}
                           <span
-                            className={`${pillBrand} inline-flex items-center gap-2`}
+                            className={[
+                              statusPillBase,
+                              statusPill(app.status),
+                            ].join(" ")}
                           >
-                            <Tag className="w-3.5 h-3.5" />
+                            <Tag className="w-3.5 h-3.5 text-white/80" />
                             {statusLabel(app.status)}
                           </span>
 
@@ -634,19 +752,16 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                             </span>
                           )}
 
-                          {payPrimary && (
-                            <span
-                              className={`${pillGood} inline-flex items-center gap-2`}
-                            >
-                              <DollarSign className="w-3.5 h-3.5" />
-                              {payPrimary}
-                            </span>
-                          )}
+                          {/* ✅ Pay pill (always renders; never blank/undefined) */}
+                          <span
+                            className={`${pillPay} inline-flex items-center gap-2`}
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                            {payPillText}
+                          </span>
 
                           {payConf && <span className={pill}>{payConf}</span>}
-                          {payAnnual && (
-                            <span className={pillWarn}>{payAnnual}</span>
-                          )}
+
                           {topPay && (
                             <span
                               className={`${pillBrand} inline-flex items-center gap-2`}
@@ -693,48 +808,19 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                           >
                             <SelectTrigger
                               className={[
-                                "w-40 rounded-xl py-5 text-sm font-semibold",
-                                "bg-black/40 border-white/10",
-                                "text-white",
-                                "hover:bg-white/[0.05] hover:border-violet-400/40",
-                                "transition-all",
+                                statusTriggerBase,
                                 statusPill(app.status),
                               ].join(" ")}
                             >
-                              <SelectValue />
+                              <StatusTriggerInner value={app.status} />
                             </SelectTrigger>
 
-                            <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                              <SelectItem
-                                value="generated"
-                                className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                              >
-                                Generated
-                              </SelectItem>
-                              <SelectItem
-                                value="applied"
-                                className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
-                              >
-                                Applied
-                              </SelectItem>
-                              <SelectItem
-                                value="interview"
-                                className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
-                              >
-                                Interview
-                              </SelectItem>
-                              <SelectItem
-                                value="offer"
-                                className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
-                              >
-                                Offer
-                              </SelectItem>
-                              <SelectItem
-                                value="rejected"
-                                className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
-                              >
-                                Rejected
-                              </SelectItem>
+                            <SelectContent className={dropdownContentClass}>
+                              <StatusSelectItem value="generated" />
+                              <StatusSelectItem value="applied" />
+                              <StatusSelectItem value="interview" />
+                              <StatusSelectItem value="offer" />
+                              <StatusSelectItem value="rejected" />
                             </SelectContent>
                           </Select>
                         </motion.div>
@@ -812,8 +898,13 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2">
-                  <span className={`${pillBrand} inline-flex items-center gap-2`}>
-                    <Tag className="w-3.5 h-3.5" />
+                  {/* ✅ Modal status pill matches trigger styling */}
+                  <span
+                    className={[statusPillBase, statusPill(selected.status)].join(
+                      " "
+                    )}
+                  >
+                    <Tag className="w-3.5 h-3.5 text-white/80" />
                     {statusLabel(selected.status)}
                   </span>
 
@@ -838,16 +929,12 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                     </span>
                   )}
 
-                  {renderPayPrimary(selected) && (
-                    <span className={`${pillGood} inline-flex items-center gap-2`}>
-                      <DollarSign className="w-3.5 h-3.5" />
-                      {renderPayPrimary(selected)}
-                    </span>
-                  )}
+                  {/* ✅ Modal pay pill (always renders; never blank/undefined) */}
+                  <span className={`${pillPay} inline-flex items-center gap-2`}>
+                    <DollarSign className="w-3.5 h-3.5" />
+                    {renderPayPillText(selected)}
+                  </span>
 
-                  {renderAnnual(selected) && (
-                    <span className={pillWarn}>{renderAnnual(selected)}</span>
-                  )}
                   {renderConfidence(selected) && (
                     <span className={pill}>{renderConfidence(selected)}</span>
                   )}
@@ -926,45 +1013,18 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                     >
                       <SelectTrigger
                         className={[
-                          "w-48 rounded-xl py-5 text-sm font-semibold",
-                          "bg-black/40 border-white/10 text-white",
-                          "hover:bg-white/[0.05] hover:border-violet-400/40 transition-all",
+                          "w-52 h-12 rounded-full px-3 text-xs font-semibold backdrop-blur-md transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_18px_55px_rgba(0,0,0,0.65)]",
                           statusPill(selected.status),
                         ].join(" ")}
                       >
-                        <SelectValue />
+                        <StatusTriggerInner value={selected.status} />
                       </SelectTrigger>
-                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                        <SelectItem
-                          value="generated"
-                          className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                        >
-                          Generated
-                        </SelectItem>
-                        <SelectItem
-                          value="applied"
-                          className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
-                        >
-                          Applied
-                        </SelectItem>
-                        <SelectItem
-                          value="interview"
-                          className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
-                        >
-                          Interview
-                        </SelectItem>
-                        <SelectItem
-                          value="offer"
-                          className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
-                        >
-                          Offer
-                        </SelectItem>
-                        <SelectItem
-                          value="rejected"
-                          className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
-                        >
-                          Rejected
-                        </SelectItem>
+                      <SelectContent className={dropdownContentClass}>
+                        <StatusSelectItem value="generated" />
+                        <StatusSelectItem value="applied" />
+                        <StatusSelectItem value="interview" />
+                        <StatusSelectItem value="offer" />
+                        <StatusSelectItem value="rejected" />
                       </SelectContent>
                     </Select>
                   </motion.div>
