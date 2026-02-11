@@ -218,11 +218,8 @@ export default function Applications() {
       // ✅ SWA userId from /.auth/me
       const userId = await getSwaUserId();
 
-      // backend expects: /api/jobs?userId=...
-      const data = await apiFetch(
-        `/api/jobs?userId=${encodeURIComponent(userId)}`,
-        { method: "GET" }
-      );
+      const data = await apiFetch("/api/jobs", { method: "GET" });
+
 
       const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
       const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
@@ -353,9 +350,10 @@ export default function Applications() {
     try {
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: nextStatus }),
-      });
+  method: "PATCH",
+  body: JSON.stringify({ status: nextStatus }),
+});
+
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
