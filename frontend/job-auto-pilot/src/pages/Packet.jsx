@@ -30,7 +30,7 @@ export default function Packet() {
         const startRes = await fetch(`/api/jobs/${jobId}/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
+       
         });
         if (!startRes.ok) throw new Error(await startRes.text());
 
