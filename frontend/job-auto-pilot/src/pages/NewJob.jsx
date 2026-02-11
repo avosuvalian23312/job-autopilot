@@ -502,6 +502,7 @@ export default function NewJob() {
       });
 
       let nextExtracted = {
+        
         jobTitle: extracted?.jobTitle || "Position",
         company: extracted?.company || "Company",
         website: extracted?.website || null,
@@ -565,7 +566,9 @@ export default function NewJob() {
               }
             : null,
       };
-
+if (nextExtracted.payMin === 0 && (nextExtracted.payMax ?? 0) > 0) nextExtracted.payMin = null;
+if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0) > 0)
+  nextExtracted.payAnnualizedMin = null;
       // ✅ If pay fields are missing, try to extract from JD + extracted lists (often polluted with pay string)
       const payTextBlob = [
         jobDescription,
@@ -777,11 +780,23 @@ export default function NewJob() {
     const periodKey = normalizePayPeriod(job?.payPeriod);
     const suffix = periodKey ? periodMap[periodKey] || "" : "";
 
-    const minNum = typeof job?.payMin === "number" ? job.payMin : null;
-    const maxNum = typeof job?.payMax === "number" ? job.payMax : null;
+   const minNum =
+  typeof job?.payMin === "number" && Number.isFinite(job.payMin)
+    ? job.payMin
+    : null;
 
-    const min = fmtMoney(minNum);
-    const max = fmtMoney(maxNum);
+const maxNum =
+  typeof job?.payMax === "number" && Number.isFinite(job.payMax)
+    ? job.payMax
+    : null;
+
+// ✅ If one side is 0 and the other side is positive, treat 0 as "missing"
+const minFixed = minNum === 0 && (maxNum ?? 0) > 0 ? null : minNum;
+const maxFixed = maxNum === 0 && (minNum ?? 0) > 0 ? null : maxNum;
+
+const min = fmtMoney(minFixed);
+const max = fmtMoney(maxFixed);
+
 
     if (min && max) {
       return min === max
@@ -801,21 +816,14 @@ export default function NewJob() {
     const periodKey = normalizePayPeriod(job?.payPeriod);
 
     const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
-    const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
-    if (minA == null && maxA == null) return null;
+const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
 
-    const min = typeof job?.payMin === "number" ? job.payMin : null;
-    const max = typeof job?.payMax === "number" ? job.payMax : null;
+const minAFixed = minA === 0 && (maxA ?? 0) > 0 ? null : minA;
+const maxAFixed = maxA === 0 && (minA ?? 0) > 0 ? null : maxA;
 
-    // If primary is already yearly range, don't show an extra "Est." annual pill
-    if (periodKey === "year" && (min != null || max != null)) return null;
+const minS = fmtMoney(minAFixed);
+const maxS = fmtMoney(maxAFixed);
 
-    // If annualized equals the primary numbers, it's redundant (common with yearly jobs)
-    const sameAsPrimary = (minA ?? null) === (min ?? null) && (maxA ?? null) === (max ?? null);
-    if (sameAsPrimary && (min != null || max != null)) return null;
-
-    const minS = fmtMoney(minA);
-    const maxS = fmtMoney(maxA);
 
     if (minS && maxS) return `Est. $${minS} – $${maxS} /yr`;
     if (minS) return `Est. $${minS} /yr`;

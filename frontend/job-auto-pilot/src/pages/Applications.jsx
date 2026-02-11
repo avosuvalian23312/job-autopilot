@@ -119,10 +119,14 @@ const toTitle = (s) =>
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
 
-const normalizeEmploymentType = (v) => {
-  if (!v) return null;
-  const t = String(v).trim().toLowerCase().replace(/[_-]+/g, " ");
-  if (!t) return null;
+const normalizeEmploymentType = (t) => {
+  const s = String(t || "").trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("full")) return "Full-time";
+  if (s.includes("part")) return "Part-time";
+  return String(t).trim();
+};
+
 
   const map = {
     "full time": "Full-time",
@@ -1129,4 +1133,4 @@ useEffect(() => {
     </AnimatePresence>
   </div>
 );
-}
+
