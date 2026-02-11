@@ -210,9 +210,13 @@ const getSwaUserId = async () => {
     setIsLoading(true);
     try {
       // ✅ SWA userId from /.auth/me
-      const userId = await getSwaUserId();
-
-      const data = await apiFetch("/api/jobs", { method: "GET" });
+     const userId = await getSwaUserId();
+if (!userId) {
+  toast.error("Please sign in to continue.");
+  window.location.href = "/login"; // or your login route
+  return;
+}
+const data = await apiFetch("/api/jobs", { method: "GET" });
 
 
       const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
@@ -345,8 +349,9 @@ const getSwaUserId = async () => {
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
   method: "PATCH",
-  body: JSON.stringify({ status: nextStatus }),
+  body: { status: nextStatus },
 });
+
 
     } catch (e) {
       console.error(e);

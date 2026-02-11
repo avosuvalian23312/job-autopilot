@@ -532,9 +532,10 @@ export default function NewJob() {
     };
 
     const job = await apiFetch("/api/jobs", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  method: "POST",
+  body: payload,
+});
+
 
     localStorage.setItem("latestJobId", job?.id || "");
     navigate(createPageUrl("Packet"));
