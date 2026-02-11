@@ -116,18 +116,15 @@ export default function NewJob() {
     return userId || null;
   };
 
-  const ensureUserId = async () => {
-    if (swaUserId) return swaUserId;
-
-    try {
-      const id = await getSwaUser();
-      if (id) {
-        setSwaUserId(id);
-        return id;
-      }
-    } catch {
-      // ignore
-    }
+ const ensureUserId = async () => {
+  const id = await getSwaUser(); // reads /.auth/me
+  if (!id) {
+    toast.error("You must be logged in.");
+    throw new Error("Not authenticated");
+  }
+  setSwaUserId(id);
+  return id;
+};
 
     // Last-resort stable fallback (still not "demo-user")
     const local =
@@ -520,21 +517,26 @@ export default function NewJob() {
         return;
       }
 
-      const userId = await ensureUserId();
+     await ensureUserId(); // just to block if not logged in
 
-      const payload = {
-        userId, // ✅ REQUIRED by backend
-        resumeId: selectedResume,
-        jobTitle: extractedData.jobTitle, // ✅ REQUIRED by backend
-        company: extractedData.company,
-        website: extractedData.website,
-        location: extractedData.location,
-        seniority: extractedData.seniority,
-        keywords: extractedData.keywords,
-        jobDescription, // ✅ REQUIRED by backend
-        aiMode,
-        studentMode,
-      };
+const payload = {
+  resumeId: selectedResume,
+  jobTitle: extractedData.jobTitle,
+  company: extractedData.company,
+  website: extractedData.website,
+  location: extractedData.location,
+  seniority: extractedData.seniority,
+  keywords: extractedData.keywords,
+  jobDescription,
+  aiMode,
+  studentMode,
+};
+
+const job = await apiFetch("/api/jobs", {
+  method: "POST",
+  body: JSON.stringify(payload),
+});
+
 
       const job = await apiFetch("/api/jobs", {
         method: "POST",
@@ -542,7 +544,7 @@ export default function NewJob() {
       });
 
       localStorage.setItem("latestJobId", job?.id);
-      localStorage.setItem("latestUserId", userId);
+      
       navigate(createPageUrl("Packet"));
     } catch (e) {
       console.error(e);
