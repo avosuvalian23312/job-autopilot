@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppNav from "@/components/app/AppNav";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,32 +37,95 @@ export default function Applications() {
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✅ cache SWA userId (so we don't hit /.auth/me repeatedly)
+  const swaUserIdRef = useRef(null);
+
+  const readJsonSafe = async (res) => {
+    const text = await res.text().catch(() => "");
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  };
+
+  // ✅ SWA-safe fetch helper (cookies included)
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(path, {
       ...options,
+      credentials: "include", // ✅ REQUIRED for SWA auth cookies
       headers: {
         "Content-Type": "application/json",
         ...(options.headers || {}),
       },
     });
 
+    const data = await readJsonSafe(res);
+
     if (!res.ok) {
-      let msg = `Request failed (${res.status})`;
-      try {
-        const t = await res.text();
-        if (t) msg = t;
-      } catch {}
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        data?.raw ||
+        `Request failed (${res.status})`;
       throw new Error(msg);
     }
 
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+    return data;
+  };
+
+  // ✅ get SWA userId from /.auth/me (clientPrincipal)
+  const getSwaUserId = async () => {
+    if (swaUserIdRef.current) return swaUserIdRef.current;
+
+    try {
+      const me = await apiFetch("/.auth/me", { method: "GET" });
+
+      // SWA returns: { clientPrincipal: { userId, userDetails, identityProvider, ... } }
+      const cp = me?.clientPrincipal || null;
+
+      const userId =
+        cp?.userId ||
+        cp?.userDetails || // sometimes you may prefer this
+        null;
+
+      if (userId) {
+        swaUserIdRef.current = String(userId);
+        return swaUserIdRef.current;
+      }
+    } catch {
+      // ignore and fall back below
+    }
+
+    // Fallback: stable local id (NOT demo-user)
+    const existing = localStorage.getItem("userId");
+    if (existing) {
+      swaUserIdRef.current = existing;
+      return existing;
+    }
+
+    const newId =
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `user_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+
+    localStorage.setItem("userId", newId);
+    swaUserIdRef.current = newId;
+    return newId;
   };
 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
+
     const jobTitle =
-      job?.jobTitle ?? job?.job_title ?? job?.title ?? job?.position ?? "Position";
+      job?.jobTitle ??
+      job?.job_title ??
+      job?.title ??
+      job?.position ??
+      "Position";
+
     const company =
       job?.company ?? job?.companyName ?? job?.company_name ?? "Company";
 
@@ -88,7 +151,11 @@ export default function Applications() {
       status: String(status || "generated").toLowerCase(),
       website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
       location: job?.location ?? null,
-      seniority: job?.seniority ?? job?.experienceLevel ?? job?.experience_level ?? null,
+      seniority:
+        job?.seniority ??
+        job?.experienceLevel ??
+        job?.experience_level ??
+        null,
 
       // extra pills (if available)
       employmentType: job?.employmentType ?? job?.employment_type ?? null,
@@ -148,8 +215,10 @@ export default function Applications() {
   const loadJobs = async () => {
     setIsLoading(true);
     try {
-      // ✅ listJobs requires userId query string (your backend listJobs.js enforces this)
-      const userId = localStorage.getItem("userId") || "demo-user";
+      // ✅ SWA userId from /.auth/me
+      const userId = await getSwaUserId();
+
+      // backend expects: /api/jobs?userId=...
       const data = await apiFetch(
         `/api/jobs?userId=${encodeURIComponent(userId)}`,
         { method: "GET" }
@@ -266,7 +335,8 @@ export default function Applications() {
         !q ||
         app.job_title?.toLowerCase().includes(q) ||
         app.company?.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "all" || app.status === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || app.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
   }, [applications, search, statusFilter]);
@@ -281,7 +351,6 @@ export default function Applications() {
     if (selected?.id === id) setSelected((s) => ({ ...s, status: nextStatus }));
 
     try {
-      // ✅ correct backend route:
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
         method: "PATCH",
@@ -290,7 +359,6 @@ export default function Applications() {
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
-      // revert by reloading source of truth
       loadJobs();
     }
   };
@@ -309,12 +377,6 @@ export default function Applications() {
   const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
   const neonLine =
     "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
-
-  const hoverLift =
-    "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
-  const pressFx = "active:scale-[0.99]";
-  const glowHover =
-    "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.22),0_18px_60px_rgba(0,0,0,0.55),0_0_40px_rgba(34,211,238,0.10)]";
 
   const pill =
     "px-3 py-1.5 rounded-full text-xs font-medium bg-white/[0.06] text-white/85 border border-white/10";
@@ -374,7 +436,6 @@ export default function Applications() {
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
 
-              {/* ✅ black dropdown, white text */}
               <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
                 <SelectItem
                   value="all"
@@ -506,7 +567,7 @@ export default function Applications() {
                           )}
                         </div>
 
-                        {/* Pills row (more pills like NewJob confirm) */}
+                        {/* Pills row */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           <span
                             className={`${pillBrand} inline-flex items-center gap-2`}
@@ -516,21 +577,27 @@ export default function Applications() {
                           </span>
 
                           {app.employmentType && (
-                            <span className={`${pill} inline-flex items-center gap-2`}>
+                            <span
+                              className={`${pill} inline-flex items-center gap-2`}
+                            >
                               <Briefcase className="w-3.5 h-3.5 text-white/60" />
                               {app.employmentType}
                             </span>
                           )}
 
                           {app.workModel && (
-                            <span className={`${pill} inline-flex items-center gap-2`}>
+                            <span
+                              className={`${pill} inline-flex items-center gap-2`}
+                            >
                               <Building2 className="w-3.5 h-3.5 text-white/60" />
                               {app.workModel}
                             </span>
                           )}
 
                           {app.experienceLevel && (
-                            <span className={`${pill} inline-flex items-center gap-2`}>
+                            <span
+                              className={`${pill} inline-flex items-center gap-2`}
+                            >
                               <Clock className="w-3.5 h-3.5 text-white/60" />
                               {app.experienceLevel}
                             </span>
@@ -546,7 +613,9 @@ export default function Applications() {
                           )}
 
                           {payConf && <span className={pill}>{payConf}</span>}
-                          {payAnnual && <span className={pillWarn}>{payAnnual}</span>}
+                          {payAnnual && (
+                            <span className={pillWarn}>{payAnnual}</span>
+                          )}
                           {topPay && (
                             <span
                               className={`${pillBrand} inline-flex items-center gap-2`}
@@ -569,20 +638,24 @@ export default function Applications() {
                         </div>
 
                         {/* Keywords mini row */}
-                        {Array.isArray(app.keywords) && app.keywords.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {app.keywords.slice(0, 6).map((k, i) => (
-                              <span key={`${app.id}-kw-${i}`} className={pill}>
-                                {k}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {Array.isArray(app.keywords) &&
+                          app.keywords.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {app.keywords.slice(0, 6).map((k, i) => (
+                                <span key={`${app.id}-kw-${i}`} className={pill}>
+                                  {k}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                       </button>
 
                       {/* Right: Status dropdown */}
                       <div className="shrink-0">
-                        <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                        <motion.div
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                        >
                           <Select
                             value={app.status}
                             onValueChange={(v) => updateStatus(app.id, v)}
@@ -600,7 +673,6 @@ export default function Applications() {
                               <SelectValue />
                             </SelectTrigger>
 
-                            {/* ✅ black dropdown, white/neon highlight */}
                             <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
                               <SelectItem
                                 value="generated"
@@ -645,7 +717,7 @@ export default function Applications() {
         </div>
       </motion.div>
 
-      {/* ✅ Popup (zoom animation) */}
+      {/* Popup */}
       <AnimatePresence>
         {selected && (
           <motion.div
