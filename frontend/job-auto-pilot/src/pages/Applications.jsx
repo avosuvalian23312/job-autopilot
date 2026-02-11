@@ -112,7 +112,48 @@ export default function Applications() {
 
     return null; // ✅ logged out (no fake ids)
   };
+const toTitle = (s) =>
+  String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 
+const normalizeEmploymentType = (v) => {
+  if (!v) return null;
+  const t = String(v).trim().toLowerCase().replace(/[_-]+/g, " ");
+  if (!t) return null;
+
+  const map = {
+    "full time": "Full-time",
+    "part time": "Part-time",
+    "contract": "Contract",
+    "contractor": "Contract",
+    "temporary": "Temporary",
+    "intern": "Internship",
+    "internship": "Internship",
+    "seasonal": "Seasonal",
+  };
+  return map[t] || toTitle(t);
+};
+
+const normalizeWorkModel = (v) => {
+  if (v == null) return null;
+  if (typeof v === "boolean") return v ? "Remote" : null;
+
+  const t = String(v).trim().toLowerCase().replace(/[_-]+/g, " ");
+  if (!t) return null;
+
+  const map = {
+    "remote": "Remote",
+    "hybrid": "Hybrid",
+    "on site": "On-site",
+    "onsite": "On-site",
+    "in person": "In-person",
+    "in-person": "In-person",
+  };
+  return map[t] || toTitle(t);
+};
   const normalizeJob = (job) => {
   const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
 
@@ -162,8 +203,29 @@ export default function Applications() {
       null,
 
     // extra pills (if available)
-    employmentType: job?.employmentType ?? job?.employment_type ?? null,
-    workModel: job?.workModel ?? job?.work_model ?? null,
+   employmentType: normalizeEmploymentType(
+  job?.employmentType ??
+    job?.employment_type ??
+    job?.jobType ??
+    job?.job_type ??
+    job?.employment ??
+    job?.type ??
+    job?.schedule ??
+    null
+),
+
+workModel: normalizeWorkModel(
+  job?.workModel ??
+    job?.work_model ??
+    job?.workplaceType ??
+    job?.workplace_type ??
+    job?.locationType ??
+    job?.location_type ??
+    job?.remote ??
+    null
+),
+
+
     experienceLevel: job?.experienceLevel ?? job?.experience_level ?? null,
     complianceTags: Array.isArray(job?.complianceTags)
       ? job.complianceTags
@@ -865,64 +927,59 @@ useEffect(() => {
                   </motion.button>
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <span className={`${pillBrand} inline-flex items-center gap-2`}>
-                    <Tag className="w-3.5 h-3.5" />
-                    {statusLabel(selected.status)}
-                  </span>
+               <div className="mt-5 flex flex-wrap gap-2">
+  {/* ✅ single pay pill (first) */}
+  <span
+    className={`${modalHasPay ? pillGood : pill} inline-flex items-center gap-2`}
+  >
+    <DollarSign className="w-3.5 h-3.5" />
+    {modalPayText}
+  </span>
 
-                  {selected.employmentType && (
-                    <span className={`${pill} inline-flex items-center gap-2`}>
-                      <Briefcase className="w-3.5 h-3.5 text-white/60" />
-                      {selected.employmentType}
-                    </span>
-                  )}
+  {/* ✅ job-type pills next to pay */}
+  {selected.employmentType && (
+    <span className={`${pill} inline-flex items-center gap-2`}>
+      <Briefcase className="w-3.5 h-3.5 text-white/60" />
+      {selected.employmentType}
+    </span>
+  )}
 
-                  {selected.workModel && (
-                    <span className={`${pill} inline-flex items-center gap-2`}>
-                      <Building2 className="w-3.5 h-3.5 text-white/60" />
-                      {selected.workModel}
-                    </span>
-                  )}
+  {selected.workModel && (
+    <span className={`${pill} inline-flex items-center gap-2`}>
+      <Building2 className="w-3.5 h-3.5 text-white/60" />
+      {selected.workModel}
+    </span>
+  )}
 
-                  {selected.experienceLevel && (
-                    <span className={`${pill} inline-flex items-center gap-2`}>
-                      <Clock className="w-3.5 h-3.5 text-white/60" />
-                      {selected.experienceLevel}
-                    </span>
-                  )}
+  {selected.experienceLevel && (
+    <span className={`${pill} inline-flex items-center gap-2`}>
+      <Clock className="w-3.5 h-3.5 text-white/60" />
+      {selected.experienceLevel}
+    </span>
+  )}
 
-                  {/* ✅ single pay pill */}
-                  <span
-                    className={`${
-                      modalHasPay ? pillGood : pill
-                    } inline-flex items-center gap-2`}
-                  >
-                    <DollarSign className="w-3.5 h-3.5" />
-                    {modalPayText}
-                  </span>
+  {renderConfidence(selected) && (
+    <span className={pill}>{renderConfidence(selected)}</span>
+  )}
 
-                  {renderConfidence(selected) && (
-                    <span className={pill}>{renderConfidence(selected)}</span>
-                  )}
-                  {renderTopPay(selected) && (
-                    <span className={`${pillBrand} inline-flex items-center gap-2`}>
-                      <Percent className="w-3.5 h-3.5" />
-                      {renderTopPay(selected)}
-                    </span>
-                  )}
+  {renderTopPay(selected) && (
+    <span className={`${pillBrand} inline-flex items-center gap-2`}>
+      <Percent className="w-3.5 h-3.5" />
+      {renderTopPay(selected)}
+    </span>
+  )}
 
-                  {Array.isArray(selected.complianceTags) &&
-                    selected.complianceTags.slice(0, 6).map((t, i) => (
-                      <span
-                        key={`sel-ct-${i}`}
-                        className={`${pillBrand} inline-flex items-center gap-2`}
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        {t}
-                      </span>
-                    ))}
-                </div>
+  {Array.isArray(selected.complianceTags) &&
+    selected.complianceTags.slice(0, 6).map((t, i) => (
+      <span
+        key={`sel-ct-${i}`}
+        className={`${pillBrand} inline-flex items-center gap-2`}
+      >
+        <ShieldCheck className="w-3.5 h-3.5" />
+        {t}
+      </span>
+    ))}
+</div>
 
                 {Array.isArray(selected.keywords) && selected.keywords.length > 0 && (
                   <div className="mt-4">

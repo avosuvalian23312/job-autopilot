@@ -99,35 +99,140 @@ export default function NewJob() {
   };
 
   const getSwaUser = async () => {
-  const res = await fetch("/.auth/me", { credentials: "include" });
-  if (!res.ok) return null;
+    const res = await fetch("/.auth/me", { credentials: "include" });
+    if (!res.ok) return null;
 
-  const data = await res.json().catch(() => null);
-  if (!data) return null;
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
 
-  // SWA can return either:
-  // 1) [{ clientPrincipal: {...} }]
-  // 2) { clientPrincipal: {...} }
-  const cp = Array.isArray(data)
-    ? data?.[0]?.clientPrincipal
-    : data?.clientPrincipal;
+    // SWA can return either:
+    // 1) [{ clientPrincipal: {...} }]
+    // 2) { clientPrincipal: {...} }
+    const cp = Array.isArray(data)
+      ? data?.[0]?.clientPrincipal
+      : data?.clientPrincipal;
 
-  const userId = cp?.userId || null;
-  return userId;
-};
+    const userId = cp?.userId || null;
+    return userId;
+  };
 
- const ensureUserId = async () => {
-  const id = await getSwaUser(); // reads /.auth/me
-  if (!id) {
-    toast.error("You must be logged in.");
-    throw new Error("Not authenticated");
-  }
-  setSwaUserId(id);
-  return id;
-};
+  const ensureUserId = async () => {
+    const id = await getSwaUser(); // reads /.auth/me
+    if (!id) {
+      toast.error("You must be logged in.");
+      throw new Error("Not authenticated");
+    }
+    setSwaUserId(id);
+    return id;
+  };
 
+  // ✅ CLEAN junk skills/keywords (Indeed UI strings etc)
+  const cleanSkillTokens = (arr, { max = 16 } = {}) => {
+    const raw = Array.isArray(arr) ? arr : [];
+    const norm = raw
+      .map((x) =>
+        String(x ?? "")
+          .replace(/&nbsp;|\u00a0/gi, " ")
+          .trim()
+          .replace(/\s+/g, " ")
+      )
+      .filter(Boolean);
 
-   
+    const isNoise = (s) => {
+      const t = s.toLowerCase();
+
+      // remove obvious UI / junk strings
+      if (t.startsWith("+")) return true;
+      if (t === "(required)" || t === "required" || t === "preferred") return true;
+      if (t.includes("show more")) return true;
+      if (t.includes("job details")) return true;
+      if (t.includes("here's how") || t.includes("heres how") || t.includes("align with your profile")) return true;
+      if (t.includes("do you have experience") || t.includes("do you know")) return true;
+      if (t.includes("languages")) return true;
+
+      // remove pay-related tokens from skills (pay should show in Compensation)
+      if (t === "pay" || t.includes("salary") || t.includes("compensation")) return true;
+      if (s.includes("$") || /\b\d+\s*-\s*\d+\b/.test(t)) return true;
+      if (/\b(hour|hr|year|yr|mo|month|week|wk|day)\b/i.test(s) && /\d/.test(s)) return true;
+
+      // remove long sentences / questions
+      if (s.includes("?")) return true;
+      if (s.split(" ").length > 3) return true;
+      if (/^\(.*\)$/.test(s)) return true;
+
+      return false;
+    };
+
+    const cleaned = norm.filter((s) => !isNoise(s));
+
+    // dedupe (case-insensitive)
+    const seen = new Set();
+    const out = [];
+    for (const s of cleaned) {
+      const k = s.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(s);
+    }
+
+    return out.slice(0, max);
+  };
+
+  // ✅ pay fallback (if extractor missed pay fields but pay exists in junk text/JD)
+  const extractPayFromText = (text) => {
+    const t = String(text ?? "");
+    const toNum = (v) => {
+      const n = Number(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const toPeriod = (p) => {
+      const x = String(p ?? "").toLowerCase();
+      if (["hour", "hr", "hrs", "hourly"].includes(x)) return "hour";
+      if (["year", "yr", "yrs", "annual", "annually", "yearly"].includes(x)) return "year";
+      if (["month", "mo", "monthly"].includes(x)) return "month";
+      if (["week", "wk", "weekly"].includes(x)) return "week";
+      if (["day", "daily"].includes(x)) return "day";
+      return null;
+    };
+
+    const range =
+      /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:-|–|to)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:per\s*)?(hour|hr|hrs|year|yr|yrs|annual|annually|month|mo|week|wk|day)\b/i;
+    const single =
+      /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:per\s*)?(hour|hr|hrs|year|yr|yrs|annual|annually|month|mo|week|wk|day)\b/i;
+
+    let m = t.match(range);
+    if (m) {
+      const min = toNum(m[1]);
+      const max = toNum(m[2]);
+      const period = toPeriod(m[3]);
+      if (min != null || max != null) {
+        return {
+          payMin: min,
+          payMax: max,
+          payPeriod: period,
+          payCurrency: "USD",
+          payText: null,
+        };
+      }
+    }
+
+    m = t.match(single);
+    if (m) {
+      const v = toNum(m[1]);
+      const period = toPeriod(m[2]);
+      if (v != null) {
+        return {
+          payMin: v,
+          payMax: null,
+          payPeriod: period,
+          payCurrency: "USD",
+          payText: null,
+        };
+      }
+    }
+
+    return null;
+  };
 
   useEffect(() => {
     // warm SWA user id (non-blocking)
@@ -396,7 +501,7 @@ export default function NewJob() {
         body: JSON.stringify({ jobDescription }),
       });
 
-      const nextExtracted = {
+      let nextExtracted = {
         jobTitle: extracted?.jobTitle || "Position",
         company: extracted?.company || "Company",
         website: extracted?.website || null,
@@ -461,6 +566,37 @@ export default function NewJob() {
             : null,
       };
 
+      // ✅ If pay fields are missing, try to extract from JD + extracted lists (often polluted with pay string)
+      const payTextBlob = [
+        jobDescription,
+        ...(Array.isArray(extracted?.keywords) ? extracted.keywords : []),
+        ...(Array.isArray(extracted?.requirements?.skillsRequired) ? extracted.requirements.skillsRequired : []),
+        ...(Array.isArray(extracted?.requirements?.skillsPreferred) ? extracted.requirements.skillsPreferred : []),
+      ].join(" ");
+      const payFallback = extractPayFromText(payTextBlob);
+
+      if (
+        payFallback &&
+        nextExtracted.payMin == null &&
+        nextExtracted.payMax == null &&
+        !String(nextExtracted.payText || "").trim()
+      ) {
+        nextExtracted = { ...nextExtracted, ...payFallback };
+      }
+
+      // ✅ Clean keywords + requirement skills to remove Indeed UI junk
+      nextExtracted = {
+        ...nextExtracted,
+        keywords: cleanSkillTokens(nextExtracted.keywords, { max: 16 }),
+        requirements: nextExtracted.requirements
+          ? {
+              ...nextExtracted.requirements,
+              skillsRequired: cleanSkillTokens(nextExtracted.requirements.skillsRequired, { max: 16 }),
+              skillsPreferred: cleanSkillTokens(nextExtracted.requirements.skillsPreferred, { max: 12 }),
+            }
+          : null,
+      };
+
       setExtractedData(nextExtracted);
       setShowConfirm(true);
 
@@ -476,8 +612,10 @@ export default function NewJob() {
       console.error(e);
 
       const fallback = extractJobDetails(jobDescription);
-      const nextExtracted = {
+
+      let nextExtracted = {
         ...fallback,
+        keywords: cleanSkillTokens(fallback.keywords, { max: 16 }),
         payText: "Unknown",
         employmentType: null,
         workModel: null,
@@ -485,6 +623,9 @@ export default function NewJob() {
         complianceTags: [],
         requirements: null,
       };
+
+      const payFallback = extractPayFromText(jobDescription);
+      if (payFallback) nextExtracted = { ...nextExtracted, ...payFallback };
 
       setExtractedData(nextExtracted);
       setShowConfirm(true);
@@ -505,81 +646,77 @@ export default function NewJob() {
   };
 
   const handleGenerate = async () => {
-  try {
-    if (!extractedData?.jobTitle || !jobDescription.trim()) {
-      toast.error("Missing job title or job description.");
-      return;
+    try {
+      if (!extractedData?.jobTitle || !jobDescription.trim()) {
+        toast.error("Missing job title or job description.");
+        return;
+      }
+
+      // ensure logged in (no fallback)
+      const id = await getSwaUser();
+      if (!id) {
+        toast.error("You must be logged in.");
+        return;
+      }
+
+      const payload = {
+        payText: extractedData?.payText ?? null,
+        payMin:
+          typeof extractedData?.payMin === "number" && Number.isFinite(extractedData.payMin)
+            ? extractedData.payMin
+            : null,
+        payMax:
+          typeof extractedData?.payMax === "number" && Number.isFinite(extractedData.payMax)
+            ? extractedData.payMax
+            : null,
+        payCurrency: extractedData?.payCurrency || "USD",
+        payPeriod: extractedData?.payPeriod ?? null,
+        payAnnualizedMin:
+          typeof extractedData?.payAnnualizedMin === "number" && Number.isFinite(extractedData.payAnnualizedMin)
+            ? extractedData.payAnnualizedMin
+            : null,
+        payAnnualizedMax:
+          typeof extractedData?.payAnnualizedMax === "number" && Number.isFinite(extractedData.payAnnualizedMax)
+            ? extractedData.payAnnualizedMax
+            : null,
+
+        resumeId: selectedResume,
+        jobTitle: extractedData.jobTitle,
+        company: extractedData.company,
+        website: extractedData.website,
+        location: extractedData.location,
+        seniority: extractedData.seniority,
+        keywords: extractedData.keywords,
+        jobDescription,
+        aiMode,
+        studentMode,
+      };
+
+      const created = await apiFetch("/api/jobs", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      // IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
+      // So support both shapes:
+      const jobId = created?.job?.id || created?.id;
+
+      if (!jobId) {
+        toast.error("Job created but no jobId returned.");
+        return;
+      }
+
+      localStorage.setItem("latestJobId", jobId);
+
+      // ✅ Navigate WITH the jobId (best: route param or querystring)
+      navigate(`/packet?id=${encodeURIComponent(jobId)}`);
+
+      // (If your router doesn't have /packet/:jobId, use query instead: navigate(`/packet?jobId=${encodeURIComponent(jobId)}`))
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Failed to create job.");
     }
-
-    // ensure logged in (no fallback)
-    const id = await getSwaUser();
-    if (!id) {
-      toast.error("You must be logged in.");
-      return;
-    }
-
-   const payload = {
-  payText: extractedData?.payText ?? null,
-  payMin:
-    typeof extractedData?.payMin === "number" && Number.isFinite(extractedData.payMin)
-      ? extractedData.payMin
-      : null,
-  payMax:
-    typeof extractedData?.payMax === "number" && Number.isFinite(extractedData.payMax)
-      ? extractedData.payMax
-      : null,
-  payCurrency: extractedData?.payCurrency || "USD",
-  payPeriod: extractedData?.payPeriod ?? null,
-  payAnnualizedMin:
-    typeof extractedData?.payAnnualizedMin === "number" && Number.isFinite(extractedData.payAnnualizedMin)
-      ? extractedData.payAnnualizedMin
-      : null,
-  payAnnualizedMax:
-    typeof extractedData?.payAnnualizedMax === "number" && Number.isFinite(extractedData.payAnnualizedMax)
-      ? extractedData.payAnnualizedMax
-      : null,
-
-  resumeId: selectedResume,
-  jobTitle: extractedData.jobTitle,
-  company: extractedData.company,
-  website: extractedData.website,
-  location: extractedData.location,
-  seniority: extractedData.seniority,
-  keywords: extractedData.keywords,
-  jobDescription,
-  aiMode,
-  studentMode,
-};
-
-
-   const created = await apiFetch("/api/jobs", {
-  method: "POST",
-  body: JSON.stringify(payload),
-});
-
-
-// IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
-// So support both shapes:
-const jobId = created?.job?.id || created?.id;
-
-if (!jobId) {
-  toast.error("Job created but no jobId returned.");
-  return;
-}
-
-localStorage.setItem("latestJobId", jobId);
-
-// ✅ Navigate WITH the jobId (best: route param or querystring)
-navigate(`/packet?id=${encodeURIComponent(jobId)}`);
-
-// (If your router doesn't have /packet/:jobId, use query instead: navigate(`/packet?jobId=${encodeURIComponent(jobId)}`))
-
-  } catch (e) {
-    console.error(e);
-    toast.error(e?.message || "Failed to create job.");
-  }
-};
-
+  };
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
@@ -608,84 +745,83 @@ navigate(`/packet?id=${encodeURIComponent(jobId)}`);
     "px-4 py-2 rounded-full text-sm font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
   const pillWarn =
     "px-4 py-2 rounded-full text-sm font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
-const normalizePayPeriod = (val) => {
-  const p = String(val ?? "").trim().toLowerCase();
-  if (!p) return null;
 
-  if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hour";
-  if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "year";
-  if (["month", "monthly", "mo", "/mo"].includes(p)) return "month";
-  if (["week", "weekly", "wk", "/wk"].includes(p)) return "week";
-  if (["day", "daily", "/day"].includes(p)) return "day";
+  const normalizePayPeriod = (val) => {
+    const p = String(val ?? "").trim().toLowerCase();
+    if (!p) return null;
 
-  return p;
-};
+    if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hour";
+    if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "year";
+    if (["month", "monthly", "mo", "/mo"].includes(p)) return "month";
+    if (["week", "weekly", "wk", "/wk"].includes(p)) return "week";
+    if (["day", "daily", "/day"].includes(p)) return "day";
+
+    return p;
+  };
 
   const fmtMoney = (n) =>
     typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
 
- const renderPayPrimary = (job) => {
-  const cur = job?.payCurrency || "USD";
-  const symbol = cur === "USD" ? "$" : `${cur} `;
+  const renderPayPrimary = (job) => {
+    const cur = job?.payCurrency || "USD";
+    const symbol = cur === "USD" ? "$" : `${cur} `;
 
-  const periodMap = {
-    hour: "/hr",
-    year: "/yr",
-    month: "/mo",
-    week: "/wk",
-    day: "/day",
+    const periodMap = {
+      hour: "/hr",
+      year: "/yr",
+      month: "/mo",
+      week: "/wk",
+      day: "/day",
+    };
+
+    const periodKey = normalizePayPeriod(job?.payPeriod);
+    const suffix = periodKey ? periodMap[periodKey] || "" : "";
+
+    const minNum = typeof job?.payMin === "number" ? job.payMin : null;
+    const maxNum = typeof job?.payMax === "number" ? job.payMax : null;
+
+    const min = fmtMoney(minNum);
+    const max = fmtMoney(maxNum);
+
+    if (min && max) {
+      return min === max
+        ? `${symbol}${min}${suffix}`
+        : `${symbol}${min} – ${symbol}${max}${suffix}`;
+    }
+    if (min) return `${symbol}${min}${suffix}`;
+    if (max) return `${symbol}${max}${suffix}`;
+
+    const t = typeof job?.payText === "string" ? job.payText.trim() : "";
+    if (t) return t;
+
+    return null;
   };
 
-  const periodKey = normalizePayPeriod(job?.payPeriod);
-  const suffix = periodKey ? periodMap[periodKey] || "" : "";
-
-  const minNum = typeof job?.payMin === "number" ? job.payMin : null;
-  const maxNum = typeof job?.payMax === "number" ? job.payMax : null;
-
-  const min = fmtMoney(minNum);
-  const max = fmtMoney(maxNum);
-
-  if (min && max) {
-    return min === max
-      ? `${symbol}${min}${suffix}`
-      : `${symbol}${min} – ${symbol}${max}${suffix}`;
-  }
-  if (min) return `${symbol}${min}${suffix}`;
-  if (max) return `${symbol}${max}${suffix}`;
-
-  const t = typeof job?.payText === "string" ? job.payText.trim() : "";
-  if (t) return t;
-
-  return null;
-};
-
-
   const renderAnnual = (job) => {
-  const periodKey = normalizePayPeriod(job?.payPeriod);
+    const periodKey = normalizePayPeriod(job?.payPeriod);
 
-  const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
-  const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
-  if (minA == null && maxA == null) return null;
+    const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
+    const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
+    if (minA == null && maxA == null) return null;
 
-  const min = typeof job?.payMin === "number" ? job.payMin : null;
-  const max = typeof job?.payMax === "number" ? job.payMax : null;
+    const min = typeof job?.payMin === "number" ? job.payMin : null;
+    const max = typeof job?.payMax === "number" ? job.payMax : null;
 
-  // If primary is already yearly range, don't show an extra "Est." annual pill
-  if (periodKey === "year" && (min != null || max != null)) return null;
+    // If primary is already yearly range, don't show an extra "Est." annual pill
+    if (periodKey === "year" && (min != null || max != null)) return null;
 
-  // If annualized equals the primary numbers, it's redundant (common with yearly jobs)
-  const sameAsPrimary = (minA ?? null) === (min ?? null) && (maxA ?? null) === (max ?? null);
-  if (sameAsPrimary && (min != null || max != null)) return null;
+    // If annualized equals the primary numbers, it's redundant (common with yearly jobs)
+    const sameAsPrimary = (minA ?? null) === (min ?? null) && (maxA ?? null) === (max ?? null);
+    if (sameAsPrimary && (min != null || max != null)) return null;
 
-  const minS = fmtMoney(minA);
-  const maxS = fmtMoney(maxA);
+    const minS = fmtMoney(minA);
+    const maxS = fmtMoney(maxA);
 
-  if (minS && maxS) return `Est. $${minS} – $${maxS} /yr`;
-  if (minS) return `Est. $${minS} /yr`;
-  if (maxS) return `Est. $${maxS} /yr`;
-  return null;
-};
-
+    if (minS && maxS) return `Est. $${minS} – $${maxS} /yr`;
+    if (minS) return `Est. $${minS} /yr`;
+    if (maxS) return `Est. $${maxS} /yr`;
+    return null;
+  };
 
   const renderConfidence = () => {
     if (typeof extractedData?.payConfidence !== "number") return null;
@@ -962,9 +1098,14 @@ const normalizePayPeriod = (val) => {
                           </label>
 
                           <div className="flex flex-wrap gap-3">
-                            {renderPayPrimary() && <span className={pillGood}>{renderPayPrimary()}</span>}
+                            {/* ✅ FIX: pass extractedData so pay shows */}
+                            {renderPayPrimary(extractedData) && (
+                              <span className={pillGood}>{renderPayPrimary(extractedData)}</span>
+                            )}
                             {renderConfidence() && <span className={pill}>{renderConfidence()}</span>}
-                            {renderAnnual() && <span className={pillWarn}>{renderAnnual()}</span>}
+                            {renderAnnual(extractedData) && (
+                              <span className={pillWarn}>{renderAnnual(extractedData)}</span>
+                            )}
                             {renderTopPay() && (
                               <span className={`${pillBrand} flex items-center gap-2`}>
                                 <Percent className="w-4 h-4" />
