@@ -127,20 +127,21 @@ export default function Applications() {
       job?.company ?? job?.companyName ?? job?.company_name ?? "Company";
 
     const created =
-      job?.createdAt ??
-      job?.created_at ??
-      job?.created_date ??
-      job?.createdDate ??
-      null;
+  job?.createdAt ??
+  job?.created_at ??
+  job?.created_date ??
+  job?.createdDate ??
+  null;
 
-    const status =
-      const payObj =
-job?.pay && typeof job.pay === "object" ? job.pay : null;
+// ✅ support nested pay object OR flat fields
+const payObj = job?.pay && typeof job.pay === "object" ? job.pay : null;
 
-      job?.status ??
-      job?.applicationStatus ??
-      job?.application_status ??
-      "generated";
+const rawStatus =
+  job?.status ?? job?.applicationStatus ?? job?.application_status ?? null;
+
+let status = String(rawStatus ?? "").trim().toLowerCase();
+if (!status || status === "created") status = "generated";
+
 
     return {
       ...job,
@@ -148,7 +149,7 @@ job?.pay && typeof job.pay === "object" ? job.pay : null;
       job_title: jobTitle,
       company,
       created_date: created,
-      status: String(status || "generated").toLowerCase(),
+      status,
       website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
       location: job?.location ?? null,
       seniority:
