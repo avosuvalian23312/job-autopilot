@@ -651,8 +651,14 @@ useEffect(() => {
               const payPillText = payPrimaryRaw || payAnnual || "Pay not listed";
               const hasPay = Boolean(payPrimaryRaw || payAnnual);
 
-              const payConf = renderConfidence(app);
-              const topPay = renderTopPay(app);
+              // ✅ Only show Full-time / Part-time (normalized)
+              const jobType = (() => {
+                const s = String(app?.employmentType || "").trim().toLowerCase();
+                if (!s) return null;
+                if (s.includes("full")) return "Full-time";
+                if (s.includes("part")) return "Part-time";
+                return String(app.employmentType || "").trim() || null;
+              })();
 
               return (
                 <motion.div
@@ -703,43 +709,17 @@ useEffect(() => {
                         )}
                       </div>
 
-                      {/* Pills row */}
+                      {/* Pills row (ONLY: job type + pay) */}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <span
-                          className={`${pillBrand} inline-flex items-center gap-2`}
-                        >
-                          <Tag className="w-3.5 h-3.5" />
-                          {statusLabel(app.status)}
-                        </span>
-
-                        {app.employmentType && (
+                        {jobType && (
                           <span
                             className={`${pill} inline-flex items-center gap-2`}
                           >
                             <Briefcase className="w-3.5 h-3.5 text-white/60" />
-                            {app.employmentType}
+                            {jobType}
                           </span>
                         )}
 
-                        {app.workModel && (
-                          <span
-                            className={`${pill} inline-flex items-center gap-2`}
-                          >
-                            <Building2 className="w-3.5 h-3.5 text-white/60" />
-                            {app.workModel}
-                          </span>
-                        )}
-
-                        {app.experienceLevel && (
-                          <span
-                            className={`${pill} inline-flex items-center gap-2`}
-                          >
-                            <Clock className="w-3.5 h-3.5 text-white/60" />
-                            {app.experienceLevel}
-                          </span>
-                        )}
-
-                        {/* ✅ single pay pill */}
                         <span
                           className={`${
                             hasPay ? pillGood : pill
@@ -748,42 +728,10 @@ useEffect(() => {
                           <DollarSign className="w-3.5 h-3.5" />
                           {payPillText}
                         </span>
-
-                        {payConf && <span className={pill}>{payConf}</span>}
-                        {topPay && (
-                          <span
-                            className={`${pillBrand} inline-flex items-center gap-2`}
-                          >
-                            <Percent className="w-3.5 h-3.5" />
-                            {topPay}
-                          </span>
-                        )}
-
-                        {Array.isArray(app.complianceTags) &&
-                          app.complianceTags.slice(0, 3).map((t, i) => (
-                            <span
-                              key={`${app.id}-ct-${i}`}
-                              className={`${pillBrand} inline-flex items-center gap-2`}
-                            >
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              {t}
-                            </span>
-                          ))}
                       </div>
-
-                      {/* Keywords mini row */}
-                      {Array.isArray(app.keywords) && app.keywords.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {app.keywords.slice(0, 6).map((k, i) => (
-                            <span key={`${app.id}-kw-${i}`} className={pill}>
-                              {k}
-                            </span>
-                          ))}
-                        </div>
-                      )}
                     </button>
 
-                    {/* Right: Status dropdown */}
+                    {/* Right: Status dropdown (ONLY place status appears) */}
                     <div className="shrink-0">
                       <motion.div
                         whileHover={{ scale: 1.01 }}
@@ -862,274 +810,233 @@ useEffect(() => {
 
     {/* Popup */}
     <AnimatePresence>
-      {selected && (() => {
-        // ✅ ONE compensation pill only in modal too
-        const modalPayPrimary = renderPayPrimary(selected);
-        const modalPayAnnual = renderAnnual(selected);
-        const modalPayText =
-          modalPayPrimary || modalPayAnnual || "Pay not listed";
-        const modalHasPay = Boolean(modalPayPrimary || modalPayAnnual);
+      {selected &&
+        (() => {
+          // ✅ ONE compensation pill only in modal too
+          const modalPayPrimary = renderPayPrimary(selected);
+          const modalPayAnnual = renderAnnual(selected);
+          const modalPayText = modalPayPrimary || modalPayAnnual || "Pay not listed";
+          const modalHasPay = Boolean(modalPayPrimary || modalPayAnnual);
 
-        return (
-          <motion.div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-md px-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setSelected(null);
-            }}
-          >
+          // ✅ Only show Full-time / Part-time (normalized)
+          const modalJobType = (() => {
+            const s = String(selected?.employmentType || "").trim().toLowerCase();
+            if (!s) return null;
+            if (s.includes("full")) return "Full-time";
+            if (s.includes("part")) return "Part-time";
+            return String(selected.employmentType || "").trim() || null;
+          })();
+
+          return (
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 10 }}
-              transition={{ duration: 0.22 }}
-              className={[
-                "w-full max-w-2xl rounded-2xl overflow-hidden",
-                surface,
-                edge,
-                brandRing,
-                cardShadow,
-              ].join(" ")}
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-md px-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setSelected(null);
+              }}
             >
-              <div className={`h-1.5 ${neonLine}`} />
-              <div className="p-6 md:p-7">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-white font-bold text-2xl leading-tight">
-                      {selected.job_title}
-                    </div>
-                    <div className="mt-2 text-white/70 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Building2 className="w-4 h-4 text-white/55" />
-                        {selected.company}
-                      </span>
-                      {formatDate(selected.created_date) && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4 text-white/55" />
-                          {formatDate(selected.created_date)}
-                        </span>
-                      )}
-                      {selected.location && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <MapPin className="w-4 h-4 text-white/55" />
-                          {selected.location}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setSelected(null)}
-                    className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 text-white/70 hover:text-white hover:bg-white/5 flex items-center justify-center"
-                    aria-label="Close"
-                  >
-                    <X className="w-5 h-5" />
-                  </motion.button>
-                </div>
-
-               <div className="mt-5 flex flex-wrap gap-2">
-  {/* ✅ single pay pill (first) */}
-  <span
-    className={`${modalHasPay ? pillGood : pill} inline-flex items-center gap-2`}
-  >
-    <DollarSign className="w-3.5 h-3.5" />
-    {modalPayText}
-  </span>
-
-  {/* ✅ job-type pills next to pay */}
-  {selected.employmentType && (
-    <span className={`${pill} inline-flex items-center gap-2`}>
-      <Briefcase className="w-3.5 h-3.5 text-white/60" />
-      {selected.employmentType}
-    </span>
-  )}
-
-  {selected.workModel && (
-    <span className={`${pill} inline-flex items-center gap-2`}>
-      <Building2 className="w-3.5 h-3.5 text-white/60" />
-      {selected.workModel}
-    </span>
-  )}
-
-  {selected.experienceLevel && (
-    <span className={`${pill} inline-flex items-center gap-2`}>
-      <Clock className="w-3.5 h-3.5 text-white/60" />
-      {selected.experienceLevel}
-    </span>
-  )}
-
-  {renderConfidence(selected) && (
-    <span className={pill}>{renderConfidence(selected)}</span>
-  )}
-
-  {renderTopPay(selected) && (
-    <span className={`${pillBrand} inline-flex items-center gap-2`}>
-      <Percent className="w-3.5 h-3.5" />
-      {renderTopPay(selected)}
-    </span>
-  )}
-
-  {Array.isArray(selected.complianceTags) &&
-    selected.complianceTags.slice(0, 6).map((t, i) => (
-      <span
-        key={`sel-ct-${i}`}
-        className={`${pillBrand} inline-flex items-center gap-2`}
-      >
-        <ShieldCheck className="w-3.5 h-3.5" />
-        {t}
-      </span>
-    ))}
-</div>
-
-                {Array.isArray(selected.keywords) && selected.keywords.length > 0 && (
-                  <div className="mt-4">
-                    <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
-                      Key skills
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {selected.keywords.slice(0, 16).map((k, i) => (
-                        <span key={`sel-kw-${i}`} className={pill}>
-                          {k}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {selected.website && (
-                  <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-black/25 border border-white/10 px-4 py-3">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 10 }}
+                transition={{ duration: 0.22 }}
+                className={[
+                  "w-full max-w-2xl rounded-2xl overflow-hidden",
+                  surface,
+                  edge,
+                  brandRing,
+                  cardShadow,
+                ].join(" ")}
+              >
+                <div className={`h-1.5 ${neonLine}`} />
+                <div className="p-6 md:p-7">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-xs text-white/50 mb-1">Job link</div>
-                      <div className="text-sm text-white/85 truncate">
-                        {selected.website}
+                      <div className="text-white font-bold text-2xl leading-tight">
+                        {selected.job_title}
+                      </div>
+                      <div className="mt-2 text-white/70 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-white/55" />
+                          {selected.company}
+                        </span>
+                        {formatDate(selected.created_date) && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Calendar className="w-4 h-4 text-white/55" />
+                            {formatDate(selected.created_date)}
+                          </span>
+                        )}
+                        {selected.location && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4 text-white/55" />
+                            {selected.location}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <motion.a
+
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setSelected(null)}
+                      className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 text-white/70 hover:text-white hover:bg-white/5 flex items-center justify-center"
+                      aria-label="Close"
+                    >
+                      <X className="w-5 h-5" />
+                    </motion.button>
+                  </div>
+
+                  {/* Pills row (ONLY: job type + pay) */}
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <span
+                      className={`${
+                        modalHasPay ? pillGood : pill
+                      } inline-flex items-center gap-2`}
+                    >
+                      <DollarSign className="w-3.5 h-3.5" />
+                      {modalPayText}
+                    </span>
+
+                    {modalJobType && (
+                      <span className={`${pill} inline-flex items-center gap-2`}>
+                        <Briefcase className="w-3.5 h-3.5 text-white/60" />
+                        {modalJobType}
+                      </span>
+                    )}
+                  </div>
+
+                  {selected.website && (
+                    <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-black/25 border border-white/10 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-white/50 mb-1">Job link</div>
+                        <div className="text-sm text-white/85 truncate">
+                          {selected.website}
+                        </div>
+                      </div>
+                      <motion.a
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        href={selected.website}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-white/85 hover:bg-white/[0.10] hover:border-violet-400/25"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Open
+                      </motion.a>
+                    </div>
+                  )}
+
+                  {selected.jobDescription && (
+                    <div className="mt-5">
+                      <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
+                        Job description (saved)
+                      </div>
+                      <div className="rounded-xl bg-black/25 border border-white/10 p-4 max-h-[240px] overflow-auto text-sm text-white/70 leading-relaxed">
+                        {String(selected.jobDescription)}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex items-center justify-between gap-3">
+                    <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      <Select
+                        value={selected?.status ? String(selected.status).toLowerCase() : "generated"}
+                        onValueChange={(v) => updateStatus(selected.id, v)}
+                      >
+                        <SelectTrigger
+                          className={[
+                            "w-48 rounded-xl py-5 text-sm font-semibold",
+                            "bg-black/45 border-white/10 text-white",
+                            "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                            "hover:bg-white/[0.06] hover:border-violet-400/35 transition-all",
+                            "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
+                            statusPill(selected.status),
+                          ].join(" ")}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+
+                        <SelectContent
+                          position="popper"
+                          sideOffset={10}
+                          avoidCollisions
+                          className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-2xl p-1 max-h-[340px] overflow-auto"
+                        >
+                          <SelectItem
+                            value="generated"
+                            className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-violet-500/25 data-[highlighted]:text-white data-[state=checked]:bg-violet-500/30"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-violet-300/80" />
+                              Generated
+                            </span>
+                          </SelectItem>
+
+                          <SelectItem
+                            value="applied"
+                            className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-sky-500/25 data-[highlighted]:text-white data-[state=checked]:bg-sky-500/30"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-sky-300/80" />
+                              Applied
+                            </span>
+                          </SelectItem>
+
+                          <SelectItem
+                            value="interview"
+                            className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-amber-500/25 data-[highlighted]:text-white data-[state=checked]:bg-amber-500/30"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-amber-300/80" />
+                              Interview
+                            </span>
+                          </SelectItem>
+
+                          <SelectItem
+                            value="offer"
+                            className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-emerald-500/25 data-[highlighted]:text-white data-[state=checked]:bg-emerald-500/30"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-300/80" />
+                              Offer
+                            </span>
+                          </SelectItem>
+
+                          <SelectItem
+                            value="rejected"
+                            className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-rose-500/25 data-[highlighted]:text-white data-[state=checked]:bg-rose-500/30"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-rose-300/80" />
+                              Rejected
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </motion.div>
+
+                    <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      href={selected.website}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-white/85 hover:bg-white/[0.10] hover:border-violet-400/25"
+                      onClick={() => setSelected(null)}
+                      className={[
+                        "px-4 py-3 rounded-xl text-sm font-semibold",
+                        "bg-white/[0.06] border border-white/10 text-white/85",
+                        "hover:bg-white/[0.10] hover:border-violet-400/25",
+                        "transition-all",
+                      ].join(" ")}
                     >
-                      <ExternalLink className="w-4 h-4" />
-                      Open
-                    </motion.a>
+                      Done
+                    </motion.button>
                   </div>
-                )}
-
-                {selected.jobDescription && (
-                  <div className="mt-5">
-                    <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
-                      Job description (saved)
-                    </div>
-                    <div className="rounded-xl bg-black/25 border border-white/10 p-4 max-h-[240px] overflow-auto text-sm text-white/70 leading-relaxed">
-                      {String(selected.jobDescription)}
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-6 flex items-center justify-between gap-3">
-                  <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-                    <Select
-                      value={selected?.status ? String(selected.status).toLowerCase() : "generated"}
-                      onValueChange={(v) => updateStatus(selected.id, v)}
-                    >
-                      <SelectTrigger
-                        className={[
-                          "w-48 rounded-xl py-5 text-sm font-semibold",
-                          "bg-black/45 border-white/10 text-white",
-                          "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                          "hover:bg-white/[0.06] hover:border-violet-400/35 transition-all",
-                          "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
-                          statusPill(selected.status),
-                        ].join(" ")}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-
-                      <SelectContent
-                        position="popper"
-                        sideOffset={10}
-                        avoidCollisions
-                        className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-2xl p-1 max-h-[340px] overflow-auto"
-                      >
-                        <SelectItem
-                          value="generated"
-                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-violet-500/25 data-[highlighted]:text-white data-[state=checked]:bg-violet-500/30"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-violet-300/80" />
-                            Generated
-                          </span>
-                        </SelectItem>
-
-                        <SelectItem
-                          value="applied"
-                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-sky-500/25 data-[highlighted]:text-white data-[state=checked]:bg-sky-500/30"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-sky-300/80" />
-                            Applied
-                          </span>
-                        </SelectItem>
-
-                        <SelectItem
-                          value="interview"
-                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-amber-500/25 data-[highlighted]:text-white data-[state=checked]:bg-amber-500/30"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-amber-300/80" />
-                            Interview
-                          </span>
-                        </SelectItem>
-
-                        <SelectItem
-                          value="offer"
-                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-emerald-500/25 data-[highlighted]:text-white data-[state=checked]:bg-emerald-500/30"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-300/80" />
-                            Offer
-                          </span>
-                        </SelectItem>
-
-                        <SelectItem
-                          value="rejected"
-                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-rose-500/25 data-[highlighted]:text-white data-[state=checked]:bg-rose-500/30"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-rose-300/80" />
-                            Rejected
-                          </span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </motion.div>
-
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setSelected(null)}
-                    className={[
-                      "px-4 py-3 rounded-xl text-sm font-semibold",
-                      "bg-white/[0.06] border border-white/10 text-white/85",
-                      "hover:bg-white/[0.10] hover:border-violet-400/25",
-                      "transition-all",
-                    ].join(" ")}
-                  >
-                    Done
-                  </motion.button>
                 </div>
-              </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        );
-      })()}
+          );
+        })()}
     </AnimatePresence>
   </div>
 );
