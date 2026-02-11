@@ -531,14 +531,26 @@ export default function NewJob() {
       studentMode,
     };
 
-    const job = await apiFetch("/api/jobs", {
+    const created = await apiFetch("/api/jobs", {
   method: "POST",
   body: payload,
 });
 
+// IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
+// So support both shapes:
+const jobId = created?.job?.id || created?.id;
 
-    localStorage.setItem("latestJobId", job?.id || "");
-    navigate(createPageUrl("Packet"));
+if (!jobId) {
+  toast.error("Job created but no jobId returned.");
+  return;
+}
+
+localStorage.setItem("latestJobId", jobId);
+
+// ✅ Navigate WITH the jobId (best: route param or querystring)
+navigate(`/packet/${encodeURIComponent(jobId)}`); 
+// (If your router doesn't have /packet/:jobId, use query instead: navigate(`/packet?jobId=${encodeURIComponent(jobId)}`))
+
   } catch (e) {
     console.error(e);
     toast.error(e?.message || "Failed to create job.");

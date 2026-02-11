@@ -10,78 +10,111 @@ export default function Packet() {
   const [packetData, setPacketData] = useState(null);
   const [isGenerating, setIsGenerating] = useState(true);
 
-  useEffect(() => {
-    const jobId = localStorage.getItem("latestJobId");
-    const userId = localStorage.getItem("latestUserId") || localStorage.getItem("userId");
+ useEffect(() => {
+  const jobId = localStorage.getItem("latestJobId");
 
-    if (!jobId || !userId) {
-      navigate(createPageUrl("AppHome"));
-      return;
+  if (!jobId) {
+    navigate(createPageUrl("AppHome"));
+    return;
+  }
+
+  let cancelled = false;
+  let timer = null;
+
+  const readJsonSafe = async (res) => {
+    const text = await res.text().catch(() => "");
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
     }
+  };
 
-    let cancelled = false;
-    let timer = null;
+  const run = async () => {
+    try {
+      setIsGenerating(true);
 
-    const run = async () => {
-      try {
-        setIsGenerating(true);
+      // ✅ Kick off generation (SWA cookies required)
+      const startRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/generate`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
 
-        // Kick off generation (backend needs userId for PK=/userId)
-        const startRes = await fetch(`/api/jobs/${jobId}/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-       
-        });
-        if (!startRes.ok) throw new Error(await startRes.text());
+      if (!startRes.ok) {
+        const data = await readJsonSafe(startRes);
+        const msg = data?.error || data?.raw || `Generation start failed (${startRes.status})`;
 
-        // Poll status (also needs userId)
-        const poll = async () => {
-          if (cancelled) return;
+        // ✅ if session expired, send them to login
+        if (startRes.status === 401) {
+          toast.error("Session expired, please log in.");
+          navigate("/login"); // or createPageUrl("Login") if you have it
+          return;
+        }
 
-          const r = await fetch(`/api/jobs/${jobId}?userId=${encodeURIComponent(userId)}`, {
-            method: "GET",
-          });
-
-          if (!r.ok) {
-            const msg = await r.text();
-            throw new Error(msg || `Status request failed (${r.status})`);
-          }
-
-          const payload = await r.json();
-          const job = payload?.job || payload; // support {job: {...}} or direct job
-
-          if (!job) throw new Error("Missing job payload");
-
-          if (job.status === "completed") {
-            setPacketData(job);
-            setIsGenerating(false);
-            return;
-          }
-
-          if (job.status === "failed") {
-            toast.error("Generation failed.");
-            setIsGenerating(false);
-            return;
-          }
-
-          timer = setTimeout(poll, 1200);
-        };
-
-        poll();
-      } catch (e) {
-        console.error(e);
-        toast.error("Could not start generation.");
-        setIsGenerating(false);
+        throw new Error(msg);
       }
-    };
 
-    run();
+      // ✅ Poll job (NO userId query param, cookies included)
+      const poll = async () => {
+        if (cancelled) return;
 
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [navigate]);
+        const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+          method: "GET",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!r.ok) {
+          const data = await readJsonSafe(r);
+          const msg = data?.error || data?.raw || `Status request failed (${r.status})`;
+
+          if (r.status === 401) {
+            toast.error("Session expired, please log in.");
+            navigate("/login");
+            return;
+          }
+
+          throw new Error(msg);
+        }
+
+        const payload = await r.json().catch(() => null);
+        const job = payload?.job || payload;
+
+        if (!job) throw new Error("Missing job payload");
+
+        if (job.status === "completed") {
+          setPacketData(job);
+          setIsGenerating(false);
+          return;
+        }
+
+        if (job.status === "failed") {
+          toast.error("Generation failed.");
+          setIsGenerating(false);
+          return;
+        }
+
+        timer = setTimeout(poll, 1200);
+      };
+
+      poll();
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Could not start generation.");
+      setIsGenerating(false);
+    }
+  };
+
+  run();
+
+  return () => {
+    cancelled = true;
+    if (timer) clearTimeout(timer);
+  };
+}, [navigate]);
+
 
   // ✅ Real downloads (for now: downloads as .txt from the saved job outputs)
   const downloadTextFile = (filename, text) => {
