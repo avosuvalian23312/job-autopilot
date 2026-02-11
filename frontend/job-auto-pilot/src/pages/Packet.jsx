@@ -11,7 +11,9 @@ export default function Packet() {
   const [isGenerating, setIsGenerating] = useState(true);
 
  useEffect(() => {
-  const jobId = localStorage.getItem("latestJobId");
+  const urlParams = new URLSearchParams(window.location.search);
+const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
+
 
   if (!jobId) {
     navigate(createPageUrl("AppHome"));

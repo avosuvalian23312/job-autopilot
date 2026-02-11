@@ -549,7 +549,8 @@ if (!jobId) {
 localStorage.setItem("latestJobId", jobId);
 
 // ✅ Navigate WITH the jobId (best: route param or querystring)
-navigate(`/packet/${encodeURIComponent(jobId)}`); 
+navigate(`/packet?id=${encodeURIComponent(jobId)}`);
+
 // (If your router doesn't have /packet/:jobId, use query instead: navigate(`/packet?jobId=${encodeURIComponent(jobId)}`))
 
   } catch (e) {
