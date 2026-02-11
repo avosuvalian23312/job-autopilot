@@ -58,57 +58,13 @@ const CircularMetric = ({ value, label, color = "purple" }) => {
 
 export default function AppHome() {
   const navigate = useNavigate();
-  const [recentActivity, setRecentActivity] = useState([]);
-const [metrics, setMetrics] = useState({ applications: 0, interviews: 0, offers: 0 });
-const [loading, setLoading] = useState(true);
-
-useEffect(() => {
-  let cancelled = false;
-
-  const run = async () => {
-    try {
-      setLoading(true);
-
-      const res = await fetch("/api/dashboard", {
-        method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const text = await res.text().catch(() => "");
-      const data = text ? JSON.parse(text) : null;
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          // not logged in
-          navigate("/login");
-          return;
-        }
-        throw new Error(data?.error || `Dashboard failed (${res.status})`);
-      }
-
-      if (cancelled) return;
-
-      setMetrics(data?.metrics || { applications: 0, interviews: 0, offers: 0 });
-      setRecentActivity(Array.isArray(data?.recentActivity) ? data.recentActivity : []);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load dashboard.");
-      if (!cancelled) {
-        setMetrics({ applications: 0, interviews: 0, offers: 0 });
-        setRecentActivity([]);
-      }
-    } finally {
-      if (!cancelled) setLoading(false);
-    }
-  };
-
-  run();
-  return () => {
-    cancelled = true;
-  };
-}, [navigate]);
-
+  const [recentActivity] = useState([
+    { id: 1, type: "job_added", text: "Added Software Engineer at Google", time: "2 hours ago" },
+    { id: 2, type: "doc_generated", text: "Generated cover letter for Product Manager role", time: "5 hours ago" },
+    { id: 3, type: "status_changed", text: "Application status updated to Interview", time: "1 day ago" },
+    { id: 4, type: "job_added", text: "Added Senior Developer at Meta", time: "2 days ago" },
+    { id: 5, type: "doc_generated", text: "Generated resume bullets for Designer position", time: "3 days ago" }
+  ]);
 
   const handleNewJob = () => {
     navigate(createPageUrl("NewJob"));
@@ -155,10 +111,9 @@ useEffect(() => {
             <h2 className="text-2xl font-bold text-white mb-12 text-center">This Week</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-              <CircularMetric value={metrics.applications} label="Applications" color="purple" />
-<CircularMetric value={metrics.interviews} label="Interviews" color="cyan" />
-<CircularMetric value={metrics.offers} label="Offers" color="green" />
-
+              <CircularMetric value={12} label="Applications" color="purple" />
+              <CircularMetric value={5} label="Interviews" color="cyan" />
+              <CircularMetric value={2} label="Offers" color="green" />
             </div>
           </div>
         </div>
