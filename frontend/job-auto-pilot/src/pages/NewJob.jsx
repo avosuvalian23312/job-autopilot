@@ -126,14 +126,8 @@ export default function NewJob() {
   return id;
 };
 
-    // Last-resort stable fallback (still not "demo-user")
-    const local =
-      localStorage.getItem("swaUserIdFallback") ||
-      `anon-${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem("swaUserIdFallback", local);
-    setSwaUserId(local);
-    return local;
-  };
+
+   
 
   useEffect(() => {
     // warm SWA user id (non-blocking)
