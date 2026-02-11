@@ -1,8 +1,6 @@
-// src/lib/swaUser.js
 "use strict";
 
 function parseClientPrincipal(request) {
-  // In Functions v4 code-first, request.headers.get(...) is available
   const encoded = request?.headers?.get?.("x-ms-client-principal");
   if (!encoded) return null;
 
@@ -14,20 +12,26 @@ function parseClientPrincipal(request) {
   }
 }
 
+// ✅ what Cosmos PK needs
 function getSwaUserId(request) {
   const principal = parseClientPrincipal(request);
-
-  // SWA provides these fields commonly:
-  const userId = principal?.userId;
-  const identityProvider = principal?.identityProvider;
-
-  if (!userId) return null;
-
-  return {
-    userId,
-    identityProvider: identityProvider || "unknown",
-    principal,
-  };
+  return principal?.userId || null; // STRING
 }
 
-module.exports = { getSwaUserId };
+// ✅ optional helper for UI/logging
+function getSwaUserDetails(request) {
+  const principal = parseClientPrincipal(request);
+  return principal?.userDetails || null;
+}
+
+function getSwaIdentityProvider(request) {
+  const principal = parseClientPrincipal(request);
+  return principal?.identityProvider || "unknown";
+}
+
+module.exports = {
+  parseClientPrincipal,
+  getSwaUserId,
+  getSwaUserDetails,
+  getSwaIdentityProvider,
+};
