@@ -241,11 +241,7 @@ export default function Applications() {
   try {
     const userId = await getSwaUserId();
 
-    if (!userId) {
-      toast.error("You're not signed in. Please sign in to view applications.");
-      setApplications([]);
-      return;
-    }
+    
 
     const data = await apiFetch("/api/jobs", { method: "GET" });
 
