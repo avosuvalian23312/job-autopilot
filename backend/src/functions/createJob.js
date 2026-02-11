@@ -1,5 +1,7 @@
+// backend/src/functions/createJob.js
 "use strict";
 
+const crypto = require("crypto");
 const { CosmosClient } = require("@azure/cosmos");
 const { getSwaUserId } = require("../lib/swaUser");
 
@@ -10,17 +12,14 @@ const container = cosmos
 
 async function createJob(request, context) {
   try {
-    // ✅ SWA auth userId from headers
-    const user = getSwaUserId(request);
-    if (!user?.userId) {
+    // ✅ SWA userId (string only)
+    const userId = getSwaUserId(request);
+    if (!userId) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
-    const userId = user.userId;
 
-    // ✅ read body
     const body = await request.json().catch(() => ({}));
 
-    // ✅ validate required fields (NO userId from client)
     const jobTitle = (body?.jobTitle || "").trim();
     const jobDescription = (body?.jobDescription || "").trim();
 
@@ -33,7 +32,7 @@ async function createJob(request, context) {
 
     const doc = {
       id: crypto.randomUUID(),
-      userId, // ✅ always from SWA
+      userId, // ✅ PK value
       jobTitle,
       company: body?.company ?? "Not specified",
       website: body?.website ?? null,
@@ -48,12 +47,16 @@ async function createJob(request, context) {
       updatedAt: new Date().toISOString(),
     };
 
-    await container.items.create(doc, { partitionKey: userId });
+    // ✅ partitionKey MUST be string userId
+    const { resource } = await container.items.create(doc, { partitionKey: userId });
 
-    return { status: 201, jsonBody: { ok: true, ...doc } };
+    return { status: 201, jsonBody: { ok: true, job: resource } };
   } catch (err) {
     context.error("createJob error:", err);
-    return { status: 500, jsonBody: { ok: false, error: "Failed to create job", details: err?.message } };
+    return {
+      status: 500,
+      jsonBody: { ok: false, error: "Failed to create job", details: err?.message || "Unknown error" },
+    };
   }
 }
 
