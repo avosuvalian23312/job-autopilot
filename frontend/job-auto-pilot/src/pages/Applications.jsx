@@ -52,64 +52,63 @@ export default function Applications() {
 
   // ✅ SWA-safe fetch helper (cookies included)
   const apiFetch = async (path, options = {}) => {
-    const { body, headers, ...rest } = options;
+  const { body, headers, ...rest } = options;
 
-    const isJsonObject =
-      body != null && typeof body === "object" && !(body instanceof FormData);
+  const isJsonObject =
+    body != null && typeof body === "object" && !(body instanceof FormData);
 
-    const res = await fetch(path, {
-      ...rest,
-      credentials: "include", // ✅ REQUIRED for SWA auth cookies
-      headers: {
-        ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
-        ...(headers || {}),
-      },
-      body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
-    });
+  const res = await fetch(path, {
+    ...rest,
+    credentials: "include", // ✅ REQUIRED for SWA auth cookies
+    headers: {
+      ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
+      ...(headers || {}),
+    },
+    body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
+  });
 
-    const data = await readJsonSafe(res);
+  const data = await readJsonSafe(res);
 
-    if (!res.ok) {
-      const msg =
-        data?.error ||
-        data?.message ||
-        data?.detail ||
-        data?.raw ||
-        `Request failed (${res.status})`;
-      const err = new Error(msg);
-      err.status = res.status;
-      err.data = data;
-      throw err;
-    }
+  if (!res.ok) {
+    const msg =
+      data?.error ||
+      data?.message ||
+      data?.detail ||
+      data?.raw ||
+      `Request failed (${res.status})`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
 
-    return data;
-    
-  };
+  return data;
+};
 
- 
-
+  // ✅ get SWA userId from /.auth/me (clientPrincipal)
   // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
-  const getSwaUserId = async () => {
-    if (swaUserIdRef.current) return swaUserIdRef.current;
+const getSwaUserId = async () => {
+  if (swaUserIdRef.current) return swaUserIdRef.current;
 
-    try {
-      const me = await apiFetch("/.auth/me", { method: "GET" });
+  try {
+    const me = await apiFetch("/.auth/me", { method: "GET" });
 
-      // SWA /.auth/me returns: [ { clientPrincipal: {...} } ] OR []
-      const entry = Array.isArray(me) ? me[0] : null;
-      const cp = entry?.clientPrincipal || null;
+    // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
+    const entry = Array.isArray(me) ? me[0] : null;
+    const cp = entry?.clientPrincipal || null;
 
-      const userId = cp?.userId || null;
-      if (userId) {
-        swaUserIdRef.current = String(userId);
-        return swaUserIdRef.current;
-      }
-    } catch {
-      // ignore
+    const userId = cp?.userId || null;
+    if (userId) {
+      swaUserIdRef.current = String(userId);
+      return swaUserIdRef.current;
     }
+  } catch {
+    // ignore
+  }
 
-    return null; // ✅ logged out
-  };
+  return null; // ✅ logged out (no fake ids)
+};
+
 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
@@ -131,16 +130,11 @@ export default function Applications() {
       job?.createdDate ??
       null;
 
-    // IMPORTANT: your system uses "created" on create, but UI expects "generated"
-    // Normalize:
-    const rawStatus =
+    const status =
       job?.status ??
       job?.applicationStatus ??
       job?.application_status ??
       "generated";
-
-    let status = String(rawStatus || "generated").toLowerCase();
-    if (status === "created") status = "generated";
 
     return {
       ...job,
@@ -148,8 +142,7 @@ export default function Applications() {
       job_title: jobTitle,
       company,
       created_date: created,
-      status,
-
+      status: String(status || "generated").toLowerCase(),
       website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
       location: job?.location ?? null,
       seniority:
@@ -216,28 +209,56 @@ export default function Applications() {
   const loadJobs = async () => {
     setIsLoading(true);
     try {
-      const userId = await getSwaUserId();
+      // ✅ SWA userId from /.auth/me
+     const userId = await getSwaUserId();
+const redirectToSwaLogin = (provider = "google") => {
+  const returnTo = window.location.pathname + window.location.search + window.location.hash;
+  const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+  window.location.assign(url);
+};
 
-      // If logged out (or SWA not seeing auth), go to SWA login properly
-      if (!userId) {
-        toast.error("Session expired — please sign in.");
-        redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
-        return;
-      }
+const loadJobs = async () => {
+  setIsLoading(true);
+  try {
+    const userId = await getSwaUserId();
 
-      const data = await apiFetch("/api/jobs", { method: "GET" });
+    // If logged out (or SWA not seeing auth), go to SWA login properly
+    if (!userId) {
+      toast.error("Session expired — please sign in.");
+      redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
+      return;
+    }
+
+    const data = await apiFetch("/api/jobs", { method: "GET" });
+    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
+    const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
+    setApplications(normalized);
+  } catch (e) {
+    console.error(e);
+
+    // If your API returns 401, also send them through SWA login
+    if (e?.status === 401) {
+      toast.error("Not authorized — please sign in again.");
+      redirectToSwaLogin("google");
+      return;
+    }
+
+    toast.error("Failed to load applications.");
+    setApplications([]);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const data = await apiFetch("/api/jobs", { method: "GET" });
+
+
       const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
       const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
+
       setApplications(normalized);
     } catch (e) {
       console.error(e);
-
-      if (e?.status === 401) {
-        toast.error("Not authorized — please sign in again.");
-        redirectToSwaLogin("google");
-        return;
-      }
-
       toast.error("Failed to load applications.");
       setApplications([]);
     } finally {
@@ -298,10 +319,7 @@ export default function Applications() {
         ? `${symbol}${min}${suffix}`
         : `${symbol}${min} – ${symbol}${max}${suffix}`;
     }
-    if (min && !max) return `${symbol}${min}${suffix}`;
-    if (!min && max) return `${symbol}${max}${suffix}`;
-
-    if (job?.payText) return String(job.payText);
+    if (job?.payText) return job.payText;
     return null;
   };
 
@@ -326,18 +344,6 @@ export default function Applications() {
     if (typeof job?.payPercentile !== "number") return null;
     const top = Math.round(100 - job.payPercentile);
     return `Top ${top}% pay`;
-  };
-
-  // ✅ ALWAYS show a pay pill (fixes the “blank” pill issue)
-  const renderPayAlways = (job) => {
-    const primary = renderPayPrimary(job);
-    if (primary) return primary;
-
-    const annual = renderAnnual(job);
-    if (annual) return annual;
-
-    // fallback: show something stable so UI never looks empty
-    return "Pay not listed";
   };
 
   const formatDate = (d) => {
@@ -376,9 +382,11 @@ export default function Applications() {
     try {
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
-        method: "PATCH",
-        body: { status: nextStatus },
-      });
+  method: "PATCH",
+  body: { status: nextStatus },
+});
+
+
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
@@ -409,30 +417,6 @@ export default function Applications() {
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
   const pillWarn =
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
-
-  // ✅ nicer dropdown option hover/zoom + border
-  const optionBase =
-    "rounded-lg px-3 py-2 text-white/90 border border-transparent transition-all duration-150 " +
-    "hover:scale-[1.03] hover:bg-white/5 hover:border-white/10 " +
-    "data-[highlighted]:scale-[1.03] data-[highlighted]:bg-white/5 data-[highlighted]:border-white/10 " +
-    "focus:bg-white/5";
-
-  const optionViolet =
-    optionBase +
-    " data-[highlighted]:bg-violet-500/20 hover:bg-violet-500/15";
-  const optionSky =
-    optionBase + " data-[highlighted]:bg-sky-500/20 hover:bg-sky-500/15";
-  const optionAmber =
-    optionBase + " data-[highlighted]:bg-amber-500/20 hover:bg-amber-500/15";
-  const optionEmerald =
-    optionBase +
-    " data-[highlighted]:bg-emerald-500/20 hover:bg-emerald-500/15";
-  const optionRose =
-    optionBase + " data-[highlighted]:bg-rose-500/20 hover:bg-rose-500/15";
-
-  const contentClass =
-    "bg-black/95 border border-white/10 text-white shadow-2xl rounded-2xl p-1 " +
-    "ring-1 ring-violet-400/15";
 
   return (
     <div className={`min-h-screen ${pageBg}`}>
@@ -483,23 +467,41 @@ export default function Applications() {
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
 
-              <SelectContent className={contentClass}>
-                <SelectItem value="all" className={optionViolet}>
+              <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                <SelectItem
+                  value="all"
+                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                >
                   All Status
                 </SelectItem>
-                <SelectItem value="generated" className={optionViolet}>
+                <SelectItem
+                  value="generated"
+                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                >
                   Generated
                 </SelectItem>
-                <SelectItem value="applied" className={optionSky}>
+                <SelectItem
+                  value="applied"
+                  className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                >
                   Applied
                 </SelectItem>
-                <SelectItem value="interview" className={optionAmber}>
+                <SelectItem
+                  value="interview"
+                  className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                >
                   Interview
                 </SelectItem>
-                <SelectItem value="offer" className={optionEmerald}>
+                <SelectItem
+                  value="offer"
+                  className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                >
                   Offer
                 </SelectItem>
-                <SelectItem value="rejected" className={optionRose}>
+                <SelectItem
+                  value="rejected"
+                  className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                >
                   Rejected
                 </SelectItem>
               </SelectContent>
@@ -546,9 +548,6 @@ export default function Applications() {
                 const payAnnual = renderAnnual(app);
                 const payConf = renderConfidence(app);
                 const topPay = renderTopPay(app);
-
-                // always-on pay text
-                const payAlways = renderPayAlways(app);
 
                 return (
                   <motion.div
@@ -635,22 +634,19 @@ export default function Applications() {
                             </span>
                           )}
 
-                          {/* ✅ always show a pay pill */}
-                          <span
-                            className={`${payPrimary ? pillGood : payAnnual ? pillWarn : pill} inline-flex items-center gap-2`}
-                            title={
-                              payPrimary
-                                ? "Pay (from posting)"
-                                : payAnnual
-                                ? "Annualized estimate"
-                                : "Pay not detected in posting"
-                            }
-                          >
-                            <DollarSign className="w-3.5 h-3.5" />
-                            {payAlways}
-                          </span>
+                          {payPrimary && (
+                            <span
+                              className={`${pillGood} inline-flex items-center gap-2`}
+                            >
+                              <DollarSign className="w-3.5 h-3.5" />
+                              {payPrimary}
+                            </span>
+                          )}
 
                           {payConf && <span className={pill}>{payConf}</span>}
+                          {payAnnual && (
+                            <span className={pillWarn}>{payAnnual}</span>
+                          )}
                           {topPay && (
                             <span
                               className={`${pillBrand} inline-flex items-center gap-2`}
@@ -673,20 +669,24 @@ export default function Applications() {
                         </div>
 
                         {/* Keywords mini row */}
-                        {Array.isArray(app.keywords) && app.keywords.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {app.keywords.slice(0, 6).map((k, i) => (
-                              <span key={`${app.id}-kw-${i}`} className={pill}>
-                                {k}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {Array.isArray(app.keywords) &&
+                          app.keywords.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {app.keywords.slice(0, 6).map((k, i) => (
+                                <span key={`${app.id}-kw-${i}`} className={pill}>
+                                  {k}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                       </button>
 
                       {/* Right: Status dropdown */}
                       <div className="shrink-0">
-                        <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                        <motion.div
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                        >
                           <Select
                             value={app.status}
                             onValueChange={(v) => updateStatus(app.id, v)}
@@ -704,20 +704,35 @@ export default function Applications() {
                               <SelectValue />
                             </SelectTrigger>
 
-                            <SelectContent className={contentClass}>
-                              <SelectItem value="generated" className={optionViolet}>
+                            <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                              <SelectItem
+                                value="generated"
+                                className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                              >
                                 Generated
                               </SelectItem>
-                              <SelectItem value="applied" className={optionSky}>
+                              <SelectItem
+                                value="applied"
+                                className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                              >
                                 Applied
                               </SelectItem>
-                              <SelectItem value="interview" className={optionAmber}>
+                              <SelectItem
+                                value="interview"
+                                className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                              >
                                 Interview
                               </SelectItem>
-                              <SelectItem value="offer" className={optionEmerald}>
+                              <SelectItem
+                                value="offer"
+                                className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                              >
                                 Offer
                               </SelectItem>
-                              <SelectItem value="rejected" className={optionRose}>
+                              <SelectItem
+                                value="rejected"
+                                className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                              >
                                 Rejected
                               </SelectItem>
                             </SelectContent>
@@ -823,14 +838,16 @@ export default function Applications() {
                     </span>
                   )}
 
-                  {/* ✅ always show pay pill in modal too */}
-                  <span
-                    className={`${renderPayPrimary(selected) ? pillGood : renderAnnual(selected) ? pillWarn : pill} inline-flex items-center gap-2`}
-                  >
-                    <DollarSign className="w-3.5 h-3.5" />
-                    {renderPayAlways(selected)}
-                  </span>
+                  {renderPayPrimary(selected) && (
+                    <span className={`${pillGood} inline-flex items-center gap-2`}>
+                      <DollarSign className="w-3.5 h-3.5" />
+                      {renderPayPrimary(selected)}
+                    </span>
+                  )}
 
+                  {renderAnnual(selected) && (
+                    <span className={pillWarn}>{renderAnnual(selected)}</span>
+                  )}
                   {renderConfidence(selected) && (
                     <span className={pill}>{renderConfidence(selected)}</span>
                   )}
@@ -917,21 +934,35 @@ export default function Applications() {
                       >
                         <SelectValue />
                       </SelectTrigger>
-
-                      <SelectContent className={contentClass}>
-                        <SelectItem value="generated" className={optionViolet}>
+                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                        <SelectItem
+                          value="generated"
+                          className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                        >
                           Generated
                         </SelectItem>
-                        <SelectItem value="applied" className={optionSky}>
+                        <SelectItem
+                          value="applied"
+                          className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                        >
                           Applied
                         </SelectItem>
-                        <SelectItem value="interview" className={optionAmber}>
+                        <SelectItem
+                          value="interview"
+                          className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                        >
                           Interview
                         </SelectItem>
-                        <SelectItem value="offer" className={optionEmerald}>
+                        <SelectItem
+                          value="offer"
+                          className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                        >
                           Offer
                         </SelectItem>
-                        <SelectItem value="rejected" className={optionRose}>
+                        <SelectItem
+                          value="rejected"
+                          className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                        >
                           Rejected
                         </SelectItem>
                       </SelectContent>
