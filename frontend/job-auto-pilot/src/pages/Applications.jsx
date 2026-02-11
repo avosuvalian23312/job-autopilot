@@ -326,13 +326,19 @@ useEffect(() => {
   };
 
   const renderAnnual = (job) => {
-    const min = fmtMoney(job?.payAnnualizedMin);
-    const max = fmtMoney(job?.payAnnualizedMax);
-    if (min && max) return `Est. $${min} – $${max} /yr`;
-    if (min) return `Est. $${min} /yr`;
-    if (max) return `Est. $${max} /yr`;
-    return null;
-  };
+  const period = String(job?.payPeriod || "").toLowerCase();
+
+  // If already yearly AND min/max exist, don't show an "Est." annual pill
+  const hasPrimaryRange = typeof job?.payMin === "number" || typeof job?.payMax === "number";
+  if (period === "year" && hasPrimaryRange) return null;
+
+  const min = fmtMoney(job?.payAnnualizedMin);
+  const max = fmtMoney(job?.payAnnualizedMax);
+  if (min && max) return `Est. $${min} – $${max} /yr`;
+  if (min) return `Est. $${min} /yr`;
+  if (max) return `Est. $${max} /yr`;
+  return null;
+};
 
   const renderConfidence = (job) => {
     if (typeof job?.payConfidence !== "number") return null;
@@ -546,11 +552,15 @@ useEffect(() => {
             ) : (
               filtered.map((app, index) => {
                 const dateStr = formatDate(app.created_date);
-                const payPrimary = renderPayPrimary(app);
-                const payAnnual = renderAnnual(app);
+                const payPrimaryRaw = renderPayPrimary(app);
+const payAnnual = renderAnnual(app);
+const hasPay = Boolean(payPrimaryRaw || payAnnual);
+const payPrimary = payPrimaryRaw || "Pay not listed";
+
                 const payConf = renderConfidence(app);
                 const topPay = renderTopPay(app);
-
+                
+                
                 return (
                   <motion.div
                     key={app.id}
@@ -636,14 +646,11 @@ useEffect(() => {
                             </span>
                           )}
 
-                          {payPrimary && (
-                            <span
-                              className={`${pillGood} inline-flex items-center gap-2`}
-                            >
-                              <DollarSign className="w-3.5 h-3.5" />
-                              {payPrimary}
-                            </span>
-                          )}
+                        <span className={`${hasPay ? pillGood : pill} inline-flex items-center gap-2`}>
+  <DollarSign className="w-3.5 h-3.5" />
+  {payPrimary}
+</span>
+
 
                           {payConf && <span className={pill}>{payConf}</span>}
                           {payAnnual && (
