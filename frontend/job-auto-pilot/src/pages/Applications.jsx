@@ -87,27 +87,10 @@ export default function Applications() {
 
   // ✅ get SWA userId from /.auth/me (clientPrincipal)
   // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
-const getSwaUserId = async () => {
-  if (swaUserIdRef.current) return swaUserIdRef.current;
 
-  try {
-    const me = await apiFetch("/.auth/me", { method: "GET" });
 
-    // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
-    const entry = Array.isArray(me) ? me[0] : null;
-    const cp = entry?.clientPrincipal || null;
+  
 
-    const userId = cp?.userId || null;
-    if (userId) {
-      swaUserIdRef.current = String(userId);
-      return swaUserIdRef.current;
-    }
-  } catch {
-    // ignore
-  }
-
-  return null; // ✅ logged out (no fake ids)
-};
  const getSwaUserId = async () => {
     if (swaUserIdRef.current) return swaUserIdRef.current;
 
@@ -712,7 +695,7 @@ job?.pay && typeof job.pay === "object" ? job.pay : null;
                           whileTap={{ scale: 0.99 }}
                         >
                           <Select
-                            value={app.status}
+                              value={app?.status ? String(app.status).toLowerCase() : "generated"}
                             onValueChange={(v) => updateStatus(app.id, v)}
                           >
                             <SelectTrigger
@@ -945,8 +928,8 @@ job?.pay && typeof job.pay === "object" ? job.pay : null;
                 <div className="mt-6 flex items-center justify-between gap-3">
                   <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                     <Select
-                      value={selected.status}
-                      onValueChange={(v) => updateStatus(selected.id, v)}
+                      value={selected?.status ? String(selected.status).toLowerCase() : "generated"}
+                    onValueChange={(v) => updateStatus(selected.id, v)}
                     >
                       <SelectTrigger
                         className={[
