@@ -120,26 +120,25 @@ const toTitle = (s) =>
     .replace(/\b\w/g, (m) => m.toUpperCase());
 
 const normalizeEmploymentType = (t) => {
-  const s = String(t || "").trim().toLowerCase();
-  if (!s) return null;
-  if (s.includes("full")) return "Full-time";
-  if (s.includes("part")) return "Part-time";
-  return String(t).trim();
-};
+  const raw = String(t ?? "").trim();
+  if (!raw) return null;
 
+  const key = raw.toLowerCase().replace(/[_-]+/g, " ");
 
   const map = {
     "full time": "Full-time",
     "part time": "Part-time",
-    "contract": "Contract",
-    "contractor": "Contract",
-    "temporary": "Temporary",
-    "intern": "Internship",
-    "internship": "Internship",
-    "seasonal": "Seasonal",
+    contract: "Contract",
+    contractor: "Contract",
+    temporary: "Temporary",
+    intern: "Internship",
+    internship: "Internship",
+    seasonal: "Seasonal",
   };
-  return map[t] || toTitle(t);
+
+  return map[key] || toTitle(key);
 };
+
 
 const normalizeWorkModel = (v) => {
   if (v == null) return null;
