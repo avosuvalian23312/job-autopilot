@@ -608,35 +608,84 @@ navigate(`/packet?id=${encodeURIComponent(jobId)}`);
     "px-4 py-2 rounded-full text-sm font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
   const pillWarn =
     "px-4 py-2 rounded-full text-sm font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
+const normalizePayPeriod = (val) => {
+  const p = String(val ?? "").trim().toLowerCase();
+  if (!p) return null;
+
+  if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hour";
+  if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "year";
+  if (["month", "monthly", "mo", "/mo"].includes(p)) return "month";
+  if (["week", "weekly", "wk", "/wk"].includes(p)) return "week";
+  if (["day", "daily", "/day"].includes(p)) return "day";
+
+  return p;
+};
 
   const fmtMoney = (n) =>
     typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
 
-  const renderPayPrimary = () => {
-    const cur = extractedData?.payCurrency || "USD";
-    const symbol = cur === "USD" ? "$" : `${cur} `;
-    const periodMap = { hour: "/hr", year: "/yr", month: "/mo", week: "/wk", day: "/day" };
-    const suffix = extractedData?.payPeriod ? periodMap[extractedData.payPeriod] || "" : "";
+ const renderPayPrimary = (job) => {
+  const cur = job?.payCurrency || "USD";
+  const symbol = cur === "USD" ? "$" : `${cur} `;
 
-    const min = fmtMoney(extractedData?.payMin);
-    const max = fmtMoney(extractedData?.payMax);
-
-    if (min && max) {
-      return min === max ? `${symbol}${min}${suffix}` : `${symbol}${min} – ${symbol}${max}${suffix}`;
-    }
-
-    if (extractedData?.payText) return extractedData.payText;
-    return null;
+  const periodMap = {
+    hour: "/hr",
+    year: "/yr",
+    month: "/mo",
+    week: "/wk",
+    day: "/day",
   };
 
-  const renderAnnual = () => {
-    const min = fmtMoney(extractedData?.payAnnualizedMin);
-    const max = fmtMoney(extractedData?.payAnnualizedMax);
-    if (min && max) return `Est. $${min} – $${max} /yr`;
-    if (min) return `Est. $${min} /yr`;
-    if (max) return `Est. $${max} /yr`;
-    return null;
-  };
+  const periodKey = normalizePayPeriod(job?.payPeriod);
+  const suffix = periodKey ? periodMap[periodKey] || "" : "";
+
+  const minNum = typeof job?.payMin === "number" ? job.payMin : null;
+  const maxNum = typeof job?.payMax === "number" ? job.payMax : null;
+
+  const min = fmtMoney(minNum);
+  const max = fmtMoney(maxNum);
+
+  if (min && max) {
+    return min === max
+      ? `${symbol}${min}${suffix}`
+      : `${symbol}${min} – ${symbol}${max}${suffix}`;
+  }
+  if (min) return `${symbol}${min}${suffix}`;
+  if (max) return `${symbol}${max}${suffix}`;
+
+  const t = typeof job?.payText === "string" ? job.payText.trim() : "";
+  if (t) return t;
+
+  return null;
+};
+
+
+  const renderAnnual = (job) => {
+  const periodKey = normalizePayPeriod(job?.payPeriod);
+
+  const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
+  const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
+  if (minA == null && maxA == null) return null;
+
+  const min = typeof job?.payMin === "number" ? job.payMin : null;
+  const max = typeof job?.payMax === "number" ? job.payMax : null;
+
+  // If primary is already yearly range, don't show an extra "Est." annual pill
+  if (periodKey === "year" && (min != null || max != null)) return null;
+
+  // If annualized equals the primary numbers, it's redundant (common with yearly jobs)
+  const sameAsPrimary = (minA ?? null) === (min ?? null) && (maxA ?? null) === (max ?? null);
+  if (sameAsPrimary && (min != null || max != null)) return null;
+
+  const minS = fmtMoney(minA);
+  const maxS = fmtMoney(maxA);
+
+  if (minS && maxS) return `Est. $${minS} – $${maxS} /yr`;
+  if (minS) return `Est. $${minS} /yr`;
+  if (maxS) return `Est. $${maxS} /yr`;
+  return null;
+};
+
 
   const renderConfidence = () => {
     if (typeof extractedData?.payConfidence !== "number") return null;
