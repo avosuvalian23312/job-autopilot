@@ -429,339 +429,360 @@ useEffect(() => {
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
 
   return (
-    <div className={`min-h-screen ${pageBg}`}>
-      <AppNav currentPage="Applications" />
+  <div className={`min-h-screen ${pageBg} text-white`}>
+    <AppNav currentPage="Applications" />
 
-      <motion.div
-        initial={{ opacity: 0, x: 18 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -18 }}
-        transition={{ duration: 0.28 }}
-        className="max-w-7xl mx-auto px-4 sm:px-6 py-8"
-      >
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl md:text-3xl font-bold text-white mb-3">
-            Applications
-          </h1>
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-              <span className="text-sm font-bold text-purple-200">
-                {applications.length}
-              </span>
-            </div>
-            <span className="text-white/40 text-sm">
-              total applications tracked
+    <motion.div
+      initial={{ opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -18 }}
+      transition={{ duration: 0.28 }}
+      className="max-w-7xl mx-auto px-4 sm:px-6 py-10"
+    >
+      <div className="mb-10 text-center">
+        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white mb-3">
+          Applications
+        </h1>
+        <div className="flex items-center justify-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-violet-500/15 border border-violet-400/25 ring-1 ring-white/10 flex items-center justify-center shadow-[0_10px_35px_rgba(0,0,0,0.55)]">
+            <span className="text-sm font-bold text-violet-100">
+              {applications.length}
             </span>
           </div>
+          <span className="text-white/45 text-sm">
+            total applications tracked
+          </span>
         </div>
+      </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <motion.div
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            className="relative flex-1"
-          >
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30" />
-            <Input
-              placeholder="Search by role or company…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bg-black/30 border-white/10 text-white placeholder:text-white/30 pl-12 py-6 rounded-xl text-base hover:bg-white/[0.05] hover:border-violet-400/40 hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200"
-            />
-          </motion.div>
-
-          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48 bg-black/30 border-white/10 text-white/80 rounded-xl py-6 text-base hover:bg-white/[0.05] hover:border-violet-400/40 hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-
-              <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                <SelectItem
-                  value="all"
-                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                >
-                  All Status
-                </SelectItem>
-                <SelectItem
-                  value="generated"
-                  className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                >
-                  Generated
-                </SelectItem>
-                <SelectItem
-                  value="applied"
-                  className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
-                >
-                  Applied
-                </SelectItem>
-                <SelectItem
-                  value="interview"
-                  className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
-                >
-                  Interview
-                </SelectItem>
-                <SelectItem
-                  value="offer"
-                  className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
-                >
-                  Offer
-                </SelectItem>
-                <SelectItem
-                  value="rejected"
-                  className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
-                >
-                  Rejected
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </motion.div>
-        </div>
-
-        {/* List */}
-        <div
-          className={[
-            "rounded-2xl overflow-hidden",
-            surface,
-            edge,
-            brandRing,
-            ambient,
-          ].join(" ")}
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <motion.div
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          className="relative flex-1"
         >
-          <div className={`h-1.5 ${neonLine}`} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/35" />
+          <Input
+            placeholder="Search by role or company…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={[
+              "pl-12 py-6 rounded-xl text-base",
+              "bg-black/35 border-white/10",
+              "!text-white !placeholder:text-white/35 caret-white",
+              "selection:bg-violet-500/35 selection:text-white",
+              "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+              "hover:bg-white/[0.06] hover:border-violet-400/35 hover:shadow-lg hover:shadow-violet-500/10",
+              "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
+              "transition-all duration-200",
+            ].join(" ")}
+          />
+        </motion.div>
 
-          <div className="divide-y divide-white/10">
-            {isLoading ? (
-              <div className="p-6 space-y-4">
-                {Array(6)
-                  .fill(0)
-                  .map((_, i) => (
-                    <div
-                      key={i}
-                      className="rounded-xl p-4 bg-black/25 border border-white/10"
-                    >
-                      <Skeleton className="h-5 w-64 bg-white/5 mb-3" />
-                      <Skeleton className="h-4 w-40 bg-white/5" />
-                    </div>
-                  ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="p-16 text-center">
-                <FileText className="w-14 h-14 text-white/10 mx-auto mb-4" />
-                <p className="text-white/40 text-lg">No applications found</p>
-              </div>
-            ) : (
-              filtered.map((app, index) => {
-                const dateStr = formatDate(app.created_date);
-                const payPrimaryRaw = renderPayPrimary(app);
-const payAnnual = renderAnnual(app);
-const hasPay = Boolean(payPrimaryRaw || payAnnual);
-const payPrimary = payPrimaryRaw || "Pay not listed";
+        <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger
+              className={[
+                "w-48 rounded-xl py-6 text-base",
+                "bg-black/35 border-white/10",
+                "text-white/90",
+                "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                "hover:bg-white/[0.06] hover:border-violet-400/35 hover:shadow-lg hover:shadow-violet-500/10",
+                "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
+                "transition-all duration-200",
+              ].join(" ")}
+            >
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
 
-                const payConf = renderConfidence(app);
-                const topPay = renderTopPay(app);
-                
-                
-                return (
-                  <motion.div
-                    key={app.id}
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.02, duration: 0.22 }}
-                    className={[
-                      "px-6 py-5 bg-black/10",
-                      "hover:bg-white/[0.03]",
-                      "transition-colors",
-                    ].join(" ")}
+            <SelectContent
+              position="popper"
+              sideOffset={10}
+              avoidCollisions
+              className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-xl p-1 max-h-[320px] overflow-auto"
+            >
+              <SelectItem
+                value="all"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+              >
+                All Status
+              </SelectItem>
+              <SelectItem
+                value="generated"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+              >
+                Generated
+              </SelectItem>
+              <SelectItem
+                value="applied"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+              >
+                Applied
+              </SelectItem>
+              <SelectItem
+                value="interview"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+              >
+                Interview
+              </SelectItem>
+              <SelectItem
+                value="offer"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+              >
+                Offer
+              </SelectItem>
+              <SelectItem
+                value="rejected"
+                className="rounded-lg cursor-pointer text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+              >
+                Rejected
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </motion.div>
+      </div>
+
+      {/* List */}
+      <div
+        className={[
+          "rounded-2xl overflow-hidden",
+          surface,
+          edge,
+          brandRing,
+          ambient,
+        ].join(" ")}
+      >
+        <div className={`h-1.5 ${neonLine}`} />
+
+        <div className="divide-y divide-white/10">
+          {isLoading ? (
+            <div className="p-6 space-y-4">
+              {Array(6)
+                .fill(0)
+                .map((_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl p-4 bg-black/25 border border-white/10"
                   >
-                    <div className="flex items-start justify-between gap-6">
-                      {/* Left */}
-                      <button
-                        onClick={() => setSelected(app)}
-                        className="text-left flex-1 min-w-0 group"
-                      >
-                        <div className="text-white font-semibold text-lg leading-tight group-hover:text-white">
-                          {app.job_title}
-                        </div>
+                    <Skeleton className="h-5 w-64 bg-white/5 mb-3" />
+                    <Skeleton className="h-4 w-40 bg-white/5" />
+                  </div>
+                ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-16 text-center">
+              <FileText className="w-14 h-14 text-white/10 mx-auto mb-4" />
+              <p className="text-white/45 text-lg">No applications found</p>
+            </div>
+          ) : (
+            filtered.map((app, index) => {
+              const dateStr = formatDate(app.created_date);
 
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/55">
+              // ✅ ONE compensation pill only (prevents double money)
+              const payPrimaryRaw = renderPayPrimary(app);
+              const payAnnual = renderAnnual(app);
+              const payPillText = payPrimaryRaw || payAnnual || "Pay not listed";
+              const hasPay = Boolean(payPrimaryRaw || payAnnual);
+
+              const payConf = renderConfidence(app);
+              const topPay = renderTopPay(app);
+
+              return (
+                <motion.div
+                  key={app.id}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.02, duration: 0.22 }}
+                  className={[
+                    "px-6 py-5 bg-black/10",
+                    "hover:bg-white/[0.035]",
+                    "transition-colors",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-6">
+                    {/* Left */}
+                    <button
+                      onClick={() => setSelected(app)}
+                      className="text-left flex-1 min-w-0 group"
+                    >
+                      <div className="text-white font-semibold text-lg leading-tight group-hover:text-white">
+                        {app.job_title}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/60">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4" />
+                          {app.company}
+                        </span>
+                        {dateStr && (
                           <span className="inline-flex items-center gap-1.5">
-                            <Building2 className="w-4 h-4" />
-                            {app.company}
+                            <Calendar className="w-4 h-4" />
+                            {dateStr}
                           </span>
-                          {dateStr && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <Calendar className="w-4 h-4" />
-                              {dateStr}
-                            </span>
-                          )}
-                          {app.location && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <MapPin className="w-4 h-4" />
-                              {app.location}
-                            </span>
-                          )}
-                          {app.website && (
-                            <span className="inline-flex items-center gap-1.5 truncate">
-                              <Globe className="w-4 h-4" />
-                              <span className="truncate max-w-[360px]">
-                                {app.website}
-                              </span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Pills row */}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span
-                            className={`${pillBrand} inline-flex items-center gap-2`}
-                          >
-                            <Tag className="w-3.5 h-3.5" />
-                            {statusLabel(app.status)}
+                        )}
+                        {app.location && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4" />
+                            {app.location}
                           </span>
-
-                          {app.employmentType && (
-                            <span
-                              className={`${pill} inline-flex items-center gap-2`}
-                            >
-                              <Briefcase className="w-3.5 h-3.5 text-white/60" />
-                              {app.employmentType}
+                        )}
+                        {app.website && (
+                          <span className="inline-flex items-center gap-1.5 truncate">
+                            <Globe className="w-4 h-4" />
+                            <span className="truncate max-w-[360px]">
+                              {app.website}
                             </span>
-                          )}
+                          </span>
+                        )}
+                      </div>
 
-                          {app.workModel && (
-                            <span
-                              className={`${pill} inline-flex items-center gap-2`}
-                            >
-                              <Building2 className="w-3.5 h-3.5 text-white/60" />
-                              {app.workModel}
-                            </span>
-                          )}
+                      {/* Pills row */}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                          <Tag className="w-3.5 h-3.5" />
+                          {statusLabel(app.status)}
+                        </span>
 
-                          {app.experienceLevel && (
-                            <span
-                              className={`${pill} inline-flex items-center gap-2`}
-                            >
-                              <Clock className="w-3.5 h-3.5 text-white/60" />
-                              {app.experienceLevel}
-                            </span>
-                          )}
+                        {app.employmentType && (
+                          <span className={`${pill} inline-flex items-center gap-2`}>
+                            <Briefcase className="w-3.5 h-3.5 text-white/60" />
+                            {app.employmentType}
+                          </span>
+                        )}
 
+                        {app.workModel && (
+                          <span className={`${pill} inline-flex items-center gap-2`}>
+                            <Building2 className="w-3.5 h-3.5 text-white/60" />
+                            {app.workModel}
+                          </span>
+                        )}
+
+                        {app.experienceLevel && (
+                          <span className={`${pill} inline-flex items-center gap-2`}>
+                            <Clock className="w-3.5 h-3.5 text-white/60" />
+                            {app.experienceLevel}
+                          </span>
+                        )}
+
+                        {/* ✅ single pay pill */}
                         <span className={`${hasPay ? pillGood : pill} inline-flex items-center gap-2`}>
-  <DollarSign className="w-3.5 h-3.5" />
-  {payPrimary}
-</span>
+                          <DollarSign className="w-3.5 h-3.5" />
+                          {payPillText}
+                        </span>
 
+                        {payConf && <span className={pill}>{payConf}</span>}
+                        {topPay && (
+                          <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                            <Percent className="w-3.5 h-3.5" />
+                            {topPay}
+                          </span>
+                        )}
 
-                          {payConf && <span className={pill}>{payConf}</span>}
-                          {payAnnual && (
-                            <span className={pillWarn}>{payAnnual}</span>
-                          )}
-                          {topPay && (
+                        {Array.isArray(app.complianceTags) &&
+                          app.complianceTags.slice(0, 3).map((t, i) => (
                             <span
+                              key={`${app.id}-ct-${i}`}
                               className={`${pillBrand} inline-flex items-center gap-2`}
                             >
-                              <Percent className="w-3.5 h-3.5" />
-                              {topPay}
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              {t}
                             </span>
-                          )}
-
-                          {Array.isArray(app.complianceTags) &&
-                            app.complianceTags.slice(0, 3).map((t, i) => (
-                              <span
-                                key={`${app.id}-ct-${i}`}
-                                className={`${pillBrand} inline-flex items-center gap-2`}
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                                {t}
-                              </span>
-                            ))}
-                        </div>
-
-                        {/* Keywords mini row */}
-                        {Array.isArray(app.keywords) &&
-                          app.keywords.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {app.keywords.slice(0, 6).map((k, i) => (
-                                <span key={`${app.id}-kw-${i}`} className={pill}>
-                                  {k}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                      </button>
-
-                      {/* Right: Status dropdown */}
-                      <div className="shrink-0">
-                        <motion.div
-                          whileHover={{ scale: 1.01 }}
-                          whileTap={{ scale: 0.99 }}
-                        >
-                          <Select
-                              value={app?.status ? String(app.status).toLowerCase() : "generated"}
-                            onValueChange={(v) => updateStatus(app.id, v)}
-                          >
-                            <SelectTrigger
-                              className={[
-                                "w-40 rounded-xl py-5 text-sm font-semibold",
-                                "bg-black/40 border-white/10",
-                                "text-white",
-                                "hover:bg-white/[0.05] hover:border-violet-400/40",
-                                "transition-all",
-                                statusPill(app.status),
-                              ].join(" ")}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-
-                            <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                              <SelectItem
-                                value="generated"
-                                className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
-                              >
-                                Generated
-                              </SelectItem>
-                              <SelectItem
-                                value="applied"
-                                className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
-                              >
-                                Applied
-                              </SelectItem>
-                              <SelectItem
-                                value="interview"
-                                className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
-                              >
-                                Interview
-                              </SelectItem>
-                              <SelectItem
-                                value="offer"
-                                className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
-                              >
-                                Offer
-                              </SelectItem>
-                              <SelectItem
-                                value="rejected"
-                                className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
-                              >
-                                Rejected
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </motion.div>
+                          ))}
                       </div>
-                    </div>
-                  </motion.div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </motion.div>
 
-      {/* Popup */}
-      <AnimatePresence>
-        {selected && (
+                      {/* Keywords mini row */}
+                      {Array.isArray(app.keywords) && app.keywords.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {app.keywords.slice(0, 6).map((k, i) => (
+                            <span key={`${app.id}-kw-${i}`} className={pill}>
+                              {k}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Right: Status dropdown */}
+                    <div className="shrink-0">
+                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                        <Select
+                          value={app?.status ? String(app.status).toLowerCase() : "generated"}
+                          onValueChange={(v) => updateStatus(app.id, v)}
+                        >
+                          <SelectTrigger
+                            className={[
+                              "w-40 rounded-xl py-5 text-sm font-semibold",
+                              "bg-black/45 border-white/10 text-white",
+                              "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                              "hover:bg-white/[0.06] hover:border-violet-400/35",
+                              "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
+                              "transition-all",
+                              statusPill(app.status),
+                            ].join(" ")}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+
+                          <SelectContent
+                            position="popper"
+                            sideOffset={10}
+                            avoidCollisions
+                            className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-xl p-1 max-h-[320px] overflow-auto"
+                          >
+                            <SelectItem
+                              value="generated"
+                              className="rounded-lg cursor-pointer text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                            >
+                              Generated
+                            </SelectItem>
+                            <SelectItem
+                              value="applied"
+                              className="rounded-lg cursor-pointer text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                            >
+                              Applied
+                            </SelectItem>
+                            <SelectItem
+                              value="interview"
+                              className="rounded-lg cursor-pointer text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                            >
+                              Interview
+                            </SelectItem>
+                            <SelectItem
+                              value="offer"
+                              className="rounded-lg cursor-pointer text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                            >
+                              Offer
+                            </SelectItem>
+                            <SelectItem
+                              value="rejected"
+                              className="rounded-lg cursor-pointer text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                            >
+                              Rejected
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </motion.div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </motion.div>
+
+    {/* Popup */}
+    <AnimatePresence>
+      {selected && (() => {
+        // ✅ ONE compensation pill only in modal too
+        const modalPayPrimary = renderPayPrimary(selected);
+        const modalPayAnnual = renderAnnual(selected);
+        const modalPayText = modalPayPrimary || modalPayAnnual || "Pay not listed";
+        const modalHasPay = Boolean(modalPayPrimary || modalPayAnnual);
+
+        return (
           <motion.div
             className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-md px-4"
             initial={{ opacity: 0 }}
@@ -849,16 +870,12 @@ const payPrimary = payPrimaryRaw || "Pay not listed";
                     </span>
                   )}
 
-                  {renderPayPrimary(selected) && (
-                    <span className={`${pillGood} inline-flex items-center gap-2`}>
-                      <DollarSign className="w-3.5 h-3.5" />
-                      {renderPayPrimary(selected)}
-                    </span>
-                  )}
+                  {/* ✅ single pay pill */}
+                  <span className={`${modalHasPay ? pillGood : pill} inline-flex items-center gap-2`}>
+                    <DollarSign className="w-3.5 h-3.5" />
+                    {modalPayText}
+                  </span>
 
-                  {renderAnnual(selected) && (
-                    <span className={pillWarn}>{renderAnnual(selected)}</span>
-                  )}
                   {renderConfidence(selected) && (
                     <span className={pill}>{renderConfidence(selected)}</span>
                   )}
@@ -933,46 +950,54 @@ const payPrimary = payPrimaryRaw || "Pay not listed";
                   <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                     <Select
                       value={selected?.status ? String(selected.status).toLowerCase() : "generated"}
-                    onValueChange={(v) => updateStatus(selected.id, v)}
+                      onValueChange={(v) => updateStatus(selected.id, v)}
                     >
                       <SelectTrigger
                         className={[
                           "w-48 rounded-xl py-5 text-sm font-semibold",
-                          "bg-black/40 border-white/10 text-white",
-                          "hover:bg-white/[0.05] hover:border-violet-400/40 transition-all",
+                          "bg-black/45 border-white/10 text-white",
+                          "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                          "hover:bg-white/[0.06] hover:border-violet-400/35 transition-all",
+                          "focus-visible:ring-2 focus-visible:ring-violet-400/35 focus-visible:ring-offset-0",
                           statusPill(selected.status),
                         ].join(" ")}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+
+                      <SelectContent
+                        position="popper"
+                        sideOffset={10}
+                        avoidCollisions
+                        className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-xl p-1 max-h-[320px] overflow-auto"
+                      >
                         <SelectItem
                           value="generated"
-                          className="text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                          className="rounded-lg cursor-pointer text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
                         >
                           Generated
                         </SelectItem>
                         <SelectItem
                           value="applied"
-                          className="text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                          className="rounded-lg cursor-pointer text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
                         >
                           Applied
                         </SelectItem>
                         <SelectItem
                           value="interview"
-                          className="text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                          className="rounded-lg cursor-pointer text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
                         >
                           Interview
                         </SelectItem>
                         <SelectItem
                           value="offer"
-                          className="text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                          className="rounded-lg cursor-pointer text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
                         >
                           Offer
                         </SelectItem>
                         <SelectItem
                           value="rejected"
-                          className="text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                          className="rounded-lg cursor-pointer text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
                         >
                           Rejected
                         </SelectItem>
@@ -997,8 +1022,9 @@ const payPrimary = payPrimaryRaw || "Pay not listed";
               </div>
             </motion.div>
           </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+        );
+      })()}
+    </AnimatePresence>
+  </div>
+);
 }
