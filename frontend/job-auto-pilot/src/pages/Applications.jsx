@@ -114,133 +114,133 @@ export default function Applications() {
   };
 
   const normalizeJob = (job) => {
-    const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
+  const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
 
-    const jobTitle =
-      job?.jobTitle ??
-      job?.job_title ??
-      job?.title ??
-      job?.position ??
-      "Position";
+  const jobTitle =
+    job?.jobTitle ??
+    job?.job_title ??
+    job?.title ??
+    job?.position ??
+    "Position";
 
-    const company =
-      job?.company ?? job?.companyName ?? job?.company_name ?? "Company";
+  const company =
+    job?.company ?? job?.companyName ?? job?.company_name ?? "Company";
 
-    const created =
-  job?.createdAt ??
-  job?.created_at ??
-  job?.created_date ??
-  job?.createdDate ??
-  null;
+  const created =
+    job?.createdAt ??
+    job?.created_at ??
+    job?.created_date ??
+    job?.createdDate ??
+    null;
 
-// ✅ support nested pay object OR flat fields
-const payObj = job?.pay && typeof job.pay === "object" ? job.pay : null;
+  // ✅ allow nested pay object
+  const payObj = job?.pay && typeof job.pay === "object" ? job.pay : null;
 
-const rawStatus =
-  job?.status ?? job?.applicationStatus ?? job?.application_status ?? null;
+  // ✅ fix blank status + map created -> generated
+  const rawStatus =
+    job?.status ?? job?.applicationStatus ?? job?.application_status ?? null;
 
-let status = String(rawStatus ?? "").trim().toLowerCase();
-if (!status || status === "created") status = "generated";
+  let status = String(rawStatus ?? "").trim().toLowerCase();
+  if (!status || status === "created") status = "generated";
 
+  return {
+    ...job,
+    id,
+    job_title: jobTitle,
+    company,
+    created_date: created,
+    status,
 
-    return {
-      ...job,
-      id,
-      job_title: jobTitle,
-      company,
-      created_date: created,
-      status,
-      website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
-      location: job?.location ?? null,
-      seniority:
-        job?.seniority ??
-        job?.experienceLevel ??
-        job?.experience_level ??
-        null,
+    website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
+    location: job?.location ?? null,
+    seniority:
+      job?.seniority ??
+      job?.experienceLevel ??
+      job?.experience_level ??
+      null,
 
-      // extra pills (if available)
-      employmentType: job?.employmentType ?? job?.employment_type ?? null,
-      workModel: job?.workModel ?? job?.work_model ?? null,
-      experienceLevel: job?.experienceLevel ?? job?.experience_level ?? null,
-      complianceTags: Array.isArray(job?.complianceTags)
-        ? job.complianceTags
-        : Array.isArray(job?.compliance_tags)
-        ? job.compliance_tags
-        : [],
+    // extra pills (if available)
+    employmentType: job?.employmentType ?? job?.employment_type ?? null,
+    workModel: job?.workModel ?? job?.work_model ?? null,
+    experienceLevel: job?.experienceLevel ?? job?.experience_level ?? null,
+    complianceTags: Array.isArray(job?.complianceTags)
+      ? job.complianceTags
+      : Array.isArray(job?.compliance_tags)
+      ? job.compliance_tags
+      : [],
 
-      keywords: Array.isArray(job?.keywords) ? job.keywords : [],
-     payText: job?.payText ?? job?.pay_text ?? payObj?.text ?? null,
+    keywords: Array.isArray(job?.keywords) ? job.keywords : [],
 
-      payMin:
-        typeof job?.payMin === "number"
-          ? job.payMin
-          : typeof job?.pay_min === "number"
-          ? job.pay_min
-          : typeof payObj?.min === "number"
-          ? payObj.min
-          : null,
+    // ✅ pay (supports flat OR nested pay object)
+    payText: job?.payText ?? job?.pay_text ?? payObj?.text ?? null,
 
-      payMax:
-        typeof job?.payMax === "number"
-          ? job.payMax
-          : typeof job?.pay_max === "number"
-          ? job.pay_max
-          : typeof payObj?.max === "number"
-          ? payObj.max
-          : null,
+    payMin:
+      typeof job?.payMin === "number"
+        ? job.payMin
+        : typeof job?.pay_min === "number"
+        ? job.pay_min
+        : typeof payObj?.min === "number"
+        ? payObj.min
+        : null,
 
-      payCurrency:
-        job?.payCurrency ?? job?.pay_currency ?? payObj?.currency ?? "USD",
+    payMax:
+      typeof job?.payMax === "number"
+        ? job.payMax
+        : typeof job?.pay_max === "number"
+        ? job.pay_max
+        : typeof payObj?.max === "number"
+        ? payObj.max
+        : null,
 
-      payPeriod:
-        job?.payPeriod ?? job?.pay_period ?? payObj?.period ?? null,
+    payCurrency: job?.payCurrency ?? job?.pay_currency ?? payObj?.currency ?? "USD",
+    payPeriod: job?.payPeriod ?? job?.pay_period ?? payObj?.period ?? null,
 
-      payConfidence:
-        typeof job?.payConfidence === "number"
-          ? job.payConfidence
-          : typeof job?.pay_confidence === "number"
-          ? job.pay_confidence
-          : typeof payObj?.confidence === "number"
-          ? payObj.confidence
-          : null,
+    payConfidence:
+      typeof job?.payConfidence === "number"
+        ? job.payConfidence
+        : typeof job?.pay_confidence === "number"
+        ? job.pay_confidence
+        : typeof payObj?.confidence === "number"
+        ? payObj.confidence
+        : null,
 
-      payAnnualizedMin:
-        typeof job?.payAnnualizedMin === "number"
-          ? job.payAnnualizedMin
-          : typeof job?.pay_annualized_min === "number"
-          ? job.pay_annualized_min
-          : typeof payObj?.annualizedMin === "number"
-          ? payObj.annualizedMin
-          : null,
+    payAnnualizedMin:
+      typeof job?.payAnnualizedMin === "number"
+        ? job.payAnnualizedMin
+        : typeof job?.pay_annualized_min === "number"
+        ? job.pay_annualized_min
+        : typeof payObj?.annualizedMin === "number"
+        ? payObj.annualizedMin
+        : null,
 
-      payAnnualizedMax:
-        typeof job?.payAnnualizedMax === "number"
-          ? job.payAnnualizedMax
-          : typeof job?.pay_annualized_max === "number"
-          ? job.pay_annualized_max
-          : typeof payObj?.annualizedMax === "number"
-          ? payObj.annualizedMax
-          : null,
+    payAnnualizedMax:
+      typeof job?.payAnnualizedMax === "number"
+        ? job.payAnnualizedMax
+        : typeof job?.pay_annualized_max === "number"
+        ? job.pay_annualized_max
+        : typeof payObj?.annualizedMax === "number"
+        ? payObj.annualizedMax
+        : null,
 
-      payPercentile:
-        typeof job?.payPercentile === "number"
-          ? job.payPercentile
-          : typeof job?.pay_percentile === "number"
-          ? job.pay_percentile
-          : typeof payObj?.percentile === "number"
-          ? payObj.percentile
-          : null,
+    payPercentile:
+      typeof job?.payPercentile === "number"
+        ? job.payPercentile
+        : typeof job?.pay_percentile === "number"
+        ? job.pay_percentile
+        : typeof payObj?.percentile === "number"
+        ? payObj.percentile
+        : null,
 
-      jobDescription: job?.jobDescription ?? job?.job_description ?? null,
-    };
+    jobDescription: job?.jobDescription ?? job?.job_description ?? null,
   };
+};
+
 
  const loadJobs = async () => {
   setIsLoading(true);
   try {
     const userId = await getSwaUserId();
 
-    // ✅ no redirect loops — just show message + empty list
     if (!userId) {
       toast.error("You're not signed in. Please sign in to view applications.");
       setApplications([]);
@@ -271,13 +271,11 @@ if (!status || status === "created") status = "generated";
   }
 };
 
+useEffect(() => {
+  loadJobs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
-
-
-  useEffect(() => {
-    loadJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const statusLabel = (s) => {
     const v = String(s || "").toLowerCase();
