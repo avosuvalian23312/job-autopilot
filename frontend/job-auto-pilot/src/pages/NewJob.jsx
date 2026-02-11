@@ -532,10 +532,7 @@ const payload = {
   studentMode,
 };
 
-const job = await apiFetch("/api/jobs", {
-  method: "POST",
-  body: JSON.stringify(payload),
-});
+
 
 
       const job = await apiFetch("/api/jobs", {
