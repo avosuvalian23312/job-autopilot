@@ -518,18 +518,39 @@ export default function NewJob() {
       return;
     }
 
-    const payload = {
-      resumeId: selectedResume,
-      jobTitle: extractedData.jobTitle,
-      company: extractedData.company,
-      website: extractedData.website,
-      location: extractedData.location,
-      seniority: extractedData.seniority,
-      keywords: extractedData.keywords,
-      jobDescription,
-      aiMode,
-      studentMode,
-    };
+   const payload = {
+  payText: extractedData?.payText ?? null,
+  payMin:
+    typeof extractedData?.payMin === "number" && Number.isFinite(extractedData.payMin)
+      ? extractedData.payMin
+      : null,
+  payMax:
+    typeof extractedData?.payMax === "number" && Number.isFinite(extractedData.payMax)
+      ? extractedData.payMax
+      : null,
+  payCurrency: extractedData?.payCurrency || "USD",
+  payPeriod: extractedData?.payPeriod ?? null,
+  payAnnualizedMin:
+    typeof extractedData?.payAnnualizedMin === "number" && Number.isFinite(extractedData.payAnnualizedMin)
+      ? extractedData.payAnnualizedMin
+      : null,
+  payAnnualizedMax:
+    typeof extractedData?.payAnnualizedMax === "number" && Number.isFinite(extractedData.payAnnualizedMax)
+      ? extractedData.payAnnualizedMax
+      : null,
+
+  resumeId: selectedResume,
+  jobTitle: extractedData.jobTitle,
+  company: extractedData.company,
+  website: extractedData.website,
+  location: extractedData.location,
+  seniority: extractedData.seniority,
+  keywords: extractedData.keywords,
+  jobDescription,
+  aiMode,
+  studentMode,
+};
+
 
    const created = await apiFetch("/api/jobs", {
   method: "POST",
