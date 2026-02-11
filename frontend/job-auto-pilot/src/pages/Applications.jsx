@@ -108,17 +108,7 @@ export default function Applications() {
     return null; // ✅ logged out (no fake ids)
   };
 
-  const redirectToSwaLogin = (provider = "google") => {
-    const returnTo =
-      window.location.pathname +
-      window.location.search +
-      window.location.hash;
-    const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(
-      returnTo
-    )}`;
-    window.location.assign(url);
-  };
-
+ 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
 
