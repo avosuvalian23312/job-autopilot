@@ -531,11 +531,9 @@ export default function NewJob() {
       studentMode,
     };
 
-    const created = await apifetch("/api/jobs", {
+    const created = await apiFetch("/api/jobs", {
   method: "POST",
-  credentials: "include",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(payload),
+  body: payload,
 });
 
 // IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
