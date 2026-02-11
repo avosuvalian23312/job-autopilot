@@ -2,7 +2,7 @@
 "use strict";
 
 const { CosmosClient } = require("@azure/cosmos");
-const { getSwaUserId } = require("../lib/swaUser"); // ✅ SWA user helper
+const { getSwaUserId } = require("../lib/swaUser"); // returns a STRING userId
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
@@ -36,20 +36,23 @@ Applicant
 async function generateJobDocuments(request, context) {
   try {
     const jobId = request?.params?.jobId;
-    if (!jobId) return { status: 400, jsonBody: { ok: false, error: "Missing jobId" } };
+    if (!jobId) {
+      return { status: 400, jsonBody: { ok: false, error: "Missing jobId" } };
+    }
 
-    // ✅ get userId from SWA (do NOT accept from body)
-    const user = getSwaUserId(request);
-    if (!user?.userId) {
+    // ✅ Get userId from SWA (do NOT accept from body/query)
+    const userId = getSwaUserId(request);
+    if (!userId) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
-    const userId = user.userId;
 
-    // ✅ read job (PK = userId)
+    // ✅ Read job (PK = userId)
     const { resource: job } = await container.item(jobId, userId).read();
-    if (!job) return { status: 404, jsonBody: { ok: false, error: "Job not found" } };
+    if (!job) {
+      return { status: 404, jsonBody: { ok: false, error: "Job not found" } };
+    }
 
-    // prevent duplicate regen if already completed (optional)
+    // Optional: prevent duplicate regen
     if (job.status === "completed" && job.outputs?.resume && job.outputs?.coverLetter) {
       return { status: 200, jsonBody: { ok: true, job, alreadyGenerated: true } };
     }
@@ -59,7 +62,7 @@ async function generateJobDocuments(request, context) {
     job.updatedAt = new Date().toISOString();
     await container.item(job.id, userId).replace(job);
 
-    // generate (stub for now)
+    // generate (stub)
     const resumeText = buildResumeText(job);
     const coverLetterText = buildCoverLetterText(job);
 
