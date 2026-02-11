@@ -52,63 +52,63 @@ export default function Applications() {
 
   // ✅ SWA-safe fetch helper (cookies included)
   const apiFetch = async (path, options = {}) => {
-  const { body, headers, ...rest } = options;
+    const { body, headers, ...rest } = options;
 
-  const isJsonObject =
-    body != null && typeof body === "object" && !(body instanceof FormData);
+    const isJsonObject =
+      body != null && typeof body === "object" && !(body instanceof FormData);
 
-  const res = await fetch(path, {
-    ...rest,
-    credentials: "include", // ✅ REQUIRED for SWA auth cookies
-    headers: {
-      ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
-      ...(headers || {}),
-    },
-    body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
-  });
+    const res = await fetch(path, {
+      ...rest,
+      credentials: "include", // ✅ REQUIRED for SWA auth cookies
+      headers: {
+        ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
+        ...(headers || {}),
+      },
+      body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
+    });
 
-  const data = await readJsonSafe(res);
+    const data = await readJsonSafe(res);
 
-  if (!res.ok) {
-    const msg =
-      data?.error ||
-      data?.message ||
-      data?.detail ||
-      data?.raw ||
-      `Request failed (${res.status})`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
-
-  return data;
-};
-
-  // ✅ get SWA userId from /.auth/me (clientPrincipal)
-  // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
-const getSwaUserId = async () => {
-  if (swaUserIdRef.current) return swaUserIdRef.current;
-
-  try {
-    const me = await apiFetch("/.auth/me", { method: "GET" });
-
-    // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
-    const entry = Array.isArray(me) ? me[0] : null;
-    const cp = entry?.clientPrincipal || null;
-
-    const userId = cp?.userId || null;
-    if (userId) {
-      swaUserIdRef.current = String(userId);
-      return swaUserIdRef.current;
+    if (!res.ok) {
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        data?.raw ||
+        `Request failed (${res.status})`;
+      const err = new Error(msg);
+      err.status = res.status;
+      err.data = data;
+      throw err;
     }
-  } catch {
-    // ignore
-  }
 
-  return null; // ✅ logged out (no fake ids)
-};
+    return data;
+  };
 
+  // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
+  const getSwaUserId = async () => {
+    if (swaUserIdRef.current) return swaUserIdRef.current;
+
+    try {
+      const me = await apiFetch("/.auth/me", { method: "GET" });
+
+      // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
+      const entry = Array.isArray(me) ? me[0] : null;
+      const cp = entry?.clientPrincipal || null;
+
+      const userId = cp?.userId || null;
+      if (userId) {
+        swaUserIdRef.current = String(userId);
+        return swaUserIdRef.current;
+      }
+    } catch {
+      // ignore
+    }
+
+    return null; // ✅ logged out (no fake ids)
+  };
+
+  
 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
@@ -130,11 +130,16 @@ const getSwaUserId = async () => {
       job?.createdDate ??
       null;
 
-    const status =
-      job?.status ??
-      job?.applicationStatus ??
-      job?.application_status ??
-      "generated";
+    const payObj =
+      job?.pay && typeof job.pay === "object" ? job.pay : null;
+
+    // ✅ FIX: status sometimes comes back as "created" or empty -> show "generated"
+    const rawStatus =
+      job?.status ?? job?.applicationStatus ?? job?.application_status ?? null;
+
+    let status = String(rawStatus || "").trim().toLowerCase();
+    if (!status) status = "generated";
+    if (status === "created") status = "generated"; // backend createJob uses "created"
 
     return {
       ...job,
@@ -142,7 +147,7 @@ const getSwaUserId = async () => {
       job_title: jobTitle,
       company,
       created_date: created,
-      status: String(status || "generated").toLowerCase(),
+      status,
       website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
       location: job?.location ?? null,
       seniority:
@@ -162,44 +167,68 @@ const getSwaUserId = async () => {
         : [],
 
       keywords: Array.isArray(job?.keywords) ? job.keywords : [],
-      payText: job?.payText ?? job?.pay_text ?? null,
+
+      // Pay (supports both top-level + nested pay object)
+      payText: job?.payText ?? job?.pay_text ?? payObj?.text ?? null,
+
       payMin:
         typeof job?.payMin === "number"
           ? job.payMin
           : typeof job?.pay_min === "number"
           ? job.pay_min
+          : typeof payObj?.min === "number"
+          ? payObj.min
           : null,
+
       payMax:
         typeof job?.payMax === "number"
           ? job.payMax
           : typeof job?.pay_max === "number"
           ? job.pay_max
+          : typeof payObj?.max === "number"
+          ? payObj.max
           : null,
-      payCurrency: job?.payCurrency ?? job?.pay_currency ?? "USD",
-      payPeriod: job?.payPeriod ?? job?.pay_period ?? null,
+
+      payCurrency:
+        job?.payCurrency ?? job?.pay_currency ?? payObj?.currency ?? "USD",
+
+      payPeriod:
+        job?.payPeriod ?? job?.pay_period ?? payObj?.period ?? null,
+
       payConfidence:
         typeof job?.payConfidence === "number"
           ? job.payConfidence
           : typeof job?.pay_confidence === "number"
           ? job.pay_confidence
+          : typeof payObj?.confidence === "number"
+          ? payObj.confidence
           : null,
+
       payAnnualizedMin:
         typeof job?.payAnnualizedMin === "number"
           ? job.payAnnualizedMin
           : typeof job?.pay_annualized_min === "number"
           ? job.pay_annualized_min
+          : typeof payObj?.annualizedMin === "number"
+          ? payObj.annualizedMin
           : null,
+
       payAnnualizedMax:
         typeof job?.payAnnualizedMax === "number"
           ? job.payAnnualizedMax
           : typeof job?.pay_annualized_max === "number"
           ? job.pay_annualized_max
+          : typeof payObj?.annualizedMax === "number"
+          ? payObj.annualizedMax
           : null,
+
       payPercentile:
         typeof job?.payPercentile === "number"
           ? job.payPercentile
           : typeof job?.pay_percentile === "number"
           ? job.pay_percentile
+          : typeof payObj?.percentile === "number"
+          ? payObj.percentile
           : null,
 
       jobDescription: job?.jobDescription ?? job?.job_description ?? null,
@@ -209,56 +238,30 @@ const getSwaUserId = async () => {
   const loadJobs = async () => {
     setIsLoading(true);
     try {
-      // ✅ SWA userId from /.auth/me
-     const userId = await getSwaUserId();
-const redirectToSwaLogin = (provider = "google") => {
-  const returnTo = window.location.pathname + window.location.search + window.location.hash;
-  const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
-  window.location.assign(url);
-};
+      const userId = await getSwaUserId();
 
-const loadJobs = async () => {
-  setIsLoading(true);
-  try {
-    const userId = await getSwaUserId();
+      // If logged out (or SWA not seeing auth), go to SWA login properly
+      if (!userId) {
+        toast.error("Session expired — please sign in.");
+        setIsLoading(false);
+        redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
+        return;
+      }
 
-    // If logged out (or SWA not seeing auth), go to SWA login properly
-    if (!userId) {
-      toast.error("Session expired — please sign in.");
-      redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
-      return;
-    }
-
-    const data = await apiFetch("/api/jobs", { method: "GET" });
-    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
-    const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
-    setApplications(normalized);
-  } catch (e) {
-    console.error(e);
-
-    // If your API returns 401, also send them through SWA login
-    if (e?.status === 401) {
-      toast.error("Not authorized — please sign in again.");
-      redirectToSwaLogin("google");
-      return;
-    }
-
-    toast.error("Failed to load applications.");
-    setApplications([]);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-const data = await apiFetch("/api/jobs", { method: "GET" });
-
-
+      const data = await apiFetch("/api/jobs", { method: "GET" });
       const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
       const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
-
       setApplications(normalized);
     } catch (e) {
       console.error(e);
+
+      if (e?.status === 401) {
+        toast.error("Not authorized — please sign in again.");
+        setIsLoading(false);
+        redirectToSwaLogin("google");
+        return;
+      }
+
       toast.error("Failed to load applications.");
       setApplications([]);
     } finally {
@@ -272,17 +275,19 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
   }, []);
 
   const statusLabel = (s) => {
-    const v = String(s || "").toLowerCase();
+    const v = String(s || "").trim().toLowerCase();
+    if (!v) return "Generated";
     if (v === "generated") return "Generated";
     if (v === "applied") return "Applied";
     if (v === "interview") return "Interview";
     if (v === "offer") return "Offer";
     if (v === "rejected") return "Rejected";
-    return v ? v[0].toUpperCase() + v.slice(1) : "Generated";
+    if (v === "created") return "Generated"; // safety
+    return v[0].toUpperCase() + v.slice(1);
   };
 
   const statusPill = (s) => {
-    const v = String(s || "").toLowerCase();
+    const v = String(s || "").trim().toLowerCase();
     if (v === "interview")
       return "bg-amber-500/14 text-amber-100 border border-amber-400/25";
     if (v === "applied")
@@ -294,42 +299,92 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
     return "bg-violet-500/15 text-violet-100 border border-violet-400/25";
   };
 
-  const fmtMoney = (n) =>
-    typeof n === "number"
-      ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-      : null;
-
-  const renderPayPrimary = (job) => {
-    const cur = job?.payCurrency || "USD";
-    const symbol = cur === "USD" ? "$" : `${cur} `;
-    const periodMap = {
-      hour: "/hr",
-      year: "/yr",
-      month: "/mo",
-      week: "/wk",
-      day: "/day",
-    };
-    const suffix = job?.payPeriod ? periodMap[job.payPeriod] || "" : "";
-
-    const min = fmtMoney(job?.payMin);
-    const max = fmtMoney(job?.payMax);
-
-    if (min && max) {
-      return min === max
-        ? `${symbol}${min}${suffix}`
-        : `${symbol}${min} – ${symbol}${max}${suffix}`;
+  // ✅ Pay pill helpers (always render a pay pill)
+  const fmtMoney = (n, currency = "USD") => {
+    if (typeof n !== "number" || !Number.isFinite(n)) return null;
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 0,
+      }).format(n);
+    } catch {
+      return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
     }
-    if (job?.payText) return job.payText;
-    return null;
   };
 
-  const renderAnnual = (job) => {
-    const min = fmtMoney(job?.payAnnualizedMin);
-    const max = fmtMoney(job?.payAnnualizedMax);
-    if (min && max) return `Est. $${min} – $${max} /yr`;
-    if (min) return `Est. $${min} /yr`;
-    if (max) return `Est. $${max} /yr`;
-    return null;
+  const getPayPill = (job) => {
+    const currency = job?.payCurrency || "USD";
+
+    const min =
+      typeof job?.payMin === "number" && Number.isFinite(job.payMin)
+        ? job.payMin
+        : null;
+    const max =
+      typeof job?.payMax === "number" && Number.isFinite(job.payMax)
+        ? job.payMax
+        : null;
+
+    const aMin =
+      typeof job?.payAnnualizedMin === "number" &&
+      Number.isFinite(job.payAnnualizedMin)
+        ? job.payAnnualizedMin
+        : null;
+    const aMax =
+      typeof job?.payAnnualizedMax === "number" &&
+      Number.isFinite(job.payAnnualizedMax)
+        ? job.payAnnualizedMax
+        : null;
+
+    const payText = (job?.payText || "").trim();
+
+    const pRaw = job?.payPeriod ? String(job.payPeriod).toLowerCase() : "";
+    const periodSuffix =
+      pRaw.includes("hour") || pRaw === "hr" || pRaw === "hourly"
+        ? "/hr"
+        : pRaw.includes("year") || pRaw === "yr" || pRaw.includes("annual") || pRaw === "yearly"
+        ? "/yr"
+        : pRaw.includes("month")
+        ? "/mo"
+        : pRaw.includes("week")
+        ? "/wk"
+        : pRaw.includes("day")
+        ? "/day"
+        : pRaw
+        ? `/${pRaw}`
+        : "";
+
+    // 1️⃣ min/max first
+    if (min != null || max != null) {
+      const sMin = min != null ? fmtMoney(min, currency) : null;
+      const sMax = max != null ? fmtMoney(max, currency) : null;
+
+      if (sMin && sMax) {
+        return {
+          text: sMin === sMax ? `${sMin}${periodSuffix}` : `${sMin} – ${sMax}${periodSuffix}`,
+          hasValue: true,
+          source: "range",
+        };
+      }
+      if (sMin) return { text: `${sMin}${periodSuffix}`, hasValue: true, source: "range" };
+      if (sMax) return { text: `${sMax}${periodSuffix}`, hasValue: true, source: "range" };
+    }
+
+    // 2️⃣ annualized fallback
+    if (aMin != null || aMax != null) {
+      const sMin = aMin != null ? fmtMoney(aMin, currency) : null;
+      const sMax = aMax != null ? fmtMoney(aMax, currency) : null;
+
+      if (sMin && sMax) return { text: `Est. ${sMin} – ${sMax}/yr`, hasValue: true, source: "annual" };
+      if (sMin) return { text: `Est. ${sMin}/yr`, hasValue: true, source: "annual" };
+      if (sMax) return { text: `Est. ${sMax}/yr`, hasValue: true, source: "annual" };
+    }
+
+    // 3️⃣ text fallback
+    if (payText) return { text: payText, hasValue: true, source: "text" };
+
+    // ✅ always render a pill
+    return { text: "Pay not listed", hasValue: false, source: "none" };
   };
 
   const renderConfidence = (job) => {
@@ -371,7 +426,7 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
   }, [applications, search, statusFilter]);
 
   const updateStatus = async (id, status) => {
-    const nextStatus = String(status || "").toLowerCase();
+    const nextStatus = String(status || "").trim().toLowerCase() || "generated";
 
     // optimistic update
     setApplications((prev) =>
@@ -382,11 +437,9 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
     try {
       // route: "jobs/{jobId}/status" methods: PUT,PATCH
       await apiFetch(`/api/jobs/${encodeURIComponent(id)}/status`, {
-  method: "PATCH",
-  body: { status: nextStatus },
-});
-
-
+        method: "PATCH",
+        body: { status: nextStatus },
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to update status in cloud.");
@@ -544,8 +597,7 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
             ) : (
               filtered.map((app, index) => {
                 const dateStr = formatDate(app.created_date);
-                const payPrimary = renderPayPrimary(app);
-                const payAnnual = renderAnnual(app);
+                const pay = getPayPill(app);
                 const payConf = renderConfidence(app);
                 const topPay = renderTopPay(app);
 
@@ -634,19 +686,16 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                             </span>
                           )}
 
-                          {payPrimary && (
-                            <span
-                              className={`${pillGood} inline-flex items-center gap-2`}
-                            >
-                              <DollarSign className="w-3.5 h-3.5" />
-                              {payPrimary}
-                            </span>
-                          )}
+                          {/* ✅ Pay pill ALWAYS renders */}
+                          <span
+                            className={`${(pay?.hasValue ? pillGood : pill)} inline-flex items-center gap-2`}
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                            {pay?.text || "Pay not listed"}
+                          </span>
 
                           {payConf && <span className={pill}>{payConf}</span>}
-                          {payAnnual && (
-                            <span className={pillWarn}>{payAnnual}</span>
-                          )}
+
                           {topPay && (
                             <span
                               className={`${pillBrand} inline-flex items-center gap-2`}
@@ -688,7 +737,7 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                           whileTap={{ scale: 0.99 }}
                         >
                           <Select
-                            value={app.status}
+                            value={app.status || "generated"}
                             onValueChange={(v) => updateStatus(app.id, v)}
                           >
                             <SelectTrigger
@@ -838,16 +887,19 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                     </span>
                   )}
 
-                  {renderPayPrimary(selected) && (
-                    <span className={`${pillGood} inline-flex items-center gap-2`}>
-                      <DollarSign className="w-3.5 h-3.5" />
-                      {renderPayPrimary(selected)}
-                    </span>
-                  )}
+                  {/* ✅ Pay pill ALWAYS renders in modal */}
+                  {(() => {
+                    const pay = getPayPill(selected);
+                    return (
+                      <span
+                        className={`${(pay?.hasValue ? pillGood : pill)} inline-flex items-center gap-2`}
+                      >
+                        <DollarSign className="w-3.5 h-3.5" />
+                        {pay?.text || "Pay not listed"}
+                      </span>
+                    );
+                  })()}
 
-                  {renderAnnual(selected) && (
-                    <span className={pillWarn}>{renderAnnual(selected)}</span>
-                  )}
                   {renderConfidence(selected) && (
                     <span className={pill}>{renderConfidence(selected)}</span>
                   )}
@@ -921,7 +973,7 @@ const data = await apiFetch("/api/jobs", { method: "GET" });
                 <div className="mt-6 flex items-center justify-between gap-3">
                   <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                     <Select
-                      value={selected.status}
+                      value={selected.status || "generated"}
                       onValueChange={(v) => updateStatus(selected.id, v)}
                     >
                       <SelectTrigger
