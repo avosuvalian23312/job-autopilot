@@ -2,8 +2,8 @@
 "use strict";
 
 const { CosmosClient } = require("@azure/cosmos");
-const { getSwaUser } = require("../lib/swaUser"); // <-- adjust path if your lib folder differs
-
+const { getSwaUserId } = require("../lib/swaUser"); // make sure this name matches your export
+const user = getSwaUserId(request);
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
   .database(process.env.COSMOS_DB_NAME)
@@ -12,34 +12,40 @@ const container = cosmos
 async function listJobs(request, context) {
   try {
     // ✅ SWA auth user (do NOT accept userId from query/body)
-   const { getSwaUser } = require("../lib/swaUser"); // adjust path if needed
+    const user = getSwaUser(request);
 
-const user = getSwaUser(request);
-if (!user?.userId) {
-  return { status: 401, jsonBody: { error: "Not authenticated" } };
-}
+    if (!user?.userId) {
+      return {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+        jsonBody: { ok: false, error: "Not authenticated" },
+      };
+    }
 
-const userId = user.userId;
-
+    const userId = user.userId;
 
     // ✅ If your container PK is /userId, pass partitionKey for speed + correctness
     const { resources } = await container.items
       .query(
         {
-          query: "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC",
+          query:
+            "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC",
           parameters: [{ name: "@userId", value: userId }],
         },
-        {
-          partitionKey: userId,
-        }
+        { partitionKey: userId }
       )
       .fetchAll();
 
-    return { status: 200, jsonBody: { ok: true, jobs: resources || [] } };
+    return {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      jsonBody: { ok: true, jobs: resources || [] },
+    };
   } catch (err) {
     context.error("listJobs error:", err);
     return {
       status: 500,
+      headers: { "Content-Type": "application/json" },
       jsonBody: {
         ok: false,
         error: "Failed to list jobs",
