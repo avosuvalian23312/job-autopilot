@@ -85,14 +85,7 @@ export default function Applications() {
     return data;
   };
 
-  const redirectToSwaLogin = (provider = "google") => {
-    const returnTo =
-      window.location.pathname + window.location.search + window.location.hash;
-    const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(
-      returnTo
-    )}`;
-    window.location.assign(url);
-  };
+ 
 
   // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
   const getSwaUserId = async () => {
