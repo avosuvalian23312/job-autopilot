@@ -59,7 +59,8 @@ app.http("updateJobStatus", {
   methods: ["PUT", "PATCH", "OPTIONS"],
   route: "jobs/{jobId}/status",
   authLevel: "anonymous",
-  handler: require("./src/functions/updateJobStatus.js"),
+  handler: require("./src/functions/updateJobStatus.js").updateJobStatus,
+
 });
 
 // ========================
