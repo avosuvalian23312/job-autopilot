@@ -531,10 +531,11 @@ export default function NewJob() {
       studentMode,
     };
 
-    const created = await apiFetch("/api/jobs", {
+   const created = await apiFetch("/api/jobs", {
   method: "POST",
-  body: payload,
+  body: JSON.stringify(payload),
 });
+
 
 // IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
 // So support both shapes:
