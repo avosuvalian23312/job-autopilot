@@ -511,43 +511,45 @@ export default function NewJob() {
   };
 
   const handleGenerate = async () => {
-    try {
-      if (!extractedData?.jobTitle || !jobDescription.trim()) {
-        toast.error("Missing job title or job description.");
-        return;
-      }
+  try {
+    if (!extractedData?.jobTitle || !jobDescription.trim()) {
+      toast.error("Missing job title or job description.");
+      return;
+    }
 
-     await ensureUserId(); // just to block if not logged in
+    // ensure logged in (no fallback)
+    const id = await getSwaUser();
+    if (!id) {
+      toast.error("You must be logged in.");
+      return;
+    }
 
-const payload = {
-  resumeId: selectedResume,
-  jobTitle: extractedData.jobTitle,
-  company: extractedData.company,
-  website: extractedData.website,
-  location: extractedData.location,
-  seniority: extractedData.seniority,
-  keywords: extractedData.keywords,
-  jobDescription,
-  aiMode,
-  studentMode,
+    const payload = {
+      resumeId: selectedResume,
+      jobTitle: extractedData.jobTitle,
+      company: extractedData.company,
+      website: extractedData.website,
+      location: extractedData.location,
+      seniority: extractedData.seniority,
+      keywords: extractedData.keywords,
+      jobDescription,
+      aiMode,
+      studentMode,
+    };
+
+    const job = await apiFetch("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    localStorage.setItem("latestJobId", job?.id || "");
+    navigate(createPageUrl("Packet"));
+  } catch (e) {
+    console.error(e);
+    toast.error(e?.message || "Failed to create job.");
+  }
 };
 
-
-
-
-      const job = await apiFetch("/api/jobs", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-
-      localStorage.setItem("latestJobId", job?.id);
-      
-      navigate(createPageUrl("Packet"));
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.message || "Failed to create job.");
-    }
-  };
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
