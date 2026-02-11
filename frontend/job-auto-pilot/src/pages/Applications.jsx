@@ -639,41 +639,55 @@ useEffect(() => {
 
                       {/* Pills row */}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                        <span
+                          className={`${pillBrand} inline-flex items-center gap-2`}
+                        >
                           <Tag className="w-3.5 h-3.5" />
                           {statusLabel(app.status)}
                         </span>
 
                         {app.employmentType && (
-                          <span className={`${pill} inline-flex items-center gap-2`}>
+                          <span
+                            className={`${pill} inline-flex items-center gap-2`}
+                          >
                             <Briefcase className="w-3.5 h-3.5 text-white/60" />
                             {app.employmentType}
                           </span>
                         )}
 
                         {app.workModel && (
-                          <span className={`${pill} inline-flex items-center gap-2`}>
+                          <span
+                            className={`${pill} inline-flex items-center gap-2`}
+                          >
                             <Building2 className="w-3.5 h-3.5 text-white/60" />
                             {app.workModel}
                           </span>
                         )}
 
                         {app.experienceLevel && (
-                          <span className={`${pill} inline-flex items-center gap-2`}>
+                          <span
+                            className={`${pill} inline-flex items-center gap-2`}
+                          >
                             <Clock className="w-3.5 h-3.5 text-white/60" />
                             {app.experienceLevel}
                           </span>
                         )}
 
                         {/* ✅ single pay pill */}
-                        <span className={`${hasPay ? pillGood : pill} inline-flex items-center gap-2`}>
+                        <span
+                          className={`${
+                            hasPay ? pillGood : pill
+                          } inline-flex items-center gap-2`}
+                        >
                           <DollarSign className="w-3.5 h-3.5" />
                           {payPillText}
                         </span>
 
                         {payConf && <span className={pill}>{payConf}</span>}
                         {topPay && (
-                          <span className={`${pillBrand} inline-flex items-center gap-2`}>
+                          <span
+                            className={`${pillBrand} inline-flex items-center gap-2`}
+                          >
                             <Percent className="w-3.5 h-3.5" />
                             {topPay}
                           </span>
@@ -705,9 +719,16 @@ useEffect(() => {
 
                     {/* Right: Status dropdown */}
                     <div className="shrink-0">
-                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
                         <Select
-                          value={app?.status ? String(app.status).toLowerCase() : "generated"}
+                          value={
+                            app?.status
+                              ? String(app.status).toLowerCase()
+                              : "generated"
+                          }
                           onValueChange={(v) => updateStatus(app.id, v)}
                         >
                           <SelectTrigger
@@ -779,7 +800,8 @@ useEffect(() => {
         // ✅ ONE compensation pill only in modal too
         const modalPayPrimary = renderPayPrimary(selected);
         const modalPayAnnual = renderAnnual(selected);
-        const modalPayText = modalPayPrimary || modalPayAnnual || "Pay not listed";
+        const modalPayText =
+          modalPayPrimary || modalPayAnnual || "Pay not listed";
         const modalHasPay = Boolean(modalPayPrimary || modalPayAnnual);
 
         return (
@@ -871,7 +893,11 @@ useEffect(() => {
                   )}
 
                   {/* ✅ single pay pill */}
-                  <span className={`${modalHasPay ? pillGood : pill} inline-flex items-center gap-2`}>
+                  <span
+                    className={`${
+                      modalHasPay ? pillGood : pill
+                    } inline-flex items-center gap-2`}
+                  >
                     <DollarSign className="w-3.5 h-3.5" />
                     {modalPayText}
                   </span>
@@ -969,37 +995,56 @@ useEffect(() => {
                         position="popper"
                         sideOffset={10}
                         avoidCollisions
-                        className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-xl p-1 max-h-[320px] overflow-auto"
+                        className="z-[9999] bg-black/95 backdrop-blur-xl border border-white/12 ring-1 ring-white/10 text-white shadow-2xl rounded-2xl p-1 max-h-[340px] overflow-auto"
                       >
                         <SelectItem
                           value="generated"
-                          className="rounded-lg cursor-pointer text-white/90 focus:bg-violet-500/20 focus:text-white data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white"
+                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-violet-500/25 data-[highlighted]:text-white data-[state=checked]:bg-violet-500/30"
                         >
-                          Generated
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-violet-300/80" />
+                            Generated
+                          </span>
                         </SelectItem>
+
                         <SelectItem
                           value="applied"
-                          className="rounded-lg cursor-pointer text-white/90 focus:bg-sky-500/20 focus:text-white data-[highlighted]:bg-sky-500/20 data-[highlighted]:text-white"
+                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-sky-500/25 data-[highlighted]:text-white data-[state=checked]:bg-sky-500/30"
                         >
-                          Applied
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-sky-300/80" />
+                            Applied
+                          </span>
                         </SelectItem>
+
                         <SelectItem
                           value="interview"
-                          className="rounded-lg cursor-pointer text-white/90 focus:bg-amber-500/20 focus:text-white data-[highlighted]:bg-amber-500/20 data-[highlighted]:text-white"
+                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-amber-500/25 data-[highlighted]:text-white data-[state=checked]:bg-amber-500/30"
                         >
-                          Interview
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-300/80" />
+                            Interview
+                          </span>
                         </SelectItem>
+
                         <SelectItem
                           value="offer"
-                          className="rounded-lg cursor-pointer text-white/90 focus:bg-emerald-500/20 focus:text-white data-[highlighted]:bg-emerald-500/20 data-[highlighted]:text-white"
+                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-emerald-500/25 data-[highlighted]:text-white data-[state=checked]:bg-emerald-500/30"
                         >
-                          Offer
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-300/80" />
+                            Offer
+                          </span>
                         </SelectItem>
+
                         <SelectItem
                           value="rejected"
-                          className="rounded-lg cursor-pointer text-white/90 focus:bg-rose-500/20 focus:text-white data-[highlighted]:bg-rose-500/20 data-[highlighted]:text-white"
+                          className="relative flex w-full cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 text-sm outline-none transition-colors text-white/90 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-rose-500/25 data-[highlighted]:text-white data-[state=checked]:bg-rose-500/30"
                         >
-                          Rejected
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-rose-300/80" />
+                            Rejected
+                          </span>
                         </SelectItem>
                       </SelectContent>
                     </Select>
