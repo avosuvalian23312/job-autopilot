@@ -1448,4 +1448,4 @@ export default function NewJob() {
       </div>
     </div>
   );
-
+}
