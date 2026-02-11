@@ -1,7 +1,19 @@
+// backend/src/lib/swaUser.js
 "use strict";
 
+function getHeader(request, name) {
+  // Functions v4 Request headers is usually a Fetch Headers object
+  if (request?.headers?.get) return request.headers.get(name);
+
+  // fallback if headers is a plain object (some setups)
+  const key = Object.keys(request?.headers || {}).find(
+    (k) => k.toLowerCase() === name.toLowerCase()
+  );
+  return key ? request.headers[key] : undefined;
+}
+
 function parseClientPrincipal(request) {
-  const encoded = request?.headers?.get?.("x-ms-client-principal");
+  const encoded = getHeader(request, "x-ms-client-principal");
   if (!encoded) return null;
 
   try {
@@ -12,13 +24,13 @@ function parseClientPrincipal(request) {
   }
 }
 
-// ✅ what Cosmos PK needs
+// ✅ return STRING for Cosmos PK
 function getSwaUserId(request) {
   const principal = parseClientPrincipal(request);
-  return principal?.userId || null; // STRING
+  return principal?.userId || null;
 }
 
-// ✅ optional helper for UI/logging
+// Optional helpers
 function getSwaUserDetails(request) {
   const principal = parseClientPrincipal(request);
   return principal?.userDetails || null;
@@ -30,6 +42,7 @@ function getSwaIdentityProvider(request) {
 }
 
 module.exports = {
+  getHeader,
   parseClientPrincipal,
   getSwaUserId,
   getSwaUserDetails,

@@ -165,3 +165,12 @@ app.http("previewJob", {
   authLevel: "anonymous",
   handler: require("./src/functions/previewJob.js"),
 });
+app.http("debugAuth", {
+  methods: ["GET", "OPTIONS"],
+  route: "debug/auth",
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+    return require("./src/functions/debugAuth.js").debugAuth(request, context);
+  },
+});

@@ -52,69 +52,63 @@ export default function Applications() {
 
   // ✅ SWA-safe fetch helper (cookies included)
   const apiFetch = async (path, options = {}) => {
-    const res = await fetch(path, {
-      ...options,
-      credentials: "include", // ✅ REQUIRED for SWA auth cookies
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
+  const { body, headers, ...rest } = options;
 
-    const data = await readJsonSafe(res);
+  const isJsonObject =
+    body != null && typeof body === "object" && !(body instanceof FormData);
 
-    if (!res.ok) {
-      const msg =
-        data?.error ||
-        data?.message ||
-        data?.detail ||
-        data?.raw ||
-        `Request failed (${res.status})`;
-      throw new Error(msg);
-    }
+  const res = await fetch(path, {
+    ...rest,
+    credentials: "include", // ✅ REQUIRED for SWA auth cookies
+    headers: {
+      ...(isJsonObject ? { "Content-Type": "application/json" } : {}),
+      ...(headers || {}),
+    },
+    body: body == null ? undefined : isJsonObject ? JSON.stringify(body) : body,
+  });
 
-    return data;
-  };
+  const data = await readJsonSafe(res);
+
+  if (!res.ok) {
+    const msg =
+      data?.error ||
+      data?.message ||
+      data?.detail ||
+      data?.raw ||
+      `Request failed (${res.status})`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
+};
 
   // ✅ get SWA userId from /.auth/me (clientPrincipal)
-  const getSwaUserId = async () => {
-    if (swaUserIdRef.current) return swaUserIdRef.current;
+  // ✅ get SWA userId from /.auth/me (treat empty/failed as logged out)
+const getSwaUserId = async () => {
+  if (swaUserIdRef.current) return swaUserIdRef.current;
 
-    try {
-      const me = await apiFetch("/.auth/me", { method: "GET" });
+  try {
+    const me = await apiFetch("/.auth/me", { method: "GET" });
 
-      // SWA returns: { clientPrincipal: { userId, userDetails, identityProvider, ... } }
-      const cp = me?.clientPrincipal || null;
+    // SWA /.auth/me returns an ARRAY: [ { clientPrincipal: {...} } ] OR []
+    const entry = Array.isArray(me) ? me[0] : null;
+    const cp = entry?.clientPrincipal || null;
 
-      const userId =
-        cp?.userId ||
-        cp?.userDetails || // sometimes you may prefer this
-        null;
-
-      if (userId) {
-        swaUserIdRef.current = String(userId);
-        return swaUserIdRef.current;
-      }
-    } catch {
-      // ignore and fall back below
+    const userId = cp?.userId || null;
+    if (userId) {
+      swaUserIdRef.current = String(userId);
+      return swaUserIdRef.current;
     }
+  } catch {
+    // ignore
+  }
 
-    // Fallback: stable local id (NOT demo-user)
-    const existing = localStorage.getItem("userId");
-    if (existing) {
-      swaUserIdRef.current = existing;
-      return existing;
-    }
+  return null; // ✅ logged out (no fake ids)
+};
 
-    const newId =
-      (typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `user_${Date.now()}_${Math.random().toString(16).slice(2)}`);
-
-    localStorage.setItem("userId", newId);
-    swaUserIdRef.current = newId;
-    return newId;
-  };
 
   const normalizeJob = (job) => {
     const id = job?.id ?? job?.jobId ?? job?._id ?? job?.job_id;
