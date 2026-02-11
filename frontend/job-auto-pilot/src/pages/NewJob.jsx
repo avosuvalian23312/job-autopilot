@@ -99,22 +99,22 @@ export default function NewJob() {
   };
 
   const getSwaUser = async () => {
-    // SWA provides /.auth/me when auth is enabled
-    const res = await fetch("/.auth/me", { credentials: "include" });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    const entry = Array.isArray(data) ? data[0] : null;
-    const cp = entry?.clientPrincipal || null;
+  const res = await fetch("/.auth/me", { credentials: "include" });
+  if (!res.ok) return null;
 
-    // userId is best; fall back to userDetails or identityProvider
-    const userId =
-      cp?.userId ||
-      cp?.userDetails ||
-      (cp?.identityProvider ? `${cp.identityProvider}:${cp.userDetails || ""}` : "") ||
-      "";
+  const data = await res.json().catch(() => null);
+  if (!data) return null;
 
-    return userId || null;
-  };
+  // SWA can return either:
+  // 1) [{ clientPrincipal: {...} }]
+  // 2) { clientPrincipal: {...} }
+  const cp = Array.isArray(data)
+    ? data?.[0]?.clientPrincipal
+    : data?.clientPrincipal;
+
+  const userId = cp?.userId || null;
+  return userId;
+};
 
  const ensureUserId = async () => {
   const id = await getSwaUser(); // reads /.auth/me
