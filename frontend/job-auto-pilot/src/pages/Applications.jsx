@@ -141,7 +141,9 @@ export default function Applications() {
     job?.status ?? job?.applicationStatus ?? job?.application_status ?? null;
 
   let status = String(rawStatus ?? "").trim().toLowerCase();
-  if (!status || status === "created") status = "generated";
+ if (status === "completed" || status === "complete" || status === "done") {
+  status = "generated";
+}
 
   return {
     ...job,
