@@ -174,3 +174,12 @@ app.http("debugAuth", {
     return require("./src/functions/debugAuth.js").debugAuth(request, context);
   },
 });
+app.http("dashboard", {
+  methods: ["GET", "OPTIONS"],
+  route: "dashboard",
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+    return require("./src/functions/dashboard.js").dashboard(request, context);
+  },
+});

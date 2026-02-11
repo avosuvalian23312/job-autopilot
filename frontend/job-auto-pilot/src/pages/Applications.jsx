@@ -211,11 +211,45 @@ const getSwaUserId = async () => {
     try {
       // ✅ SWA userId from /.auth/me
      const userId = await getSwaUserId();
-if (!userId) {
-  toast.error("Please sign in to continue.");
-  window.location.href = "/login"; // or your login route
-  return;
-}
+const redirectToSwaLogin = (provider = "google") => {
+  const returnTo = window.location.pathname + window.location.search + window.location.hash;
+  const url = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+  window.location.assign(url);
+};
+
+const loadJobs = async () => {
+  setIsLoading(true);
+  try {
+    const userId = await getSwaUserId();
+
+    // If logged out (or SWA not seeing auth), go to SWA login properly
+    if (!userId) {
+      toast.error("Session expired — please sign in.");
+      redirectToSwaLogin("google"); // change to "aad" if you use Microsoft login
+      return;
+    }
+
+    const data = await apiFetch("/api/jobs", { method: "GET" });
+    const list = Array.isArray(data) ? data : data?.jobs || data?.items || [];
+    const normalized = list.map(normalizeJob).filter((x) => x?.id != null);
+    setApplications(normalized);
+  } catch (e) {
+    console.error(e);
+
+    // If your API returns 401, also send them through SWA login
+    if (e?.status === 401) {
+      toast.error("Not authorized — please sign in again.");
+      redirectToSwaLogin("google");
+      return;
+    }
+
+    toast.error("Failed to load applications.");
+    setApplications([]);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 const data = await apiFetch("/api/jobs", { method: "GET" });
 
 
