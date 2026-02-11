@@ -19,9 +19,34 @@ async function updateJobStatus(request, context) {
 
     let body = {};
     try { body = await request.json(); } catch {}
+const rawStatus = body?.status;
 
-    const newStatus = body?.status;
-    if (!newStatus) return { status: 400, jsonBody: { ok: false, error: "Missing status" } };
+const normalizeStatus = (s) => {
+  const v = String(s ?? "").trim().toLowerCase();
+  if (!v) return null;
+
+  // map older/alternate values -> UI values
+  if (v === "created") return "generated";
+  if (v === "complete" || v === "completed" || v === "done") return "generated";
+
+  return v;
+};
+
+const allowed = new Set(["generated", "applied", "interview", "offer", "rejected"]);
+
+const newStatus = normalizeStatus(rawStatus);
+
+if (!newStatus) {
+  return { status: 400, jsonBody: { ok: false, error: "Missing status" } };
+}
+
+if (!allowed.has(newStatus)) {
+  return {
+    status: 400,
+    jsonBody: { ok: false, error: `Invalid status: ${newStatus}` },
+  };
+}
+
 
     // ✅ Cosmos throws on not found / wrong PK; handle 404 cleanly
     let job;

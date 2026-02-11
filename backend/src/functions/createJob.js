@@ -24,10 +24,14 @@ function toNumberOrNull(val) {
 function normalizePeriod(val) {
   if (!val) return null;
   const p = String(val).trim().toLowerCase();
-  if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hourly";
-  if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "yearly";
-  return p; // allow custom strings if you want (e.g., "monthly")
+  if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hour";
+  if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "year";
+  if (["month", "monthly", "mo", "/mo"].includes(p)) return "month";
+  if (["week", "weekly", "wk", "/wk"].includes(p)) return "week";
+  if (["day", "daily", "/day"].includes(p)) return "day";
+  return p;
 }
+
 
 async function createJob(request, context) {
   try {
@@ -75,7 +79,8 @@ async function createJob(request, context) {
       jobDescription,
       aiMode: body?.aiMode ?? "standard",
       studentMode: !!body?.studentMode,
-      status: "created",
+      status: "generated",
+
 
       // ✅ Pay fields (top-level for easy frontend use)
       payMin,
