@@ -1,69 +1,59 @@
-// backend/src/functions/createJob.js
 "use strict";
-const crypto = require("crypto");
+
 const { CosmosClient } = require("@azure/cosmos");
+const { getSwaUserId } = require("../lib/swaUser");
 
 const cosmos = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);
 const container = cosmos
   .database(process.env.COSMOS_DB_NAME)
-  .container(process.env.COSMOS_CONTAINER_NAME); // jobs container
+  .container(process.env.COSMOS_CONTAINER_NAME);
 
 async function createJob(request, context) {
   try {
-    if (request.method === "OPTIONS") return { status: 204 };
+    // ✅ SWA auth userId from headers
+    const user = getSwaUserId(request);
+    if (!user?.userId) {
+      return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
+    }
+    const userId = user.userId;
 
+    // ✅ read body
     const body = await request.json().catch(() => ({}));
 
-    const {
-      userId,
-      jobTitle,
-      company,
-      website,
-      location,
-      seniority,
-      keywords,
-      jobDescription,
-      aiMode,
-      studentMode,
-      resumeId, // optional, if you want to store which resume was used
-    } = body;
+    // ✅ validate required fields (NO userId from client)
+    const jobTitle = (body?.jobTitle || "").trim();
+    const jobDescription = (body?.jobDescription || "").trim();
 
-    if (!userId || !jobTitle || !jobDescription) {
-      return { status: 400, jsonBody: { error: "Missing required fields (userId, jobTitle, jobDescription)" } };
+    if (!jobTitle || !jobDescription) {
+      return {
+        status: 400,
+        jsonBody: { ok: false, error: "Missing required fields (jobTitle, jobDescription)" },
+      };
     }
 
-    const now = new Date().toISOString();
-
-    const job = {
+    const doc = {
       id: crypto.randomUUID(),
-      userId, // PK
+      userId, // ✅ always from SWA
       jobTitle,
-      company: company || null,
-      website: website || null,
-      location: location || null,
-      seniority: seniority || null,
-      keywords: Array.isArray(keywords) ? keywords : [],
+      company: body?.company ?? "Not specified",
+      website: body?.website ?? null,
+      location: body?.location ?? null,
+      seniority: body?.seniority ?? null,
+      keywords: Array.isArray(body?.keywords) ? body.keywords : [],
       jobDescription,
-      aiMode: aiMode || "standard",
-      studentMode: !!studentMode,
-      resumeId: resumeId || null,
-
-      status: "queued", // queued -> generating -> completed/failed
-      createdAt: now,
-      updatedAt: now,
-
-      outputs: {
-        resume: null,       // { text, fileName, ... } later
-        coverLetter: null,  // { text, fileName, ... } later
-      },
+      aiMode: body?.aiMode ?? "standard",
+      studentMode: !!body?.studentMode,
+      status: "created",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    await container.items.create(job);
+    await container.items.create(doc, { partitionKey: userId });
 
-    return { status: 200, jsonBody: job };
+    return { status: 201, jsonBody: { ok: true, ...doc } };
   } catch (err) {
     context.error("createJob error:", err);
-    return { status: 500, jsonBody: { error: "Failed to create job", details: err?.message || "Unknown error" } };
+    return { status: 500, jsonBody: { ok: false, error: "Failed to create job", details: err?.message } };
   }
 }
 
