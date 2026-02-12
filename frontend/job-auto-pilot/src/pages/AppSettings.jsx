@@ -23,6 +23,31 @@ import { toast } from "sonner";
 
 const STORAGE_KEY = "jobautopilot_profile_v1";
 
+/**
+ * ✅ SWA auth (NO JWT):
+ * Call your /api/* endpoints normally. SWA uses cookies and injects identity headers server-side.
+ */
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const headers = { "Content-Type": "application/json" };
+
+  const res = await fetch(path, {
+    method,
+    headers,
+    credentials: "include",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  return { ok: res.ok, status: res.status, data };
+}
+
 function Field({ label, icon: Icon, children, hint }) {
   return (
     <div className="space-y-2">
@@ -71,6 +96,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("profile");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Profile
   const [fullName, setFullName] = useState("");
@@ -80,24 +106,153 @@ export default function Settings() {
   const [linkedin, setLinkedin] = useState("");
   const [portfolio, setPortfolio] = useState("");
 
-  const initialLoaded = useMemo(() => {
+  // Snapshot for dirty-checking
+  const [initialLoaded, setInitialLoaded] = useState(null);
+
+  const loadFromLocalCache = () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
     }
-  }, []);
+  };
 
+  const writeLocalCache = (payload) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Load settings from Cosmos via /api/settings (fallback to local cache if needed)
   useEffect(() => {
-    if (!initialLoaded) return;
-    setFullName(initialLoaded.fullName || "");
-    setEmail(initialLoaded.email || "");
-    setPhone(initialLoaded.phone || "");
-    setLocation(initialLoaded.location || "");
-    setLinkedin(initialLoaded.linkedin || "");
-    setPortfolio(initialLoaded.portfolio || "");
-  }, [initialLoaded]);
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const resp = await apiFetch("/api/settings", { method: "GET" });
+
+        // If authorized + ok response
+        if (resp.ok && resp.data?.ok) {
+          const s = resp.data?.settings || null;
+          const profile = s?.profile || {};
+          const links = s?.links || {};
+          const prefs = s?.prefs || null;
+
+          const snapshot = {
+            fullName: String(profile.fullName || ""),
+            email: String(profile.email || ""),
+            phone: String(profile.phone || ""),
+            location: String(profile.location || ""),
+            linkedin: String(links.linkedin || ""),
+            portfolio: String(links.portfolio || ""),
+            prefs,
+          };
+
+          if (cancelled) return;
+
+          setFullName(snapshot.fullName);
+          setEmail(snapshot.email);
+          setPhone(snapshot.phone);
+          setLocation(snapshot.location);
+          setLinkedin(snapshot.linkedin);
+          setPortfolio(snapshot.portfolio);
+          setInitialLoaded(snapshot);
+
+          // keep local cache warm (UX + offline)
+          writeLocalCache({
+            fullName: snapshot.fullName,
+            email: snapshot.email,
+            phone: snapshot.phone,
+            location: snapshot.location,
+            linkedin: snapshot.linkedin,
+            portfolio: snapshot.portfolio,
+            updatedAt: new Date().toISOString(),
+          });
+
+          setLoading(false);
+          return;
+        }
+
+        // If unauthorized, or API failed -> fallback
+        const cached = loadFromLocalCache();
+        if (!cancelled) {
+          if (resp.status === 401) {
+            toast.error("Please sign in again to load settings.");
+          }
+          if (cached) {
+            setFullName(cached.fullName || "");
+            setEmail(cached.email || "");
+            setPhone(cached.phone || "");
+            setLocation(cached.location || "");
+            setLinkedin(cached.linkedin || "");
+            setPortfolio(cached.portfolio || "");
+            setInitialLoaded({
+              fullName: cached.fullName || "",
+              email: cached.email || "",
+              phone: cached.phone || "",
+              location: cached.location || "",
+              linkedin: cached.linkedin || "",
+              portfolio: cached.portfolio || "",
+              prefs: null,
+            });
+          } else {
+            setInitialLoaded({
+              fullName: "",
+              email: "",
+              phone: "",
+              location: "",
+              linkedin: "",
+              portfolio: "",
+              prefs: null,
+            });
+          }
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error(err);
+        const cached = loadFromLocalCache();
+        if (!cancelled) {
+          if (cached) {
+            setFullName(cached.fullName || "");
+            setEmail(cached.email || "");
+            setPhone(cached.phone || "");
+            setLocation(cached.location || "");
+            setLinkedin(cached.linkedin || "");
+            setPortfolio(cached.portfolio || "");
+            setInitialLoaded({
+              fullName: cached.fullName || "",
+              email: cached.email || "",
+              phone: cached.phone || "",
+              location: cached.location || "",
+              linkedin: cached.linkedin || "",
+              portfolio: cached.portfolio || "",
+              prefs: null,
+            });
+          } else {
+            setInitialLoaded({
+              fullName: "",
+              email: "",
+              phone: "",
+              location: "",
+              linkedin: "",
+              portfolio: "",
+              prefs: null,
+            });
+          }
+          toast.error("Could not load settings from server. Using local cache.");
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const isDirty = useMemo(() => {
     const base = initialLoaded || {};
@@ -111,10 +266,42 @@ export default function Settings() {
     );
   }, [initialLoaded, fullName, email, phone, location, linkedin, portfolio]);
 
+  const getPrefsForSave = () => {
+    // Prefer server-loaded prefs (so we don't overwrite with empty)
+    const fromServer = initialLoaded?.prefs;
+    if (fromServer && typeof fromServer === "object") return fromServer;
+
+    // Otherwise, try localStorage("preferences") used by your Setup flow
+    try {
+      const raw = localStorage.getItem("preferences");
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === "object") {
+        return {
+          targetRoles: Array.isArray(parsed.targetRoles) ? parsed.targetRoles : [],
+          seniority: String(parsed.seniority || ""),
+          locationPreference: String(parsed.locationPreference || ""),
+          preferredCity: String(parsed.preferredCity || ""),
+          tone: String(parsed.tone || "Professional"),
+        };
+      }
+    } catch {
+      // ignore
+    }
+
+    // Default safe shape
+    return {
+      targetRoles: [],
+      seniority: "",
+      locationPreference: "",
+      preferredCity: "",
+      tone: "Professional",
+    };
+  };
+
   const saveProfile = async () => {
     if (saving) return;
 
-    // light validation (UI-only)
+    // light validation
     const e = (email || "").trim();
     if (e && !/^\S+@\S+\.\S+$/.test(e)) {
       toast.error("Please enter a valid email address.");
@@ -123,18 +310,59 @@ export default function Settings() {
 
     setSaving(true);
     try {
-      // ✅ production-safe: local persistence (no backend assumptions)
-      // If you already have an API route, you can replace this block without changing UI.
-      const payload = {
+      const profile = {
         fullName: fullName.trim(),
         email: e,
         phone: phone.trim(),
         location: location.trim(),
+      };
+
+      const links = {
         linkedin: linkedin.trim(),
         portfolio: portfolio.trim(),
-        updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+      const prefs = getPrefsForSave();
+
+      // ✅ Save to Cosmos via Settings API
+      const resp = await apiFetch("/api/settings", {
+        method: "POST",
+        body: { profile, links, prefs },
+      });
+
+      if (!resp.ok || !resp.data?.ok) {
+        if (resp.status === 401) {
+          toast.error("You're not logged in. Please sign in again.");
+          return;
+        }
+        const msg =
+          resp.data?.error || `Failed to save settings (HTTP ${resp.status})`;
+        toast.error(msg);
+        return;
+      }
+
+      // Update local cache + dirty snapshot
+      const snapshot = {
+        fullName: profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        location: profile.location,
+        linkedin: links.linkedin,
+        portfolio: links.portfolio,
+        prefs,
+      };
+
+      setInitialLoaded(snapshot);
+      writeLocalCache({
+        fullName: snapshot.fullName,
+        email: snapshot.email,
+        phone: snapshot.phone,
+        location: snapshot.location,
+        linkedin: snapshot.linkedin,
+        portfolio: snapshot.portfolio,
+        updatedAt: new Date().toISOString(),
+      });
+
       toast.success("Settings saved.");
     } catch (err) {
       console.error(err);
@@ -145,8 +373,9 @@ export default function Settings() {
   };
 
   const openSupport = () => {
-    // Replace with your support flow (Intercom, Zendesk, etc.)
-    window.location.href = "mailto:support@yourdomain.com?subject=Job%20Autopilot%20Support";
+    // Keep mailto until /api/support + email is configured
+    window.location.href =
+      "mailto:support@yourdomain.com?subject=Job%20Autopilot%20Support";
   };
 
   return (
@@ -176,11 +405,11 @@ export default function Settings() {
               <Button
                 type="button"
                 onClick={saveProfile}
-                disabled={!isDirty || saving}
+                disabled={!isDirty || saving || loading}
                 className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-5 py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Save className="w-4 h-4 mr-2" />
-                {saving ? "Saving..." : "Save changes"}
+                {saving ? "Saving..." : loading ? "Loading..." : "Save changes"}
               </Button>
             )}
           </div>
@@ -231,6 +460,7 @@ export default function Settings() {
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="e.g., Alex Johnson"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
 
@@ -240,6 +470,7 @@ export default function Settings() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g., alex@example.com"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
 
@@ -249,6 +480,7 @@ export default function Settings() {
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="e.g., +1 (555) 123-4567"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
 
@@ -258,6 +490,7 @@ export default function Settings() {
                       onChange={(e) => setLocation(e.target.value)}
                       placeholder="e.g., Dallas, TX"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
                 </div>
@@ -275,6 +508,7 @@ export default function Settings() {
                       onChange={(e) => setLinkedin(e.target.value)}
                       placeholder="linkedin.com/in/yourname"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
 
@@ -284,6 +518,7 @@ export default function Settings() {
                       onChange={(e) => setPortfolio(e.target.value)}
                       placeholder="yourdomain.dev"
                       className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                      disabled={loading}
                     />
                   </Field>
                 </div>
@@ -302,6 +537,7 @@ export default function Settings() {
                       );
                     }}
                     className="justify-center sm:justify-start border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5"
+                    disabled={loading}
                   >
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Open LinkedIn
@@ -338,11 +574,11 @@ export default function Settings() {
                 <Button
                   type="button"
                   onClick={saveProfile}
-                  disabled={!isDirty || saving}
+                  disabled={!isDirty || saving || loading}
                   className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Save className="w-4 h-4 mr-2" />
-                  {saving ? "Saving..." : "Save changes"}
+                  {saving ? "Saving..." : loading ? "Loading..." : "Save changes"}
                 </Button>
               </div>
             </TabsContent>
@@ -396,7 +632,8 @@ export default function Settings() {
                       Credits-based
                     </div>
                     <div className="text-sm text-white/40 mt-2">
-                      Credits are used when generating cover letters and bullet points.
+                      Credits are used when generating cover letters and bullet
+                      points.
                     </div>
                   </div>
 
@@ -405,7 +642,9 @@ export default function Settings() {
                       type="button"
                       variant="ghost"
                       className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
-                      onClick={() => toast.message("Billing UI placeholder (wire to Stripe).")}
+                      onClick={() =>
+                        toast.message("Billing UI placeholder (wire to Stripe).")
+                      }
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
                       Manage billing
