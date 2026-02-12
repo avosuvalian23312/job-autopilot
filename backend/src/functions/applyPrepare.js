@@ -5,9 +5,9 @@ const { BlobServiceClient } = require("@azure/storage-blob");
 
 const { callAoaiChat, safeJsonParse } = require("../lib/aoai");
 const {
-  extractPdfLinesWithBoxes,
-  applyPdfReplacements,
-  chunkText,
+  extractPdfLayout,
+  extractBulletBlocks,
+  applyBulletEdits,
 } = require("../lib/pdfTailor");
 
 function safeUserId(userId) {
@@ -62,7 +62,10 @@ async function downloadBlobToBuffer(connectionString, containerName, blobName) {
   const blobService = BlobServiceClient.fromConnectionString(connectionString);
   const container = blobService.getContainerClient(containerName);
   const blobClient = container.getBlobClient(blobName);
+
   const res = await blobClient.download();
+  if (!res.readableStreamBody) return Buffer.from([]);
+
   const chunks = [];
   return await new Promise((resolve, reject) => {
     res.readableStreamBody.on("data", (d) => chunks.push(d));
@@ -82,6 +85,25 @@ async function uploadPdfBuffer(connectionString, containerName, blobName, buffer
   });
 
   return stripQuery(block.url);
+}
+
+/**
+ * Build a reasonably-sized resume text summary from extracted layout.
+ * This is used for cover letter + keyword grounding.
+ */
+function buildResumeTextFromLayout(layout, { maxChars = 14000 } = {}) {
+  const parts = [];
+  for (const pg of layout?.pages || []) {
+    parts.push(`\n--- Page ${pg.pageIndex + 1} ---\n`);
+    const lines = Array.isArray(pg.lines) ? pg.lines : [];
+    for (const l of lines) {
+      const t = String(l?.text || "").trim();
+      if (t) parts.push(t);
+    }
+  }
+  const full = parts.join("\n");
+  if (full.length <= maxChars) return full;
+  return full.slice(0, maxChars);
 }
 
 /**
@@ -132,36 +154,47 @@ No extra keys. No markdown.
 }
 
 /**
- * Ask AOAI to output bullet replacements using EXACT "from" lines from resumeText.
+ * Plan bullet edits using bulletIds + rawText from extracted bullet blocks.
+ * This is Option B: we overlay new bullet text into the SAME bounding box.
  */
-async function planBulletReplacements({ resumeText, jobData }) {
-  const system = `
-You are a resume editor. Your task is to improve ATS alignment WITHOUT changing layout.
-You MUST output ONLY JSON with this shape:
+async function planBulletEdits({ bulletBlocks, jobData }) {
+  const bulletsForModel = (bulletBlocks || [])
+    .slice(0, 40)
+    .map((b) => ({
+      bulletId: String(b.id),
+      text: String(b.rawText || "").trim(),
+      // these hints help the model keep length similar without needing boxes
+      lineCount: b.lineCount || 1,
+    }))
+    .filter((b) => b.bulletId && b.text);
 
+  const system = `
+You are a resume bullet editor.
+Your goal: improve ATS alignment WITHOUT changing layout.
+
+Return ONLY JSON in this exact shape:
 {
-  "replacements": [
-    { "from": "EXACT line copied from resume text", "to": "Improved replacement line" }
+  "edits": [
+    { "bulletId": "b0", "to": "Improved bullet text" }
   ],
   "atsKeywords": ["..."]
 }
 
 Rules:
-- "from" must be an EXACT full line copied from the provided RESUME TEXT (character-for-character except normal spaces).
-- Only replace EXPERIENCE bullet lines. Do NOT touch headers, names, emails, dates, company names, or education.
-- Keep meaning truthful. Do NOT invent new employers, degrees, tools you clearly don't have.
-- Inject ATS keywords relevant to the JOB REQUIREMENTS (skillsRequired, jobTitle).
-- Keep each "to" line roughly similar length to "from" (avoid huge wraps).
-- Return 6–10 replacements. If you can't confidently match a line, don't include it.
-No extra keys. No markdown.
+- "bulletId" MUST be one of the provided bulletIds.
+- Only edit experience-style bullets. Skip education, contact info, headings.
+- Keep claims truthful. Do NOT invent employers, degrees, certifications, or tools not supported by the resume text.
+- Keep each "to" about the SAME length as the original bullet (avoid very long rewrites).
+- Produce 6–10 edits maximum.
+- Output MUST be valid JSON only. No markdown.
 `.trim();
 
   const user = `
 JOB DATA (structured):
 ${JSON.stringify(jobData || {}, null, 2)}
 
-RESUME TEXT (page-marked):
-${resumeText}
+RESUME BULLETS (edit only these; keep length similar):
+${JSON.stringify(bulletsForModel, null, 2)}
 `.trim();
 
   const { content } = await callAoaiChat({
@@ -172,21 +205,35 @@ ${resumeText}
   });
 
   const parsed = safeJsonParse(content) || {};
-  const reps = Array.isArray(parsed.replacements) ? parsed.replacements : [];
+  const edits = Array.isArray(parsed.edits) ? parsed.edits : [];
   const ats = Array.isArray(parsed.atsKeywords) ? parsed.atsKeywords : [];
 
-  // sanitize
-  const cleanReps = reps
-    .map((r) => ({
-      from: String(r?.from || "").replace(/\s+/g, " ").trim(),
-      to: String(r?.to || "").replace(/\s+/g, " ").trim(),
-    }))
-    .filter((r) => r.from && r.to)
-    .slice(0, 12);
+  const validIds = new Set(bulletsForModel.map((b) => b.bulletId));
 
-  const cleanAts = Array.from(new Set(ats.map((x) => String(x || "").trim()).filter(Boolean))).slice(0, 30);
+  // sanitize edits
+  const cleanEdits = [];
+  const seen = new Set();
+  for (const e of edits) {
+    const bulletId = String(e?.bulletId || "").trim();
+    if (!bulletId || !validIds.has(bulletId)) continue;
 
-  return { replacements: cleanReps, atsKeywords: cleanAts };
+    let to = String(e?.to || "").replace(/\s+/g, " ").trim();
+    if (!to) continue;
+
+    // avoid duplicates
+    const key = `${bulletId}::${to.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    cleanEdits.push({ bulletId, text: to });
+    if (cleanEdits.length >= 12) break;
+  }
+
+  const cleanAts = Array.from(
+    new Set(ats.map((x) => String(x || "").trim()).filter(Boolean))
+  ).slice(0, 30);
+
+  return { edits: cleanEdits.slice(0, 10), atsKeywords: cleanAts };
 }
 
 /**
@@ -215,7 +262,7 @@ JOB DATA:
 ${JSON.stringify(jobData || {}, null, 2)}
 
 RESUME (summary text):
-${resumeText}
+${String(resumeText || "")}
 `.trim();
 
   const { content } = await callAoaiChat({
@@ -231,9 +278,8 @@ ${resumeText}
 }
 
 async function tryLoadUserProfile(cosmos, dbName, userId) {
-  // Optional: if you want profile info in cover letter.
-  // If your settings schema differs, this safely returns {}.
-  const containerName = process.env.COSMOS_USER_SETTINGS_CONTAINER_NAME || "userSettings";
+  const containerName =
+    process.env.COSMOS_USER_SETTINGS_CONTAINER_NAME || "userSettings";
 
   try {
     const container = cosmos.database(dbName).container(containerName);
@@ -245,9 +291,10 @@ async function tryLoadUserProfile(cosmos, dbName, userId) {
     const doc = resources?.[0] || null;
     if (!doc) return {};
 
-    // handle either flat or nested
-    const profile = doc.profile && typeof doc.profile === "object" ? doc.profile : doc;
-    const links = doc.links && typeof doc.links === "object" ? doc.links : doc;
+    const profile =
+      doc.profile && typeof doc.profile === "object" ? doc.profile : doc;
+    const links =
+      doc.links && typeof doc.links === "object" ? doc.links : doc;
 
     return {
       fullName: profile.fullName || doc.fullName || "",
@@ -268,24 +315,45 @@ async function applyPrepare(request, context) {
 
     const COSMOS_CONNECTION_STRING = process.env.COSMOS_CONNECTION_STRING;
     const COSMOS_DB_NAME = process.env.COSMOS_DB_NAME;
-    const COSMOS_RESUMES_CONTAINER_NAME = process.env.COSMOS_RESUMES_CONTAINER_NAME;
+    const COSMOS_RESUMES_CONTAINER_NAME =
+      process.env.COSMOS_RESUMES_CONTAINER_NAME;
     const COSMOS_COVERLETTERS_CONTAINER_NAME =
       process.env.COSMOS_COVERLETTERS_CONTAINER_NAME || "coverLetters";
 
-    const AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    const BLOB_RESUMES_CONTAINER = process.env.BLOB_RESUMES_CONTAINER || "resumes";
+    const AZURE_STORAGE_CONNECTION_STRING =
+      process.env.AZURE_STORAGE_CONNECTION_STRING;
+    const BLOB_RESUMES_CONTAINER =
+      process.env.BLOB_RESUMES_CONTAINER || "resumes";
 
     if (!COSMOS_CONNECTION_STRING) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_CONNECTION_STRING" } };
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Missing COSMOS_CONNECTION_STRING" },
+      };
     }
     if (!COSMOS_DB_NAME) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_DB_NAME" } };
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Missing COSMOS_DB_NAME" },
+      };
     }
     if (!COSMOS_RESUMES_CONTAINER_NAME) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_RESUMES_CONTAINER_NAME" } };
+      return {
+        status: 500,
+        jsonBody: {
+          ok: false,
+          error: "Missing COSMOS_RESUMES_CONTAINER_NAME",
+        },
+      };
     }
     if (!AZURE_STORAGE_CONNECTION_STRING) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing AZURE_STORAGE_CONNECTION_STRING" } };
+      return {
+        status: 500,
+        jsonBody: {
+          ok: false,
+          error: "Missing AZURE_STORAGE_CONNECTION_STRING",
+        },
+      };
     }
 
     const user = getSwaUser(request);
@@ -299,8 +367,13 @@ async function applyPrepare(request, context) {
     const jobDescriptionRaw = String(body.jobDescription || "").trim();
     const jobUrl = String(body.jobUrl || "").trim();
 
-    if (!resumeId) return { status: 400, jsonBody: { ok: false, error: "Missing resumeId" } };
-    if (!jobDescriptionRaw) return { status: 400, jsonBody: { ok: false, error: "Missing jobDescription" } };
+    if (!resumeId)
+      return { status: 400, jsonBody: { ok: false, error: "Missing resumeId" } };
+    if (!jobDescriptionRaw)
+      return {
+        status: 400,
+        jsonBody: { ok: false, error: "Missing jobDescription" },
+      };
 
     const cosmos = new CosmosClient(COSMOS_CONNECTION_STRING);
 
@@ -313,17 +386,31 @@ async function applyPrepare(request, context) {
       .container(COSMOS_COVERLETTERS_CONTAINER_NAME);
 
     // Load selected resume doc
-    const read = await resumesContainer.item(resumeId, user.userId).read().catch(() => null);
+    const read = await resumesContainer
+      .item(resumeId, user.userId)
+      .read()
+      .catch(() => null);
+
     const resumeDoc = read?.resource || null;
 
     if (!resumeDoc) {
       return { status: 404, jsonBody: { ok: false, error: "Resume not found" } };
     }
     if (!resumeDoc.blobName) {
-      return { status: 400, jsonBody: { ok: false, error: "Resume doc missing blobName" } };
+      return {
+        status: 400,
+        jsonBody: { ok: false, error: "Resume doc missing blobName" },
+      };
     }
     if (String(resumeDoc.contentType || "").toLowerCase() !== "application/pdf") {
-      return { status: 400, jsonBody: { ok: false, error: "Only PDF resumes supported for layout-preserving tailoring." } };
+      return {
+        status: 400,
+        jsonBody: {
+          ok: false,
+          error:
+            "Only PDF resumes supported for layout-preserving tailoring.",
+        },
+      };
     }
 
     // Download PDF bytes
@@ -333,28 +420,46 @@ async function applyPrepare(request, context) {
       resumeDoc.blobName
     );
 
-    // Extract resume text + line boxes
-    const { pages, resumeText } = await extractPdfLinesWithBoxes(pdfBuffer, {
-      maxPages: 12,
-      yTolerance: 2.5,
-    });
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Failed to download resume PDF bytes" },
+      };
+    }
+
+    // Extract PDF layout + bullet blocks (Option B)
+    const layout = await extractPdfLayout(pdfBuffer, { maxPages: 12 });
+    const bulletBlocks = extractBulletBlocks(layout, { maxBullets: 60 });
+
+    if (!bulletBlocks.length) {
+      return {
+        status: 400,
+        jsonBody: {
+          ok: false,
+          error:
+            "Could not detect bullets in this PDF. (If it's scanned/images, Option B cannot extract text layout.)",
+        },
+      };
+    }
+
+    const resumeText = buildResumeTextFromLayout(layout, { maxChars: 14000 });
 
     // Extract job data (AOAI)
-    // (you can also pass in pre-extracted jobData from frontend later if you want)
     const jobData = await extractJobWithAoai(jobDescriptionRaw);
 
-    // Plan bullet replacements (AOAI)
-    const planned = await planBulletReplacements({
-      resumeText: chunkText(resumeText, 14000),
+    // Plan bullet edits by bulletId (AOAI)
+    const planned = await planBulletEdits({
+      bulletBlocks,
       jobData,
     });
 
-    // Apply replacements to PDF while preserving layout
-    const { pdfBytes: tailoredBytes, overlaysApplied, misses } = await applyPdfReplacements(
-      pdfBuffer,
-      pages,
-      planned.replacements
-    );
+    // Apply edits as overlays (preserve layout)
+    const beforeBytes = pdfBuffer instanceof Buffer ? pdfBuffer : Buffer.from(pdfBuffer);
+    const tailoredBytes = await applyBulletEdits(beforeBytes, bulletBlocks, planned.edits, {
+      // keep defaults; adjust only if your resume font sizes differ
+      defaultFontSize: 10,
+      lineGap: 1.15,
+    });
 
     // Upload tailored PDF
     const now = new Date();
@@ -371,6 +476,11 @@ async function applyPrepare(request, context) {
     );
 
     // Create new resume doc in resumes container
+    const overlaysApplied = planned.edits.map((e) => ({
+      bulletId: e.bulletId,
+      to: e.text,
+    }));
+
     const tailoredResumeDoc = {
       id: `resume:${safeUserId(user.userId)}:${Date.now()}`,
       userId: user.userId,
@@ -380,7 +490,6 @@ async function applyPrepare(request, context) {
       originalName: tailoredFileName,
       isDefault: false,
 
-      // linkage
       sourceResumeId: resumeId,
       tailoredFor: {
         jobTitle: jobData?.jobTitle || null,
@@ -401,7 +510,9 @@ async function applyPrepare(request, context) {
       updated_date: now.toISOString().split("T")[0],
     };
 
-    await resumesContainer.items.upsert(tailoredResumeDoc, { partitionKey: user.userId });
+    await resumesContainer.items.upsert(tailoredResumeDoc, {
+      partitionKey: user.userId,
+    });
 
     // Optional: load settings/profile for better cover letter (safe)
     const profile = await tryLoadUserProfile(cosmos, COSMOS_DB_NAME, user.userId);
@@ -409,7 +520,7 @@ async function applyPrepare(request, context) {
     // Generate cover letter text (AOAI)
     const coverLetterText = await generateCoverLetter({
       jobData,
-      resumeText: chunkText(resumeText, 12000),
+      resumeText,
       profile,
     });
 
@@ -435,7 +546,9 @@ async function applyPrepare(request, context) {
       updated_date: now.toISOString().split("T")[0],
     };
 
-    await coverLettersContainer.items.upsert(coverLetterDoc, { partitionKey: user.userId });
+    await coverLettersContainer.items.upsert(coverLetterDoc, {
+      partitionKey: user.userId,
+    });
 
     return {
       status: 200,
@@ -445,7 +558,7 @@ async function applyPrepare(request, context) {
         tailoredResume: tailoredResumeDoc,
         coverLetter: coverLetterDoc,
         overlaysApplied,
-        misses,
+        misses: [], // Option B is bulletId-based; no line-match misses
       },
     };
   } catch (err) {
