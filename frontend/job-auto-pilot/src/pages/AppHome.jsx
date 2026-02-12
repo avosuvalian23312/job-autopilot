@@ -520,6 +520,7 @@ function StatCard({ label, value, icon: Icon, hint, className }) {
   );
 }
 
+/* UPDATED: left-aligned date number (week pills) */
 const WeekDayPill = React.memo(function WeekDayPill({
   weekday,
   dayNum,
@@ -546,7 +547,7 @@ const WeekDayPill = React.memo(function WeekDayPill({
         title={label}
         className={cx(
           "relative mt-2 h-12 rounded-xl border border-white/10 bg-white/[0.035]",
-          "flex items-center px-4", // <-- left-align content
+          "flex items-center px-4",
           "transition-colors duration-150",
           "hover:bg-white/[0.055] hover:border-white/15",
           isPast ? "opacity-45" : "",
@@ -555,7 +556,6 @@ const WeekDayPill = React.memo(function WeekDayPill({
           "focus-visible:ring-purple-500/35"
         )}
       >
-        {/* LEFT-ALIGNED DAY NUMBER */}
         <div
           className={cx(
             "text-[14px] font-semibold tabular-nums",
@@ -566,7 +566,6 @@ const WeekDayPill = React.memo(function WeekDayPill({
           {dayNum}
         </div>
 
-        {/* CHECKMARK ON THE RIGHT (no overlap) */}
         {hasActivity ? (
           <Check
             className={cx(
@@ -580,7 +579,6 @@ const WeekDayPill = React.memo(function WeekDayPill({
     </div>
   );
 });
-
 
 function MiniStat({ label, value, icon: Icon }) {
   return (
@@ -1259,7 +1257,9 @@ export default function AppHome() {
                                       className={cx(
                                         "relative h-12 rounded-xl border border-white/10 bg-white/[0.03]",
                                         "grid place-items-center select-none transition-colors",
-                                        d.inMonth ? "hover:bg-white/[0.06] hover:border-white/15" : "opacity-30",
+                                        d.inMonth
+                                          ? "hover:bg-white/[0.06] hover:border-white/15"
+                                          : "opacity-30",
                                         d.isToday
                                           ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10"
                                           : ""
@@ -1300,49 +1300,46 @@ export default function AppHome() {
                     </AnimatePresence>
                   </Card>
 
-                {/* New Job CTA — BIG PURPLE + only, high-contrast border */}
-<Card
-  as="button"
-  type="button"
-  aria-label="Create a new job"
-  onClick={handleNewJob}
-  className={cx(
-    "w-full relative overflow-hidden min-h-[220px]",
-    // stronger, eye-catching border + glow
-    "border-2 border-purple-500/70 ring-1 ring-purple-500/35",
-    "bg-gradient-to-b from-purple-500/18 via-purple-500/[0.06] to-white/[0.03]",
-    "shadow-[0_0_0_1px_rgba(168,85,247,0.35),0_30px_90px_rgba(168,85,247,0.14)]",
-    "hover:border-purple-400/85 hover:ring-purple-400/45 hover:bg-white/[0.05]",
-    "transition-colors",
-    focusRing
-  )}
->
-  {/* glow */}
-  <div
-    aria-hidden="true"
-    className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/18 blur-3xl"
-  />
-  <div
-    aria-hidden="true"
-    className="pointer-events-none absolute -bottom-28 -right-28 h-72 w-72 rounded-full bg-purple-500/14 blur-3xl"
-  />
+                  {/* UPDATED: New Job CTA — BIG PURPLE + only, high-contrast border */}
+                  <Card
+                    as="button"
+                    type="button"
+                    aria-label="Create a new job"
+                    onClick={handleNewJob}
+                    className={cx(
+                      "w-full relative overflow-hidden min-h-[220px]",
+                      "border-2 border-purple-500/70 ring-1 ring-purple-500/35",
+                      "bg-gradient-to-b from-purple-500/18 via-purple-500/[0.06] to-white/[0.03]",
+                      "shadow-[0_0_0_1px_rgba(168,85,247,0.35),0_30px_90px_rgba(168,85,247,0.14)]",
+                      "hover:border-purple-400/85 hover:ring-purple-400/45 hover:bg-white/[0.05]",
+                      "transition-colors",
+                      focusRing
+                    )}
+                  >
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/18 blur-3xl"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -bottom-28 -right-28 h-72 w-72 rounded-full bg-purple-500/14 blur-3xl"
+                    />
 
-  <CardContent className="p-10 sm:p-12 grid place-items-center">
-    <motion.div
-      initial={{ scale: 1 }}
-      animate={{ scale: [1, 1.03, 1] }}
-      transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-      className="grid place-items-center"
-    >
-      <Plus
-        className="h-24 w-24 sm:h-28 sm:w-28 text-purple-300 drop-shadow-[0_18px_55px_rgba(168,85,247,0.35)]"
-        aria-hidden="true"
-      />
-      <span className="sr-only">New Job</span>
-    </motion.div>
-  </CardContent>
-</Card>
-
+                    <CardContent className="p-10 sm:p-12 grid place-items-center">
+                      <motion.div
+                        initial={{ scale: 1 }}
+                        animate={{ scale: [1, 1.03, 1] }}
+                        transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                        className="grid place-items-center"
+                      >
+                        <Plus
+                          className="h-24 w-24 sm:h-28 sm:w-28 text-purple-300 drop-shadow-[0_18px_55px_rgba(168,85,247,0.35)]"
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">New Job</span>
+                      </motion.div>
+                    </CardContent>
+                  </Card>
 
                   {/* Insights */}
                   <Card aria-label="Insights">
@@ -1441,8 +1438,8 @@ export default function AppHome() {
                                   activity.type === "job_added"
                                     ? "bg-purple-500/10"
                                     : activity.type === "doc_generated"
-                                      ? "bg-cyan-500/10"
-                                      : "bg-emerald-500/10"
+                                    ? "bg-cyan-500/10"
+                                    : "bg-emerald-500/10"
                                 )}
                                 aria-hidden="true"
                               >
@@ -1458,8 +1455,12 @@ export default function AppHome() {
                               </div>
 
                               <div className="min-w-0 flex-1">
-                                <p className="text-[length:var(--ds-body)] text-slate-200">{activity.text}</p>
-                                <p className="mt-1 text-[length:var(--ds-caption)] text-slate-500">{activity.time}</p>
+                                <p className="text-[length:var(--ds-body)] text-slate-200">
+                                  {activity.text}
+                                </p>
+                                <p className="mt-1 text-[length:var(--ds-caption)] text-slate-500">
+                                  {activity.time}
+                                </p>
                               </div>
                             </li>
                           ))}
@@ -1489,7 +1490,6 @@ export default function AppHome() {
                       description="Track progress across applications and resumes."
                     />
                     <CardContent className="pt-0 space-y-4">
-                      {/* Keep your existing donut chart component */}
                       <Card className="p-4">
                         <div className="text-[length:var(--ds-h3)] font-semibold text-slate-200 mb-3">
                           Goal progress
@@ -1497,7 +1497,6 @@ export default function AppHome() {
                         <GoalProgress applicationCount={totalApps} />
                       </Card>
 
-                      {/* Applications goal */}
                       <Card className="p-4" aria-label="Applications goal progress">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
@@ -1527,11 +1526,12 @@ export default function AppHome() {
                         </div>
                       </Card>
 
-                      {/* Resumes goal */}
                       <Card className="p-4" aria-label="Resumes goal progress">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
-                            <div className="text-[length:var(--ds-caption)] text-slate-400">Resumes goal</div>
+                            <div className="text-[length:var(--ds-caption)] text-slate-400">
+                              Resumes goal
+                            </div>
                             <div className="mt-1 text-[length:var(--ds-h3)] font-semibold text-slate-200">
                               {resumeCount} / {RESUME_GOAL}
                             </div>
@@ -1581,7 +1581,9 @@ export default function AppHome() {
                           <div className="min-w-0 flex-1">
                             <div className="text-[length:var(--ds-body)] text-slate-200">{a.label}</div>
                             {!a.done ? (
-                              <div className="mt-1 text-[length:var(--ds-caption)] text-slate-500">{a.hint}</div>
+                              <div className="mt-1 text-[length:var(--ds-caption)] text-slate-500">
+                                {a.hint}
+                              </div>
                             ) : null}
                           </div>
 
