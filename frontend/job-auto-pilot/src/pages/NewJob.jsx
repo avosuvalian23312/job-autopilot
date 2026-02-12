@@ -62,6 +62,9 @@ export default function NewJob() {
   // ✅ SWA user cache
   const [swaUserId, setSwaUserId] = useState("");
 
+  // ✅ Generate loading overlay (same UX as Packet)
+  const [isGeneratingPacket, setIsGeneratingPacket] = useState(false);
+
   // ---------------------------
   // Helpers
   // ---------------------------
@@ -420,7 +423,10 @@ export default function NewJob() {
     if (isGenericTitle(next.jobTitle) && inferredTitle)
       next.jobTitle = inferredTitle;
 
-    const inferredCompany = inferCompanyFromJD(jd, inferredTitle || next.jobTitle);
+    const inferredCompany = inferCompanyFromJD(
+      jd,
+      inferredTitle || next.jobTitle
+    );
     const companyStr = String(next.company || "").trim();
     if (!companyStr || companyStr.toLowerCase() === "company") {
       if (inferredCompany) next.company = inferredCompany;
@@ -473,12 +479,17 @@ export default function NewJob() {
     coverLetterId,
   }) => {
     const ex = extracted && typeof extracted === "object" ? extracted : {};
-    const jd = preparedJobData && typeof preparedJobData === "object" ? preparedJobData : {};
+    const jd =
+      preparedJobData && typeof preparedJobData === "object"
+        ? preparedJobData
+        : {};
 
     const pick = (a, b, fallback = null) => {
-      const va = a !== undefined && a !== null && String(a).trim() !== "" ? a : null;
+      const va =
+        a !== undefined && a !== null && String(a).trim() !== "" ? a : null;
       if (va !== null) return va;
-      const vb = b !== undefined && b !== null && String(b).trim() !== "" ? b : null;
+      const vb =
+        b !== undefined && b !== null && String(b).trim() !== "" ? b : null;
       if (vb !== null) return vb;
       return fallback;
     };
@@ -490,63 +501,75 @@ export default function NewJob() {
       location: pick(ex.location, jd.location, null),
       seniority: pick(ex.seniority, jd.seniority, null),
 
-      keywords: Array.isArray(ex.keywords) && ex.keywords.length ? ex.keywords : Array.isArray(jd.keywords) ? jd.keywords : [],
+      keywords:
+        Array.isArray(ex.keywords) && ex.keywords.length
+          ? ex.keywords
+          : Array.isArray(jd.keywords)
+          ? jd.keywords
+          : [],
 
       requirements:
         ex.requirements && typeof ex.requirements === "object"
           ? ex.requirements
           : jd.requirements && typeof jd.requirements === "object"
-            ? jd.requirements
-            : null,
+          ? jd.requirements
+          : null,
 
       payText: pick(ex.payText, jd.payText, null),
       payMin:
         typeof ex.payMin === "number" && Number.isFinite(ex.payMin)
           ? ex.payMin
           : typeof jd.payMin === "number" && Number.isFinite(jd.payMin)
-            ? jd.payMin
-            : null,
+          ? jd.payMin
+          : null,
       payMax:
         typeof ex.payMax === "number" && Number.isFinite(ex.payMax)
           ? ex.payMax
           : typeof jd.payMax === "number" && Number.isFinite(jd.payMax)
-            ? jd.payMax
-            : null,
+          ? jd.payMax
+          : null,
       payPeriod: pick(ex.payPeriod, jd.payPeriod, null),
       payCurrency: pick(ex.payCurrency, jd.payCurrency, "USD"),
 
       payConfidence:
         typeof ex.payConfidence === "number" && Number.isFinite(ex.payConfidence)
           ? ex.payConfidence
-          : typeof jd.payConfidence === "number" && Number.isFinite(jd.payConfidence)
-            ? jd.payConfidence
-            : null,
+          : typeof jd.payConfidence === "number" &&
+            Number.isFinite(jd.payConfidence)
+          ? jd.payConfidence
+          : null,
       payAnnualizedMin:
-        typeof ex.payAnnualizedMin === "number" && Number.isFinite(ex.payAnnualizedMin)
+        typeof ex.payAnnualizedMin === "number" &&
+        Number.isFinite(ex.payAnnualizedMin)
           ? ex.payAnnualizedMin
-          : typeof jd.payAnnualizedMin === "number" && Number.isFinite(jd.payAnnualizedMin)
-            ? jd.payAnnualizedMin
-            : null,
+          : typeof jd.payAnnualizedMin === "number" &&
+            Number.isFinite(jd.payAnnualizedMin)
+          ? jd.payAnnualizedMin
+          : null,
       payAnnualizedMax:
-        typeof ex.payAnnualizedMax === "number" && Number.isFinite(ex.payAnnualizedMax)
+        typeof ex.payAnnualizedMax === "number" &&
+        Number.isFinite(ex.payAnnualizedMax)
           ? ex.payAnnualizedMax
-          : typeof jd.payAnnualizedMax === "number" && Number.isFinite(jd.payAnnualizedMax)
-            ? jd.payAnnualizedMax
-            : null,
+          : typeof jd.payAnnualizedMax === "number" &&
+            Number.isFinite(jd.payAnnualizedMax)
+          ? jd.payAnnualizedMax
+          : null,
       payPercentile:
         typeof ex.payPercentile === "number" && Number.isFinite(ex.payPercentile)
           ? ex.payPercentile
-          : typeof jd.payPercentile === "number" && Number.isFinite(jd.payPercentile)
-            ? jd.payPercentile
-            : null,
+          : typeof jd.payPercentile === "number" &&
+            Number.isFinite(jd.payPercentile)
+          ? jd.payPercentile
+          : null,
       payPercentileSource: pick(ex.payPercentileSource, jd.payPercentileSource, null),
 
       employmentType: pick(ex.employmentType, jd.employmentType, null),
       workModel: pick(ex.workModel, jd.workModel, null),
       experienceLevel: pick(ex.experienceLevel, jd.experienceLevel, null),
-      complianceTags: Array.isArray(ex.complianceTags) && ex.complianceTags.length
-        ? ex.complianceTags
-        : Array.isArray(jd.complianceTags)
+      complianceTags:
+        Array.isArray(ex.complianceTags) && ex.complianceTags.length
+          ? ex.complianceTags
+          : Array.isArray(jd.complianceTags)
           ? jd.complianceTags
           : [],
     };
@@ -1056,6 +1079,9 @@ export default function NewJob() {
         return;
       }
 
+      // ✅ show same loading UX while this button-driven API flow runs
+      setIsGeneratingPacket(true);
+
       // ensure logged in (no fallback)
       await ensureUserId();
 
@@ -1160,6 +1186,8 @@ export default function NewJob() {
       console.error(e);
       if (toastId) toast.dismiss(toastId);
       toast.error(e?.message || "Failed to generate packet.");
+    } finally {
+      setIsGeneratingPacket(false);
     }
   };
 
@@ -1379,7 +1407,20 @@ export default function NewJob() {
         </div>
       </header>
 
-      <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)]">
+      <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)] relative">
+        {/* ✅ Generate loading overlay (same UX as Packet) */}
+        {isGeneratingPacket && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/55 backdrop-blur-md" />
+            <div className="relative z-10 flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow-2xl">
+              <Loader2 className="w-5 h-5 text-white animate-spin" />
+              <span className="text-white/85 text-sm font-medium">
+                Generating packet…
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
@@ -1464,835 +1505,868 @@ export default function NewJob() {
 
         {/* Confirmation Screen */}
         {showConfirm && extractedData && (
-          <div className="w-full">
-            <div className="mb-7 text-center">
-              <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">
-                Confirm details
-              </h1>
-              <p className="text-lg text-white/70">
-                Review extracted info before generating
-              </p>
-            </div>
+          <div className="w-full relative">
+            {/* Blur content while generating */}
+            <div
+              className={
+                isGeneratingPacket ? "pointer-events-none select-none blur-[1px]" : ""
+              }
+              aria-busy={isGeneratingPacket}
+            >
+              <div className="mb-7 text-center">
+                <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">
+                  Confirm details
+                </h1>
+                <p className="text-lg text-white/70">
+                  Review extracted info before generating
+                </p>
+              </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left */}
-              <div
-                className={[
-                  "lg:col-span-2 rounded-2xl overflow-hidden",
-                  surface,
-                  edge,
-                  brandRing,
-                  cardShadow,
-                ].join(" ")}
-              >
-                <div className={`h-1.5 ${neonLine}`} />
-                <div className="p-8 md:p-10">
-                  <div className="flex items-start justify-between gap-6">
-                    <div className="min-w-0 flex-1">
-                      <label className="text-sm text-white/60 mb-2 block">
-                        Job Title
-                      </label>
-                      {editMode ? (
-                        <Input
-                          value={extractedData.jobTitle}
-                          onChange={(e) =>
-                            setExtractedData({
-                              ...extractedData,
-                              jobTitle: e.target.value,
-                            })
-                          }
-                          className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
-                        />
-                      ) : (
-                        <p className="text-3xl font-semibold text-white tracking-tight">
-                          {extractedData.jobTitle}
-                        </p>
-                      )}
-
-                      <div className="mt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left */}
+                <div
+                  className={[
+                    "lg:col-span-2 rounded-2xl overflow-hidden",
+                    surface,
+                    edge,
+                    brandRing,
+                    cardShadow,
+                  ].join(" ")}
+                >
+                  <div className={`h-1.5 ${neonLine}`} />
+                  <div className="p-8 md:p-10">
+                    <div className="flex items-start justify-between gap-6">
+                      <div className="min-w-0 flex-1">
                         <label className="text-sm text-white/60 mb-2 block">
-                          Company
+                          Job Title
                         </label>
                         {editMode ? (
                           <Input
-                            value={extractedData.company}
+                            value={extractedData.jobTitle}
                             onChange={(e) =>
                               setExtractedData({
                                 ...extractedData,
-                                company: e.target.value,
+                                jobTitle: e.target.value,
                               })
                             }
                             className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                           />
                         ) : (
-                          <p className="text-xl text-white/90 font-medium">
-                            {extractedData.company}
+                          <p className="text-3xl font-semibold text-white tracking-tight">
+                            {extractedData.jobTitle}
                           </p>
                         )}
-                      </div>
 
-                      <div className="mt-5 space-y-3">
-                        {extractedData.website && (
-                          <div className="flex items-center gap-3 text-base text-white/80">
-                            <Globe className="w-5 h-5 text-white/55" />
-                            {editMode ? (
-                              <Input
-                                value={extractedData.website}
-                                onChange={(e) =>
-                                  setExtractedData({
-                                    ...extractedData,
-                                    website: e.target.value,
-                                  })
-                                }
-                                className="bg-black/30 border-white/12 text-white h-11 text-base flex-1 rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
-                              />
-                            ) : (
-                              <span className="truncate">
-                                {extractedData.website}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {extractedData.location && (
-                          <div className="flex items-center gap-3 text-base text-white/80">
-                            <MapPin className="w-5 h-5 text-white/55" />
-                            <span>{extractedData.location}</span>
-                          </div>
-                        )}
-
-                        {extractedData.seniority && (
-                          <div className="flex items-center gap-3 text-base text-white/80">
-                            <BarChart2 className="w-5 h-5 text-white/55" />
-                            <span>{extractedData.seniority}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-7">
-                        <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
-                          <Tag className="w-4 h-4" />
-                          Job Details
-                        </label>
-                        <div className="flex flex-wrap gap-3">
-                          {extractedData.employmentType && (
-                            <span className={`${pill} flex items-center gap-2`}>
-                              <Briefcase className="w-4 h-4 text-white/60" />
-                              {extractedData.employmentType}
-                            </span>
-                          )}
-                          {extractedData.workModel && (
-                            <span className={`${pill} flex items-center gap-2`}>
-                              <Building2 className="w-4 h-4 text-white/60" />
-                              {extractedData.workModel}
-                            </span>
-                          )}
-                          {extractedData.experienceLevel && (
-                            <span className={`${pill} flex items-center gap-2`}>
-                              <Clock className="w-4 h-4 text-white/60" />
-                              {extractedData.experienceLevel}
-                            </span>
-                          )}
-                          {Array.isArray(extractedData.complianceTags) &&
-                            extractedData.complianceTags
-                              .slice(0, 6)
-                              .map((tag, i) => (
-                                <span
-                                  key={i}
-                                  className={`${pillBrand} flex items-center gap-2`}
-                                >
-                                  <ShieldCheck className="w-4 h-4 text-violet-100" />
-                                  {tag}
-                                </span>
-                              ))}
-                        </div>
-                      </div>
-
-                      {(extractedData.payText ||
-                        extractedData.payMin != null ||
-                        extractedData.payMax != null ||
-                        extractedData.payAnnualizedMin != null ||
-                        extractedData.payAnnualizedMax != null) && (
-                        <div className="mt-8">
-                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
-                            <DollarSign className="w-4 h-4" />
-                            Compensation
+                        <div className="mt-6">
+                          <label className="text-sm text-white/60 mb-2 block">
+                            Company
                           </label>
-
-                          <div className="flex flex-wrap gap-3">
-                            {renderPayPrimary(extractedData) && (
-                              <span className={pillGood}>
-                                {renderPayPrimary(extractedData)}
-                              </span>
-                            )}
-                            {renderConfidence() && (
-                              <span className={pill}>{renderConfidence()}</span>
-                            )}
-                            {renderAnnual(extractedData) && (
-                              <span className={pillWarn}>
-                                {renderAnnual(extractedData)}
-                              </span>
-                            )}
-                            {renderTopPay() && (
-                              <span
-                                className={`${pillBrand} flex items-center gap-2`}
-                              >
-                                <Percent className="w-4 h-4" />
-                                {renderTopPay()}
-                              </span>
-                            )}
-                          </div>
-
-                          {typeof extractedData.payPercentile === "number" &&
-                            extractedData.payPercentileSource && (
-                              <p className="text-sm text-white/45 mt-3">
-                                Percentile is an estimate (
-                                {extractedData.payPercentileSource})
-                              </p>
-                            )}
-                        </div>
-                      )}
-
-                      {hasReq && (
-                        <div className="mt-8">
-                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
-                            <ListChecks className="w-4 h-4" />
-                            Requirements
-                          </label>
-
-                          <div className="space-y-4">
-                            {(req?.educationRequired ||
-                              req?.yearsExperienceMin != null ||
-                              req?.workModelRequired) && (
-                              <div className="flex flex-wrap gap-3">
-                                {req?.educationRequired && (
-                                  <span
-                                    className={`${pill} flex items-center gap-2`}
-                                  >
-                                    <EduIcon className="w-4 h-4 text-white/60" />
-                                    {req.educationRequired}
-                                  </span>
-                                )}
-                                {req?.yearsExperienceMin != null && (
-                                  <span
-                                    className={`${pill} flex items-center gap-2`}
-                                  >
-                                    <Clock className="w-4 h-4 text-white/60" />
-                                    {req.yearsExperienceMin}+ yrs
-                                  </span>
-                                )}
-                                {req?.workModelRequired && (
-                                  <span
-                                    className={`${pillBrand} flex items-center gap-2`}
-                                  >
-                                    <Building2 className="w-4 h-4" />
-                                    {req.workModelRequired} required
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {Array.isArray(req?.skillsRequired) &&
-                              req.skillsRequired.length > 0 && (
-                                <div>
-                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                    Required skills
-                                  </div>
-                                  <div className="flex flex-wrap gap-3">
-                                    {req.skillsRequired
-                                      .slice(0, 16)
-                                      .map((s, i) => (
-                                        <span key={i} className={pillBrand}>
-                                          {s}
-                                        </span>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
-
-                            {Array.isArray(req?.skillsPreferred) &&
-                              req.skillsPreferred.length > 0 && (
-                                <div>
-                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                    Preferred skills
-                                  </div>
-                                  <div className="flex flex-wrap gap-3">
-                                    {req.skillsPreferred
-                                      .slice(0, 12)
-                                      .map((s, i) => (
-                                        <span key={i} className={pill}>
-                                          {s}
-                                        </span>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
-
-                            {Array.isArray(req?.certificationsPreferred) &&
-                              req.certificationsPreferred.length > 0 && (
-                                <div>
-                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                    Certifications (preferred)
-                                  </div>
-                                  <div className="flex flex-wrap gap-3">
-                                    {req.certificationsPreferred
-                                      .slice(0, 12)
-                                      .map((c, i) => (
-                                        <span
-                                          key={i}
-                                          className={`${pill} flex items-center gap-2`}
-                                        >
-                                          <Award className="w-4 h-4 text-white/60" />
-                                          {c}
-                                        </span>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      )}
-
-                      {extractedData.keywords?.length > 0 && (
-                        <div className="mt-8">
-                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
-                            <Tag className="w-4 h-4" />
-                            Key Skills Detected
-                          </label>
-                          <div className="flex flex-wrap gap-3">
-                            {extractedData.keywords
-                              .slice(0, 16)
-                              .map((keyword, i) => (
-                                <span key={i} className={pill}>
-                                  {keyword}
-                                </span>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {!editMode && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditMode(true)}
-                        className={[
-                          "text-white/65 hover:text-white hover:bg-white/5 rounded-xl",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
-                      >
-                        <Edit2 className="w-5 h-5" />
-                      </Button>
-                    )}
-                  </div>
-
-                  {editMode && (
-                    <div className="mt-8 flex justify-end">
-                      <Button
-                        onClick={() => setEditMode(false)}
-                        className={[
-                          "h-12 px-7 text-lg font-semibold rounded-xl",
-                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                          "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
-                          "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
-                      >
-                        Save Changes
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right */}
-              <div
-                className={[
-                  "rounded-2xl overflow-hidden",
-                  surface,
-                  edge,
-                  brandRing,
-                  cardShadow,
-                ].join(" ")}
-              >
-                <div className={`h-1.5 ${neonLine}`} />
-                <div className="p-8">
-                  <h3 className="text-xl font-bold text-white mb-2 tracking-tight">
-                    Packet preview
-                  </h3>
-                  <p className="text-sm text-white/60 mb-6">
-                    What you’ll generate from this job post.
-                  </p>
-
-                  <div className="space-y-4">
-                    <div
-                      className={[
-                        "flex items-start gap-3 p-4 rounded-2xl",
-                        "bg-black/25 border border-white/10 ring-1 ring-white/5",
-                        glowHover,
-                        hoverLift,
-                        pressFx,
-                      ].join(" ")}
-                    >
-                      <FileText className="w-5 h-5 text-cyan-200 mt-0.5" />
-                      <div className="w-full">
-                        <p className="font-semibold text-white">Tailored Resume</p>
-                        <p className="text-sm text-white/60">
-                          Optimized bullets + keywords for ATS.
-                        </p>
-
-                        <div className={previewBlurBlock}>
-                          {previewLoading && !previewSafe ? (
-                            <>
-                              <div className="h-3 rounded bg-white/10 w-[92%]" />
-                              <div className="h-3 rounded bg-white/10 w-[84%]" />
-                            </>
+                          {editMode ? (
+                            <Input
+                              value={extractedData.company}
+                              onChange={(e) =>
+                                setExtractedData({
+                                  ...extractedData,
+                                  company: e.target.value,
+                                })
+                              }
+                              className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
+                            />
                           ) : (
-                            <>
-                              <div className={previewBlurLine}>
-                                •{" "}
-                                {resumePreviewBullets?.[0] ||
-                                  "Tailored bullet line preview…"}
-                              </div>
-                              <div className={previewBlurLine}>
-                                •{" "}
-                                {resumePreviewBullets?.[1] ||
-                                  "Second bullet line preview…"}
-                              </div>
-                            </>
+                            <p className="text-xl text-white/90 font-medium">
+                              {extractedData.company}
+                            </p>
                           )}
                         </div>
-                      </div>
-                    </div>
 
-                    <div
-                      className={[
-                        "flex items-start gap-3 p-4 rounded-2xl",
-                        "bg-black/25 border border-white/10 ring-1 ring-white/5",
-                        glowHover,
-                        hoverLift,
-                        pressFx,
-                      ].join(" ")}
-                    >
-                      <Wand2 className="w-5 h-5 text-violet-200 mt-0.5" />
-                      <div className="w-full">
-                        <p className="font-semibold text-white">Cover Letter</p>
-                        <p className="text-sm text-white/60">
-                          Matching tone to role + company.
-                        </p>
+                        <div className="mt-5 space-y-3">
+                          {extractedData.website && (
+                            <div className="flex items-center gap-3 text-base text-white/80">
+                              <Globe className="w-5 h-5 text-white/55" />
+                              {editMode ? (
+                                <Input
+                                  value={extractedData.website}
+                                  onChange={(e) =>
+                                    setExtractedData({
+                                      ...extractedData,
+                                      website: e.target.value,
+                                    })
+                                  }
+                                  className="bg-black/30 border-white/12 text-white h-11 text-base flex-1 rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
+                                />
+                              ) : (
+                                <span className="truncate">
+                                  {extractedData.website}
+                                </span>
+                              )}
+                            </div>
+                          )}
 
-                        <div className={previewBlurBlock}>
-                          {previewLoading && !previewSafe ? (
-                            <div className="h-3 rounded bg-white/10 w-[88%]" />
-                          ) : (
-                            <div className={previewBlurLine}>
-                              {coverPreviewSentence || "First sentence preview…"}
+                          {extractedData.location && (
+                            <div className="flex items-center gap-3 text-base text-white/80">
+                              <MapPin className="w-5 h-5 text-white/55" />
+                              <span>{extractedData.location}</span>
+                            </div>
+                          )}
+
+                          {extractedData.seniority && (
+                            <div className="flex items-center gap-3 text-base text-white/80">
+                              <BarChart2 className="w-5 h-5 text-white/55" />
+                              <span>{extractedData.seniority}</span>
                             </div>
                           )}
                         </div>
+
+                        <div className="mt-7">
+                          <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                            <Tag className="w-4 h-4" />
+                            Job Details
+                          </label>
+                          <div className="flex flex-wrap gap-3">
+                            {extractedData.employmentType && (
+                              <span className={`${pill} flex items-center gap-2`}>
+                                <Briefcase className="w-4 h-4 text-white/60" />
+                                {extractedData.employmentType}
+                              </span>
+                            )}
+                            {extractedData.workModel && (
+                              <span className={`${pill} flex items-center gap-2`}>
+                                <Building2 className="w-4 h-4 text-white/60" />
+                                {extractedData.workModel}
+                              </span>
+                            )}
+                            {extractedData.experienceLevel && (
+                              <span className={`${pill} flex items-center gap-2`}>
+                                <Clock className="w-4 h-4 text-white/60" />
+                                {extractedData.experienceLevel}
+                              </span>
+                            )}
+                            {Array.isArray(extractedData.complianceTags) &&
+                              extractedData.complianceTags
+                                .slice(0, 6)
+                                .map((tag, i) => (
+                                  <span
+                                    key={i}
+                                    className={`${pillBrand} flex items-center gap-2`}
+                                  >
+                                    <ShieldCheck className="w-4 h-4 text-violet-100" />
+                                    {tag}
+                                  </span>
+                                ))}
+                          </div>
+                        </div>
+
+                        {(extractedData.payText ||
+                          extractedData.payMin != null ||
+                          extractedData.payMax != null ||
+                          extractedData.payAnnualizedMin != null ||
+                          extractedData.payAnnualizedMax != null) && (
+                          <div className="mt-8">
+                            <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                              <DollarSign className="w-4 h-4" />
+                              Compensation
+                            </label>
+
+                            <div className="flex flex-wrap gap-3">
+                              {renderPayPrimary(extractedData) && (
+                                <span className={pillGood}>
+                                  {renderPayPrimary(extractedData)}
+                                </span>
+                              )}
+                              {renderConfidence() && (
+                                <span className={pill}>{renderConfidence()}</span>
+                              )}
+                              {renderAnnual(extractedData) && (
+                                <span className={pillWarn}>
+                                  {renderAnnual(extractedData)}
+                                </span>
+                              )}
+                              {renderTopPay() && (
+                                <span
+                                  className={`${pillBrand} flex items-center gap-2`}
+                                >
+                                  <Percent className="w-4 h-4" />
+                                  {renderTopPay()}
+                                </span>
+                              )}
+                            </div>
+
+                            {typeof extractedData.payPercentile === "number" &&
+                              extractedData.payPercentileSource && (
+                                <p className="text-sm text-white/45 mt-3">
+                                  Percentile is an estimate (
+                                  {extractedData.payPercentileSource})
+                                </p>
+                              )}
+                          </div>
+                        )}
+
+                        {hasReq && (
+                          <div className="mt-8">
+                            <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                              <ListChecks className="w-4 h-4" />
+                              Requirements
+                            </label>
+
+                            <div className="space-y-4">
+                              {(req?.educationRequired ||
+                                req?.yearsExperienceMin != null ||
+                                req?.workModelRequired) && (
+                                <div className="flex flex-wrap gap-3">
+                                  {req?.educationRequired && (
+                                    <span
+                                      className={`${pill} flex items-center gap-2`}
+                                    >
+                                      <EduIcon className="w-4 h-4 text-white/60" />
+                                      {req.educationRequired}
+                                    </span>
+                                  )}
+                                  {req?.yearsExperienceMin != null && (
+                                    <span
+                                      className={`${pill} flex items-center gap-2`}
+                                    >
+                                      <Clock className="w-4 h-4 text-white/60" />
+                                      {req.yearsExperienceMin}+ yrs
+                                    </span>
+                                  )}
+                                  {req?.workModelRequired && (
+                                    <span
+                                      className={`${pillBrand} flex items-center gap-2`}
+                                    >
+                                      <Building2 className="w-4 h-4" />
+                                      {req.workModelRequired} required
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {Array.isArray(req?.skillsRequired) &&
+                                req.skillsRequired.length > 0 && (
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                      Required skills
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                      {req.skillsRequired
+                                        .slice(0, 16)
+                                        .map((s, i) => (
+                                          <span key={i} className={pillBrand}>
+                                            {s}
+                                          </span>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                              {Array.isArray(req?.skillsPreferred) &&
+                                req.skillsPreferred.length > 0 && (
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                      Preferred skills
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                      {req.skillsPreferred
+                                        .slice(0, 12)
+                                        .map((s, i) => (
+                                          <span key={i} className={pill}>
+                                            {s}
+                                          </span>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                              {Array.isArray(req?.certificationsPreferred) &&
+                                req.certificationsPreferred.length > 0 && (
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                      Certifications (preferred)
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                      {req.certificationsPreferred
+                                        .slice(0, 12)
+                                        .map((c, i) => (
+                                          <span
+                                            key={i}
+                                            className={`${pill} flex items-center gap-2`}
+                                          >
+                                            <Award className="w-4 h-4 text-white/60" />
+                                            {c}
+                                          </span>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )}
+                            </div>
+                          </div>
+                        )}
+
+                        {extractedData.keywords?.length > 0 && (
+                          <div className="mt-8">
+                            <label className="text-sm text-white/60 mb-3 block flex items-center gap-2">
+                              <Tag className="w-4 h-4" />
+                              Key Skills Detected
+                            </label>
+                            <div className="flex flex-wrap gap-3">
+                              {extractedData.keywords
+                                .slice(0, 16)
+                                .map((keyword, i) => (
+                                  <span key={i} className={pill}>
+                                    {keyword}
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
+
+                      {!editMode && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditMode(true)}
+                          className={[
+                            "text-white/65 hover:text-white hover:bg-white/5 rounded-xl",
+                            hoverLift,
+                            pressFx,
+                          ].join(" ")}
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {editMode && (
+                      <div className="mt-8 flex justify-end">
+                        <Button
+                          onClick={() => setEditMode(false)}
+                          className={[
+                            "h-12 px-7 text-lg font-semibold rounded-xl",
+                            "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                            "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
+                            "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
+                            hoverLift,
+                            pressFx,
+                          ].join(" ")}
+                        >
+                          Save Changes
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right */}
+                <div
+                  className={[
+                    "rounded-2xl overflow-hidden",
+                    surface,
+                    edge,
+                    brandRing,
+                    cardShadow,
+                  ].join(" ")}
+                >
+                  <div className={`h-1.5 ${neonLine}`} />
+                  <div className="p-8">
+                    <h3 className="text-xl font-bold text-white mb-2 tracking-tight">
+                      Packet preview
+                    </h3>
+                    <p className="text-sm text-white/60 mb-6">
+                      What you’ll generate from this job post.
+                    </p>
+
+                    <div className="space-y-4">
+                      <div
+                        className={[
+                          "flex items-start gap-3 p-4 rounded-2xl",
+                          "bg-black/25 border border-white/10 ring-1 ring-white/5",
+                          glowHover,
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
+                      >
+                        <FileText className="w-5 h-5 text-cyan-200 mt-0.5" />
+                        <div className="w-full">
+                          <p className="font-semibold text-white">Tailored Resume</p>
+                          <p className="text-sm text-white/60">
+                            Optimized bullets + keywords for ATS.
+                          </p>
+
+                          <div className={previewBlurBlock}>
+                            {previewLoading && !previewSafe ? (
+                              <>
+                                <div className="h-3 rounded bg-white/10 w-[92%]" />
+                                <div className="h-3 rounded bg-white/10 w-[84%]" />
+                              </>
+                            ) : (
+                              <>
+                                <div className={previewBlurLine}>
+                                  •{" "}
+                                  {resumePreviewBullets?.[0] ||
+                                    "Tailored bullet line preview…"}
+                                </div>
+                                <div className={previewBlurLine}>
+                                  •{" "}
+                                  {resumePreviewBullets?.[1] ||
+                                    "Second bullet line preview…"}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className={[
+                          "flex items-start gap-3 p-4 rounded-2xl",
+                          "bg-black/25 border border-white/10 ring-1 ring-white/5",
+                          glowHover,
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
+                      >
+                        <Wand2 className="w-5 h-5 text-violet-200 mt-0.5" />
+                        <div className="w-full">
+                          <p className="font-semibold text-white">Cover Letter</p>
+                          <p className="text-sm text-white/60">
+                            Matching tone to role + company.
+                          </p>
+
+                          <div className={previewBlurBlock}>
+                            {previewLoading && !previewSafe ? (
+                              <div className="h-3 rounded bg-white/10 w-[88%]" />
+                            ) : (
+                              <div className={previewBlurLine}>
+                                {coverPreviewSentence || "First sentence preview…"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className={[
+                          "flex items-start gap-3 p-4 rounded-2xl",
+                          "bg-black/25 border border-white/10 ring-1 ring-white/5",
+                          glowHover,
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
+                      >
+                        <ClipboardCheck className="w-5 h-5 text-indigo-200 mt-0.5" />
+                        <div className="w-full">
+                          <p className="font-semibold text-white">Checklist</p>
+                          <p className="text-sm text-white/60">
+                            Next steps + quick apply notes.
+                          </p>
+
+                          <div className={previewBlurBlock}>
+                            {previewLoading && !previewSafe ? (
+                              <>
+                                <div className="h-3 rounded bg-white/10 w-[78%]" />
+                                <div className="h-3 rounded bg-white/10 w-[86%]" />
+                              </>
+                            ) : (
+                              <>
+                                <div className={previewBlurLine}>
+                                  •{" "}
+                                  {checklistPreviewItems?.[0] ||
+                                    "Checklist item preview…"}
+                                </div>
+                                <div className={previewBlurLine}>
+                                  •{" "}
+                                  {checklistPreviewItems?.[1] ||
+                                    "Second checklist item preview…"}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex items-center gap-2 text-xs text-white/60">
+                      <Clock className="w-4 h-4 text-cyan-200" />
+                      Generates in ~{estSeconds} seconds
                     </div>
 
                     <div
                       className={[
-                        "flex items-start gap-3 p-4 rounded-2xl",
-                        "bg-black/25 border border-white/10 ring-1 ring-white/5",
+                        "mt-6 p-4 rounded-2xl",
+                        "bg-[linear-gradient(180deg,rgba(167,139,250,0.12),rgba(34,211,238,0.06))]",
+                        "border border-white/10 ring-1 ring-violet-400/15",
                         glowHover,
                         hoverLift,
                         pressFx,
                       ].join(" ")}
                     >
-                      <ClipboardCheck className="w-5 h-5 text-indigo-200 mt-0.5" />
-                      <div className="w-full">
-                        <p className="font-semibold text-white">Checklist</p>
-                        <p className="text-sm text-white/60">
-                          Next steps + quick apply notes.
-                        </p>
-
-                        <div className={previewBlurBlock}>
-                          {previewLoading && !previewSafe ? (
-                            <>
-                              <div className="h-3 rounded bg-white/10 w-[78%]" />
-                              <div className="h-3 rounded bg-white/10 w-[86%]" />
-                            </>
-                          ) : (
-                            <>
-                              <div className={previewBlurLine}>
-                                •{" "}
-                                {checklistPreviewItems?.[0] ||
-                                  "Checklist item preview…"}
-                              </div>
-                              <div className={previewBlurLine}>
-                                •{" "}
-                                {checklistPreviewItems?.[1] ||
-                                  "Second checklist item preview…"}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      <p className="text-sm text-white/85">
+                        Mode:{" "}
+                        <span className="font-semibold text-white">
+                          {aiMode === "elite" ? "Elite" : "Standard"}
+                        </span>
+                      </p>
+                      <p className="text-sm text-white/60 mt-1">
+                        Student mode:{" "}
+                        <span className="font-semibold text-white/85">
+                          {studentMode ? "On" : "Off"}
+                        </span>
+                      </p>
                     </div>
-                  </div>
-
-                  <div className="mt-5 flex items-center gap-2 text-xs text-white/60">
-                    <Clock className="w-4 h-4 text-cyan-200" />
-                    Generates in ~{estSeconds} seconds
-                  </div>
-
-                  <div
-                    className={[
-                      "mt-6 p-4 rounded-2xl",
-                      "bg-[linear-gradient(180deg,rgba(167,139,250,0.12),rgba(34,211,238,0.06))]",
-                      "border border-white/10 ring-1 ring-violet-400/15",
-                      glowHover,
-                      hoverLift,
-                      pressFx,
-                    ].join(" ")}
-                  >
-                    <p className="text-sm text-white/85">
-                      Mode:{" "}
-                      <span className="font-semibold text-white">
-                        {aiMode === "elite" ? "Elite" : "Standard"}
-                      </span>
-                    </p>
-                    <p className="text-sm text-white/60 mt-1">
-                      Student mode:{" "}
-                      <span className="font-semibold text-white/85">
-                        {studentMode ? "On" : "Off"}
-                      </span>
-                    </p>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Bottom buttons */}
-            <div className="mt-7 flex flex-col sm:flex-row gap-4">
-              <Button
-                onClick={() => {
-                  setShowConfirm(false);
-                  setExtractedData(null);
-                  setPreviewData(null);
-                }}
-                variant="outline"
-                className={[
-                  "flex-1 h-14 rounded-2xl text-lg",
-                  "bg-black/20 border border-white/10 text-white/80",
-                  "hover:bg-white/5 hover:text-white hover:border-white/15",
-                  hoverLift,
-                  pressFx,
-                ].join(" ")}
-              >
-                Back to Edit
-              </Button>
-              <Button
-                onClick={handleGenerate}
-                className={[
-                  "flex-1 h-14 rounded-2xl text-lg font-semibold",
-                  "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                  "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
-                  "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
-                  hoverLift,
-                  pressFx,
-                ].join(" ")}
-              >
-                Looks good — Generate Packet
-              </Button>
+              {/* Bottom buttons */}
+              <div className="mt-7 flex flex-col sm:flex-row gap-4">
+                <Button
+                  onClick={() => {
+                    setShowConfirm(false);
+                    setExtractedData(null);
+                    setPreviewData(null);
+                  }}
+                  variant="outline"
+                  disabled={isGeneratingPacket}
+                  className={[
+                    "flex-1 h-14 rounded-2xl text-lg",
+                    "bg-black/20 border border-white/10 text-white/80",
+                    "hover:bg-white/5 hover:text-white hover:border-white/15",
+                    "disabled:opacity-60 disabled:cursor-not-allowed",
+                    hoverLift,
+                    pressFx,
+                  ].join(" ")}
+                >
+                  Back to Edit
+                </Button>
+                <Button
+                  onClick={handleGenerate}
+                  disabled={isGeneratingPacket}
+                  className={[
+                    "flex-1 h-14 rounded-2xl text-lg font-semibold",
+                    "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                    "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
+                    "disabled:opacity-70 disabled:cursor-not-allowed",
+                    "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
+                    hoverLift,
+                    pressFx,
+                  ].join(" ")}
+                >
+                  {isGeneratingPacket ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    "Looks good — Generate Packet"
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Main Form */}
         {!showConfirm && (
-          <div className="max-w-[1180px] mx-auto">
-            <div className="mb-5 text-center">
-              <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
-                Create a new job packet
-              </h1>
-              <p className="text-lg text-white/70">
-                Paste a job description — we’ll extract details automatically
-              </p>
-            </div>
+          <div
+            className={
+              isAnalyzing ? "pointer-events-none select-none blur-[1px]" : ""
+            }
+            aria-busy={isAnalyzing}
+          >
+            <div className="max-w-[1180px] mx-auto">
+              <div className="mb-5 text-center">
+                <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
+                  Create a new job packet
+                </h1>
+                <p className="text-lg text-white/70">
+                  Paste a job description — we’ll extract details automatically
+                </p>
+              </div>
 
-            <div
-              className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(
-                " "
-              )}
-            >
-              {/* Top row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                {/* Resume selector */}
-                <div
-                  className={[
-                    "rounded-2xl p-5",
-                    "bg-black/25",
-                    edge,
-                    "ring-1 ring-violet-400/12",
-                    glowHover,
-                    hoverLift,
-                    pressFx,
-                  ].join(" ")}
-                >
-                  <label className="block text-lg font-semibold mb-2 text-white">
-                    Resume <span className="text-rose-300">*</span>
-                  </label>
-
-                  {resumesLoading ? (
-                    <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                      <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
-                    </div>
-                  ) : hasResumes ? (
-                    <Select
-                      value={selectedResume}
-                      onValueChange={setSelectedResume}
-                    >
-                      <SelectTrigger
-                        className={[
-                          "h-14 text-lg rounded-2xl",
-                          "bg-black/30 border-white/10 text-white",
-                          "ring-1 ring-white/5",
-                          "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
-                      >
-                        <SelectValue placeholder="Select resume" />
-                      </SelectTrigger>
-
-                      <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                        {resumes.map((resume) => {
-                          const star = isDefaultResume(resume);
-                          return (
-                            <SelectItem
-                              key={resume.id}
-                              value={resume.id.toString()}
-                              className={[
-                                "text-white/90 rounded-md",
-                                "focus:bg-violet-500/20 focus:text-white",
-                                "data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white",
-                                "hover:bg-violet-500/15",
-                                "transition-transform duration-150 hover:scale-[1.01]",
-                              ].join(" ")}
-                            >
-                              <span className="flex items-center gap-2">
-                                {star && (
-                                  <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
-                                )}
-                                <span className="truncate">{resume.name}</span>
-                              </span>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                      <p className="mb-3 text-sm text-white/60">No resumes found</p>
-                      <Button
-                        onClick={() => navigate(createPageUrl("Resumes"))}
-                        className={[
-                          "rounded-2xl",
-                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                          hoverLift,
-                          pressFx,
-                        ].join(" ")}
-                      >
-                        Upload Resume
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Student mode */}
-                <div
-                  className={[
-                    "rounded-2xl p-5 flex items-start gap-3",
-                    "bg-black/25",
-                    edge,
-                    "ring-1 ring-violet-400/12",
-                    glowHover,
-                    hoverLift,
-                    pressFx,
-                  ].join(" ")}
-                >
-                  <button
-                    onClick={() => setStudentMode(!studentMode)}
+              <div
+                className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(
+                  " "
+                )}
+              >
+                {/* Top row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {/* Resume selector */}
+                  <div
                     className={[
-                      "w-12 h-6 rounded-full transition-all relative",
-                      "border border-white/10",
-                      studentMode
-                        ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50"
-                        : "bg-white/10",
+                      "rounded-2xl p-5",
+                      "bg-black/25",
+                      edge,
+                      "ring-1 ring-violet-400/12",
+                      glowHover,
+                      hoverLift,
+                      pressFx,
                     ].join(" ")}
-                    aria-label="Toggle student mode"
                   >
-                    <div
+                    <label className="block text-lg font-semibold mb-2 text-white">
+                      Resume <span className="text-rose-300">*</span>
+                    </label>
+
+                    {resumesLoading ? (
+                      <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
+                        <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
+                      </div>
+                    ) : hasResumes ? (
+                      <Select
+                        value={selectedResume}
+                        onValueChange={setSelectedResume}
+                      >
+                        <SelectTrigger
+                          className={[
+                            "h-14 text-lg rounded-2xl",
+                            "bg-black/30 border-white/10 text-white",
+                            "ring-1 ring-white/5",
+                            "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                            hoverLift,
+                            pressFx,
+                          ].join(" ")}
+                        >
+                          <SelectValue placeholder="Select resume" />
+                        </SelectTrigger>
+
+                        <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                          {resumes.map((resume) => {
+                            const star = isDefaultResume(resume);
+                            return (
+                              <SelectItem
+                                key={resume.id}
+                                value={resume.id.toString()}
+                                className={[
+                                  "text-white/90 rounded-md",
+                                  "focus:bg-violet-500/20 focus:text-white",
+                                  "data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white",
+                                  "hover:bg-violet-500/15",
+                                  "transition-transform duration-150 hover:scale-[1.01]",
+                                ].join(" ")}
+                              >
+                                <span className="flex items-center gap-2">
+                                  {star && (
+                                    <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
+                                  )}
+                                  <span className="truncate">{resume.name}</span>
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
+                        <p className="mb-3 text-sm text-white/60">No resumes found</p>
+                        <Button
+                          onClick={() => navigate(createPageUrl("Resumes"))}
+                          className={[
+                            "rounded-2xl",
+                            "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                            hoverLift,
+                            pressFx,
+                          ].join(" ")}
+                        >
+                          Upload Resume
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Student mode */}
+                  <div
+                    className={[
+                      "rounded-2xl p-5 flex items-start gap-3",
+                      "bg-black/25",
+                      edge,
+                      "ring-1 ring-violet-400/12",
+                      glowHover,
+                      hoverLift,
+                      pressFx,
+                    ].join(" ")}
+                  >
+                    <button
+                      onClick={() => setStudentMode(!studentMode)}
                       className={[
-                        "absolute top-0.5 w-5 h-5 rounded-full bg-white",
-                        "shadow-[0_10px_25px_rgba(0,0,0,0.45)] transition-all",
-                        studentMode ? "left-6" : "left-0.5",
+                        "w-12 h-6 rounded-full transition-all relative",
+                        "border border-white/10",
+                        studentMode
+                          ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50"
+                          : "bg-white/10",
                       ].join(" ")}
-                    />
-                  </button>
+                      aria-label="Toggle student mode"
+                    >
+                      <div
+                        className={[
+                          "absolute top-0.5 w-5 h-5 rounded-full bg-white",
+                          "shadow-[0_10px_25px_rgba(0,0,0,0.45)] transition-all",
+                          studentMode ? "left-6" : "left-0.5",
+                        ].join(" ")}
+                      />
+                    </button>
 
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <GraduationCap className="w-5 h-5 text-white/75" />
-                      <span className="text-base font-medium text-white">
-                        No experience / Student mode
-                      </span>
-                    </div>
-                    <p className="text-sm text-white/60">
-                      Emphasizes projects, coursework, and skills instead of work
-                      experience.
-                    </p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <GraduationCap className="w-5 h-5 text-white/75" />
+                        <span className="text-base font-medium text-white">
+                          No experience / Student mode
+                        </span>
+                      </div>
+                      <p className="text-sm text-white/60">
+                        Emphasizes projects, coursework, and skills instead of work
+                        experience.
+                      </p>
 
-                    <div className="mt-3 text-xs text-white/60 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-cyan-200" />
-                      Built for interns, freshmen, and project-based resumes.
+                      <div className="mt-3 text-xs text-white/60 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-cyan-200" />
+                        Built for interns, freshmen, and project-based resumes.
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* AI mode */}
-              <div>
-                <label className="block text-lg font-semibold mb-1 text-white">
-                  AI Mode <span className="text-rose-300">*</span>
-                </label>
-                <p className="text-sm mb-3 text-white/65">
-                  Choose how AI handles your resume content.
-                </p>
+                {/* AI mode */}
+                <div>
+                  <label className="block text-lg font-semibold mb-1 text-white">
+                    AI Mode <span className="text-rose-300">*</span>
+                  </label>
+                  <p className="text-sm mb-3 text-white/65">
+                    Choose how AI handles your resume content.
+                  </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <button
-                    onClick={() => setAiMode("standard")}
-                    className={[
-                      "p-6 rounded-2xl border-2 text-left relative",
-                      "transition-all",
-                      hoverLift,
-                      pressFx,
-                      glowHover,
-                      aiMode === "standard"
-                        ? "border-emerald-400/35 bg-emerald-500/10 ring-1 ring-emerald-400/20"
-                        : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
-                    ].join(" ")}
-                    style={{ minHeight: "200px" }}
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
-                        <Check className="w-5 h-5 text-emerald-100" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setAiMode("standard")}
+                      className={[
+                        "p-6 rounded-2xl border-2 text-left relative",
+                        "transition-all",
+                        hoverLift,
+                        pressFx,
+                        glowHover,
+                        aiMode === "standard"
+                          ? "border-emerald-400/35 bg-emerald-500/10 ring-1 ring-emerald-400/20"
+                          : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                      ].join(" ")}
+                      style={{ minHeight: "200px" }}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
+                          <Check className="w-5 h-5 text-emerald-100" />
+                        </div>
+                        <span className="font-bold text-xl text-white">
+                          Standard
+                        </span>
                       </div>
-                      <span className="font-bold text-xl text-white">
-                        Standard
+                      <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-100 mb-3 font-semibold border border-emerald-400/20">
+                        Recommended • Safe & ATS-friendly
                       </span>
-                    </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-100 mb-3 font-semibold border border-emerald-400/20">
-                      Recommended • Safe & ATS-friendly
-                    </span>
-                    <ul className="text-base leading-relaxed space-y-1 text-white/75">
-                      <li>• Improves clarity and impact of your existing bullets</li>
-                      <li>• Rewrites descriptions to match the job</li>
-                      <li>• Optimizes wording and keywords</li>
-                      <li className="font-semibold text-emerald-100/90">
-                        • Does NOT create fake experience
-                      </li>
-                    </ul>
-                  </button>
+                      <ul className="text-base leading-relaxed space-y-1 text-white/75">
+                        <li>• Improves clarity and impact of your existing bullets</li>
+                        <li>• Rewrites descriptions to match the job</li>
+                        <li>• Optimizes wording and keywords</li>
+                        <li className="font-semibold text-emerald-100/90">
+                          • Does NOT create fake experience
+                        </li>
+                      </ul>
+                    </button>
 
-                  <button
-                    onClick={() => setAiMode("elite")}
+                    <button
+                      onClick={() => setAiMode("elite")}
+                      className={[
+                        "p-6 rounded-2xl border-2 text-left relative",
+                        "transition-all",
+                        hoverLift,
+                        pressFx,
+                        glowHover,
+                        aiMode === "elite"
+                          ? "border-amber-400/35 bg-amber-500/10 ring-1 ring-amber-400/20"
+                          : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                      ].join(" ")}
+                      style={{ minHeight: "200px" }}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
+                          <Sparkles className="w-5 h-5 text-amber-100" />
+                        </div>
+                        <span className="font-bold text-xl text-white">Elite</span>
+                      </div>
+                      <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/12 text-amber-100 mb-3 font-semibold border border-amber-400/20">
+                        Advanced • Use with discretion
+                      </span>
+                      <ul className="text-base leading-relaxed space-y-1 mb-2 text-white/75">
+                        <li>• May create or enhance experience bullets</li>
+                        <li>• Can infer responsibilities from context</li>
+                        <li>• Designed to maximize callbacks</li>
+                        <li className="font-semibold text-amber-100/90">
+                          • Higher risk if verified by employer
+                        </li>
+                      </ul>
+
+                      {aiMode === "elite" && (
+                        <div className="mt-3 pt-3 border-t border-amber-400/15">
+                          <p className="text-xs text-amber-100/90 flex items-start gap-2">
+                            <span className="text-amber-100 font-bold">⚠</span>
+                            <span>
+                              Elite mode may generate inferred or mock experience.
+                              Use responsibly.
+                            </span>
+                          </p>
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Job description */}
+                <div className="mt-4">
+                  <label className="block text-lg font-semibold mb-2 text-white">
+                    Job Description <span className="text-rose-300">*</span>
+                  </label>
+                  <Textarea
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                    placeholder=""
                     className={[
-                      "p-6 rounded-2xl border-2 text-left relative",
-                      "transition-all",
+                      "min-h-[220px] resize-none text-base rounded-2xl",
+                      "bg-black/30 border-white/10 text-white",
+                      "leading-relaxed",
+                      "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                      "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                    ].join(" ")}
+                  />
+                  <p className="text-sm mt-2 text-white/60">
+                    Paste the full job description. We’ll extract title, company,
+                    pay, and requirements.
+                  </p>
+                </div>
+
+                {/* CTA */}
+                <div className="pt-3">
+                  <Button
+                    onClick={handleAnalyze}
+                    disabled={!selectedResume || !jobDescription.trim() || isAnalyzing}
+                    className={[
+                      "w-full h-14 rounded-2xl text-xl font-bold",
+                      "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                      "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
+                      "disabled:opacity-40 disabled:cursor-not-allowed",
+                      "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
                       hoverLift,
                       pressFx,
-                      glowHover,
-                      aiMode === "elite"
-                        ? "border-amber-400/35 bg-amber-500/10 ring-1 ring-amber-400/20"
-                        : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
                     ].join(" ")}
-                    style={{ minHeight: "200px" }}
                   >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-xl bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-amber-100" />
-                      </div>
-                      <span className="font-bold text-xl text-white">Elite</span>
-                    </div>
-                    <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/12 text-amber-100 mb-3 font-semibold border border-amber-400/20">
-                      Advanced • Use with discretion
-                    </span>
-                    <ul className="text-base leading-relaxed space-y-1 mb-2 text-white/75">
-                      <li>• May create or enhance experience bullets</li>
-                      <li>• Can infer responsibilities from context</li>
-                      <li>• Designed to maximize callbacks</li>
-                      <li className="font-semibold text-amber-100/90">
-                        • Higher risk if verified by employer
-                      </li>
-                    </ul>
-
-                    {aiMode === "elite" && (
-                      <div className="mt-3 pt-3 border-t border-amber-400/15">
-                        <p className="text-xs text-amber-100/90 flex items-start gap-2">
-                          <span className="text-amber-100 font-bold">⚠</span>
-                          <span>
-                            Elite mode may generate inferred or mock experience.
-                            Use responsibly.
-                          </span>
-                        </p>
-                      </div>
+                    {isAnalyzing ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Scanning…
+                      </>
+                    ) : (
+                      "Generate Packet"
                     )}
-                  </button>
+                  </Button>
+                  <p className="text-center text-sm mt-2 text-white/60">
+                    Uses 1 credit
+                  </p>
                 </div>
-              </div>
-
-              {/* Job description */}
-              <div className="mt-4">
-                <label className="block text-lg font-semibold mb-2 text-white">
-                  Job Description <span className="text-rose-300">*</span>
-                </label>
-                <Textarea
-                  value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                  placeholder=""
-                  className={[
-                    "min-h-[220px] resize-none text-base rounded-2xl",
-                    "bg-black/30 border-white/10 text-white",
-                    "leading-relaxed",
-                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                    "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
-                  ].join(" ")}
-                />
-                <p className="text-sm mt-2 text-white/60">
-                  Paste the full job description. We’ll extract title, company,
-                  pay, and requirements.
-                </p>
-              </div>
-
-              {/* CTA */}
-              <div className="pt-3">
-                <Button
-                  onClick={handleAnalyze}
-                  disabled={!selectedResume || !jobDescription.trim()}
-                  className={[
-                    "w-full h-14 rounded-2xl text-xl font-bold",
-                    "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                    "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
-                    "disabled:opacity-40 disabled:cursor-not-allowed",
-                    "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
-                    hoverLift,
-                    pressFx,
-                  ].join(" ")}
-                >
-                  Generate Packet
-                </Button>
-                <p className="text-center text-sm mt-2 text-white/60">
-                  Uses 1 credit
-                </p>
               </div>
             </div>
           </div>
