@@ -948,11 +948,12 @@ const prepared = await apiFetch("/api/apply/prepare", {
     jobDescription: jdForApi,
     jobUrl: null,
 
-    aiMode,          // ✅ "elite" or "standard"
-    studentMode,     // ✅ true/false
-    mode: "real",    // optional (or "training_sample" if you use it)
+    aiMode: aiMode,           // ✅ "elite" or "standard"
+    studentMode: studentMode, // ✅ true/false
+    // mode: "real",          // optional
   }),
 });
+
 
 
     // ✅ send mode to backend so it can pick the prompt
