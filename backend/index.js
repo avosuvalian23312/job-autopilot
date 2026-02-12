@@ -220,9 +220,9 @@ app.http("resumeOptimize", {
   handler: withOptions(require("./src/functions/resumeOptimize.js").resumeOptimize),
 });
 const { applyPrepare } = require("./src/functions/applyPrepare");
-const { applyPrepare } = require("./src/functions/applyPrepare");
+
 const { coverLettersList } = require("./src/functions/coverLettersList");
-const { coverLettersGet } = require("./src/functions/coverLettersGet");
+
 
 app.http("applyPrepare", {
   methods: ["POST", "OPTIONS"],
