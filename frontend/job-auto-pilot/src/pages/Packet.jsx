@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -76,32 +76,34 @@ export default function Packet() {
     toast.success("Downloaded");
   };
 
-  const downloadPdfFromUrl = async (url, filename) => {
-    if (!url) return toast.error("No PDF available");
+  const getResumeSas = async (resumeId) => {
+    return await apiFetch(
+      `/api/resume/sas?resumeId=${encodeURIComponent(resumeId)}`,
+      { method: "GET" }
+    );
+  };
 
-    try {
-      // Try to fetch as blob (best UX: forces download)
-      const res = await fetch(url, { method: "GET" });
-      if (!res.ok) throw new Error(`PDF download failed (${res.status})`);
+  const downloadResumeViaSas = async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const resumeId =
+      urlParams.get("resumeId") || localStorage.getItem("latestTailoredResumeId");
 
-      const blob = await res.blob();
-      const objUrl = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = objUrl;
-      a.download = filename || "resume.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      URL.revokeObjectURL(objUrl);
-      toast.success("Downloaded");
-    } catch (e) {
-      // If storage CORS blocks fetch, fall back to opening in new tab
-      console.error(e);
-      window.open(url, "_blank", "noopener,noreferrer");
-      toast.message("Opened PDF in a new tab (download from there).");
+    if (!resumeId) {
+      toast.error("Missing resumeId.");
+      return;
     }
+
+    const sas = await getResumeSas(resumeId);
+    const url = sas?.url;
+
+    if (!url) {
+      toast.error("Could not generate download link.");
+      return;
+    }
+
+    // SAS + content-disposition handles download correctly for private blobs
+    window.open(url, "_blank", "noopener,noreferrer");
+    toast.success("Opened resume download");
   };
 
   // ---------------------------
@@ -110,49 +112,61 @@ export default function Packet() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
 
-    // NEW: allow Packet to run in "prepare mode"
-    const mode = (urlParams.get("mode") || "").toLowerCase();
+    // Explicit mode param (optional)
+    const modeParam = String(urlParams.get("mode") || "").toLowerCase();
 
-    // Old job pipeline id
-    const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
+    // These exist in your NEW /api/apply/prepare flow
+    const qpResumeId = urlParams.get("resumeId");
+    const qpCoverLetterId = urlParams.get("coverLetterId");
+    const qpId = urlParams.get("id"); // may be cl:... or resume:...
 
-    // If you used /api/apply/prepare, store its result here
-    const prepareCacheRaw = localStorage.getItem("latestPrepareResult");
-    let prepareCache = null;
-    try {
-      prepareCache = prepareCacheRaw ? JSON.parse(prepareCacheRaw) : null;
-    } catch {
-      prepareCache = null;
-    }
+    const looksLikePrepare =
+      modeParam === "prepare" ||
+      !!qpResumeId ||
+      !!qpCoverLetterId ||
+      (typeof qpId === "string" &&
+        (qpId.startsWith("cl:") || qpId.startsWith("resume:")));
 
-    // ✅ If we’re in prepare mode, show results immediately from cache
-    if (mode === "prepare") {
-      if (prepareCache?.ok && (prepareCache?.tailoredResume || prepareCache?.coverLetter)) {
-        setPacketData({ ...prepareCache, __mode: "prepare" });
-        setIsGenerating(false);
+    // Old job pipeline id (jobs table)
+    const jobId = qpId || localStorage.getItem("latestJobId");
+
+    // -------- PREPARE MODE (no polling) --------
+    if (looksLikePrepare) {
+      let jobData = null;
+      try {
+        jobData = JSON.parse(localStorage.getItem("latestJobData") || "null");
+      } catch {
+        jobData = null;
+      }
+
+      const coverLetterText =
+        localStorage.getItem("latestCoverLetterText") || "";
+
+      const preparedPacket = {
+        __mode: "prepare",
+        jobData,
+        tailoredResumeId:
+          qpResumeId || localStorage.getItem("latestTailoredResumeId") || "",
+        coverLetterId:
+          qpCoverLetterId ||
+          localStorage.getItem("latestCoverLetterId") ||
+          "",
+        coverLetterText,
+      };
+
+      // At least one output should exist
+      if (!preparedPacket.tailoredResumeId && !preparedPacket.coverLetterText) {
+        toast.error("No prepared packet found. Generate again.");
+        navigate(createPageUrl("AppHome"));
         return;
       }
 
-      toast.error("No prepared packet found. Please run Prepare again.");
-      navigate(createPageUrl("AppHome"));
+      setPacketData(preparedPacket);
+      setIsGenerating(false);
       return;
     }
 
-    // If jobId looks like a coverLetter/resume id, it's NOT a job id.
-    // Instead of polling /api/jobs/cl:..., tell the user to use prepare mode.
-    if (jobId && (jobId.startsWith("cl:") || jobId.startsWith("resume:"))) {
-      if (prepareCache?.ok) {
-        // auto-switch to prepare cache if available
-        setPacketData({ ...prepareCache, __mode: "prepare" });
-        setIsGenerating(false);
-        return;
-      }
-
-      toast.error("This link is not a job packet. Please generate again.");
-      navigate(createPageUrl("AppHome"));
-      return;
-    }
-
+    // -------- OLD JOB MODE (poll /api/jobs/:id) --------
     if (!jobId) {
       navigate(createPageUrl("AppHome"));
       return;
@@ -193,10 +207,7 @@ export default function Packet() {
       } catch (e) {
         console.error(e);
 
-        if (e?.status === 401) {
-          goLogin();
-          return;
-        }
+        if (e?.status === 401) return goLogin();
 
         if (e?.status === 404) {
           toast.error("Job not found.");
@@ -216,9 +227,10 @@ export default function Packet() {
 
         // First try to read job — avoid re-generating if already completed
         try {
-          const payload = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-            method: "GET",
-          });
+          const payload = await apiFetch(
+            `/api/jobs/${encodeURIComponent(jobId)}`,
+            { method: "GET" }
+          );
           const job = payload?.job || payload;
 
           if (job?.status === "completed") {
@@ -256,10 +268,7 @@ export default function Packet() {
         poll();
       } catch (e) {
         console.error(e);
-        if (e?.status === 401) {
-          goLogin();
-          return;
-        }
+        if (e?.status === 401) return goLogin();
         toast.error(e?.message || "Could not start generation.");
         setIsGenerating(false);
       }
@@ -273,43 +282,40 @@ export default function Packet() {
     };
   }, [navigate]);
 
-  const getResumeSas = async (resumeId) => {
-  return await apiFetch(`/api/resume/sas?resumeId=${encodeURIComponent(resumeId)}`, {
-    method: "GET",
-  });
-};
+  // ---------------------------
+  // Button handlers
+  // ---------------------------
+  const handleDownloadResume = async () => {
+    // Prepare mode: resume is a private PDF -> SAS download
+    if (packetData?.__mode === "prepare") {
+      try {
+        await downloadResumeViaSas();
+      } catch (e) {
+        console.error(e);
+        toast.error(e?.message || "Resume download failed.");
+      }
+      return;
+    }
 
-const handleDownloadResumePdf = async () => {
-  const resumeId =
-    new URLSearchParams(window.location.search).get("resumeId") ||
-    localStorage.getItem("latestTailoredResumeId");
-
-  if (!resumeId) return toast.error("Missing resumeId");
-
-  const { url } = await getResumeSas(resumeId);
-  window.open(url, "_blank", "noopener,noreferrer");
-};
-
-
-    // Old job mode: text downloads
-    const resume = packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
+    // Old job mode: text downloads (existing behavior)
+    const resume =
+      packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
     downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
   };
 
   const handleDownloadCoverLetter = () => {
-    // Prepare mode: cover letter is text
+    // Prepare mode: cover letter text is cached
     if (packetData?.__mode === "prepare") {
-      const text = packetData?.coverLetter?.text || "";
-      const name = "cover-letter.txt";
-      return downloadTextFile(name, text);
+      const text = packetData?.coverLetterText || "";
+      return downloadTextFile("cover-letter.txt", text);
     }
 
     const cover = packetData?.outputs?.coverLetter;
     downloadTextFile(cover?.fileName || "cover-letter.txt", cover?.text || "");
   };
 
-  const handleDownloadBoth = () => {
-    handleDownloadResume();
+  const handleDownloadBoth = async () => {
+    await handleDownloadResume();
     handleDownloadCoverLetter();
   };
 
@@ -317,7 +323,9 @@ const handleDownloadResumePdf = async () => {
     navigate(createPageUrl("AppHome"));
   };
 
-  // Generating state (UI unchanged)
+  // ---------------------------
+  // UI
+  // ---------------------------
   if (isGenerating && !packetData) {
     return (
       <div className="min-h-screen bg-[hsl(240,10%,4%)]">
@@ -337,7 +345,9 @@ const handleDownloadResumePdf = async () => {
             <div className="w-24 h-24 rounded-full bg-purple-600/10 flex items-center justify-center mx-auto mb-8">
               <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-3">Generating your packet…</h1>
+            <h1 className="text-4xl font-bold text-white mb-3">
+              Generating your packet…
+            </h1>
             <p className="text-lg text-white/40">This can take a few seconds</p>
           </div>
         </div>
@@ -367,8 +377,12 @@ const handleDownloadResumePdf = async () => {
           <div className="w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-8">
             <CheckCircle2 className="w-12 h-12 text-green-400" />
           </div>
-          <h1 className="text-5xl font-bold text-white mb-4">Your packet is ready</h1>
-          <p className="text-xl text-white/40">Download your tailored documents below</p>
+          <h1 className="text-5xl font-bold text-white mb-4">
+            Your packet is ready
+          </h1>
+          <p className="text-xl text-white/40">
+            Download your tailored documents below
+          </p>
         </div>
 
         {/* Download Buttons */}
