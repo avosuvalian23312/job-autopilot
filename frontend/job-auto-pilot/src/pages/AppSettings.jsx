@@ -1,429 +1,446 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppNav from "@/components/app/AppNav";
+import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { User, CreditCard, FileText, Check, Sparkles, Plus, Trash2, Link2, MapPin, Coins, Mail, Bug } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  User,
+  FileText,
+  CreditCard,
+  Mail,
+  Link as LinkIcon,
+  Phone,
+  MapPin,
+  LifeBuoy,
+  ShieldCheck,
+  ExternalLink,
+  Save,
+  ArrowRight,
+} from "lucide-react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 
-export default function AppSettings() {
-  const [profile, setProfile] = useState({
-    name: "Alex Johnson",
-    email: "alex@example.com",
-    phone: "+1 (555) 123-4567",
-    location: "San Francisco, CA",
-    linkedin: "linkedin.com/in/alexjohnson",
-    portfolio: "alexjohnson.dev",
-  });
+const STORAGE_KEY = "jobautopilot_profile_v1";
 
-  const [resumeProfile, setResumeProfile] = useState({
-    currentTitle: "Senior Software Engineer",
-    yearsExp: "8",
-    skills: ["React", "TypeScript", "Node.js", "Python", "AWS", "System Design"],
-    experience: [
-      "Led cross-functional team of 8 engineers delivering mission-critical platform redesign",
-      "Architected scalable microservices infrastructure handling 10M+ daily requests",
-      "Reduced infrastructure costs by 35% through containerization strategy",
-    ],
-    education: "BS Computer Science, Stanford University",
-    certifications: ["AWS Solutions Architect", "Google Cloud Professional"],
-  });
+function Field({ label, icon: Icon, children, hint }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs sm:text-sm text-white/60 font-medium">
+          {label}
+        </label>
+        {hint ? <span className="text-xs text-white/30">{hint}</span> : null}
+      </div>
+      <div className="relative">
+        {Icon ? (
+          <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30">
+            <Icon className="w-4 h-4" />
+          </div>
+        ) : null}
+        <div className={Icon ? "pl-9" : ""}>{children}</div>
+      </div>
+    </div>
+  );
+}
 
-  const [newSkill, setNewSkill] = useState("");
-  const [newExp, setNewExp] = useState("");
-  const [newCert, setNewCert] = useState("");
+function Section({ title, subtitle, children, icon: Icon }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+      <div className="flex items-start gap-3 mb-5">
+        {Icon ? (
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-purple-300" />
+          </div>
+        ) : null}
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-semibold text-white">
+            {title}
+          </h3>
+          {subtitle ? (
+            <p className="text-sm text-white/40 mt-1">{subtitle}</p>
+          ) : null}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
 
-  const handleSave = () => {
-    toast.success("Settings saved successfully");
+export default function Settings() {
+  const navigate = useNavigate();
+  const [tab, setTab] = useState("profile");
+  const [saving, setSaving] = useState(false);
+
+  // Profile
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [location, setLocation] = useState("");
+  const [linkedin, setLinkedin] = useState("");
+  const [portfolio, setPortfolio] = useState("");
+
+  const initialLoaded = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoaded) return;
+    setFullName(initialLoaded.fullName || "");
+    setEmail(initialLoaded.email || "");
+    setPhone(initialLoaded.phone || "");
+    setLocation(initialLoaded.location || "");
+    setLinkedin(initialLoaded.linkedin || "");
+    setPortfolio(initialLoaded.portfolio || "");
+  }, [initialLoaded]);
+
+  const isDirty = useMemo(() => {
+    const base = initialLoaded || {};
+    return (
+      (fullName || "") !== (base.fullName || "") ||
+      (email || "") !== (base.email || "") ||
+      (phone || "") !== (base.phone || "") ||
+      (location || "") !== (base.location || "") ||
+      (linkedin || "") !== (base.linkedin || "") ||
+      (portfolio || "") !== (base.portfolio || "")
+    );
+  }, [initialLoaded, fullName, email, phone, location, linkedin, portfolio]);
+
+  const saveProfile = async () => {
+    if (saving) return;
+
+    // light validation (UI-only)
+    const e = (email || "").trim();
+    if (e && !/^\S+@\S+\.\S+$/.test(e)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // ✅ production-safe: local persistence (no backend assumptions)
+      // If you already have an API route, you can replace this block without changing UI.
+      const payload = {
+        fullName: fullName.trim(),
+        email: e,
+        phone: phone.trim(),
+        location: location.trim(),
+        linkedin: linkedin.trim(),
+        portfolio: portfolio.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      toast.success("Settings saved.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openSupport = () => {
+    // Replace with your support flow (Intercom, Zendesk, etc.)
+    window.location.href = "mailto:support@yourdomain.com?subject=Job%20Autopilot%20Support";
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
-      <AppNav currentPage="AppSettings" />
-      <motion.div 
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.3 }}
-        className="max-w-7xl mx-auto px-4 sm:px-6 py-8"
-      >
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold" style={{ color: '#F5F5F7' }}>Settings</h1>
-          <p style={{ color: '#B3B3B8' }}>Manage your profile, resume data, and billing</p>
+    <div className="min-h-screen bg-[hsl(240,10%,4%)] relative overflow-hidden">
+      {/* subtle background accents */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-44 left-1/2 -translate-x-1/2 w-[900px] h-[420px] rounded-full bg-purple-600/10 blur-3xl" />
+        <div className="absolute -bottom-72 left-1/3 w-[760px] h-[420px] rounded-full bg-fuchsia-500/5 blur-3xl" />
+      </div>
+
+      <AppNav currentPage="Settings" />
+
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-white">
+              Settings
+            </h1>
+            <p className="text-white/40 mt-1">
+              Manage your profile, resume data, and billing
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {tab === "profile" && (
+              <Button
+                type="button"
+                onClick={saveProfile}
+                disabled={!isDirty || saving}
+                className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-5 py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? "Saving..." : "Save changes"}
+              </Button>
+            )}
+          </div>
         </div>
 
-        <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="bg-transparent border-b border-white/10 rounded-none mb-12 w-full justify-start h-auto p-0">
-            <TabsTrigger 
-              value="profile" 
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/20 px-6 py-4 text-base font-semibold transition-all hover:scale-[1.03]"
-              style={{ color: '#B3B3B8' }}
-              data-state-active-style={{ color: '#F5F5F7' }}
-            >
-              <User className="w-5 h-5 mr-2" />
-              Profile
-            </TabsTrigger>
-            <TabsTrigger 
-              value="resume" 
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/20 px-6 py-4 text-base font-semibold transition-all hover:scale-[1.03]"
-              style={{ color: '#B3B3B8' }}
-            >
-              <FileText className="w-5 h-5 mr-2" />
-              Resume
-            </TabsTrigger>
-            <TabsTrigger 
-              value="billing" 
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/20 px-6 py-4 text-base font-semibold transition-all hover:scale-[1.03]"
-              style={{ color: '#B3B3B8' }}
-            >
-              <CreditCard className="w-5 h-5 mr-2" />
-              Billing
-            </TabsTrigger>
-          </TabsList>
+        {/* Tabs */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl">
+          <Tabs value={tab} onValueChange={setTab}>
+            <div className="px-4 sm:px-6 pt-4">
+              <TabsList className="bg-transparent p-0 gap-1 sm:gap-2">
+                <TabsTrigger
+                  value="profile"
+                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </TabsTrigger>
+                <TabsTrigger
+                  value="resume"
+                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Resume
+                </TabsTrigger>
+                <TabsTrigger
+                  value="billing"
+                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                >
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Billing
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="profile" className="max-w-4xl">
-              <div className="space-y-12">
-                <div>
-                  <h3 className="text-xl font-semibold mb-8 pb-4 border-b border-white/10" style={{ color: '#F5F5F7' }}>Personal Information</h3>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Full Name</label>
-                      <Input
-                        value={profile.name}
-                        onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                        className="border-white/12 text-white py-6 rounded-xl text-base"
-                        style={{ background: '#141414' }}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Email Address</label>
-                      <Input
-                        value={profile.email}
-                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                        className="border-white/12 text-white py-6 rounded-xl text-base"
-                        style={{ background: '#141414' }}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Phone Number</label>
-                      <Input
-                        value={profile.phone}
-                        onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                        className="border-white/12 text-white py-6 rounded-xl text-base"
-                        style={{ background: '#141414' }}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Location</label>
-                      <div className="relative">
-                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#8A8A92' }} />
-                        <Input
-                          value={profile.location}
-                          onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                          className="border-white/12 text-white py-6 rounded-xl pl-12 text-base"
-                          style={{ background: '#141414' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+              <div className="mt-4 h-px bg-white/10" />
+            </div>
+
+            {/* Profile */}
+            <TabsContent value="profile" className="p-4 sm:p-6 space-y-6">
+              <Section
+                title="Personal Information"
+                subtitle="Used to personalize documents and application materials."
+                icon={ShieldCheck}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Full Name" icon={User}>
+                    <Input
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g., Alex Johnson"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
+
+                  <Field label="Email Address" icon={Mail}>
+                    <Input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g., alex@example.com"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
+
+                  <Field label="Phone Number" icon={Phone} hint="Optional">
+                    <Input
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g., +1 (555) 123-4567"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
+
+                  <Field label="Location" icon={MapPin} hint="Optional">
+                    <Input
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="e.g., Dallas, TX"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section
+                title="Links"
+                subtitle="Optional links that can be referenced in cover letters."
+                icon={LinkIcon}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="LinkedIn URL" icon={LinkIcon} hint="Optional">
+                    <Input
+                      value={linkedin}
+                      onChange={(e) => setLinkedin(e.target.value)}
+                      placeholder="linkedin.com/in/yourname"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
+
+                  <Field label="Portfolio URL" icon={LinkIcon} hint="Optional">
+                    <Input
+                      value={portfolio}
+                      onChange={(e) => setPortfolio(e.target.value)}
+                      placeholder="yourdomain.dev"
+                      className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                    />
+                  </Field>
                 </div>
 
-                <div>
-                  <h3 className="text-xl font-semibold mb-8 pb-4 border-b border-white/10" style={{ color: '#F5F5F7' }}>Links</h3>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>LinkedIn URL</label>
-                      <div className="relative">
-                        <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#8A8A92' }} />
-                        <Input
-                          value={profile.linkedin}
-                          onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })}
-                          className="border-white/12 text-white py-6 rounded-xl pl-12 text-base"
-                          style={{ background: '#141414' }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Portfolio URL</label>
-                      <div className="relative">
-                        <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#8A8A92' }} />
-                        <Input
-                          value={profile.portfolio}
-                          onChange={(e) => setProfile({ ...profile, portfolio: e.target.value })}
-                          className="border-white/12 text-white py-6 rounded-xl pl-12 text-base"
-                          style={{ background: '#141414' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-semibold mb-8 pb-4 border-b border-white/10" style={{ color: '#F5F5F7' }}>Support</h3>
-                  <div className="space-y-4">
-                    <Button
-                      onClick={() => window.location.href = 'mailto:support@jobautopilot.com'}
-                      className="w-full bg-white/[0.03] hover:bg-white/[0.05] border border-white/12 text-white py-6 rounded-xl text-base font-medium hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/20 transition-all"
-                      style={{ justifyContent: 'flex-start' }}
-                    >
-                      <Mail className="w-5 h-5 mr-3" />
-                      Contact Support
-                    </Button>
-                    <Button
-                      onClick={() => toast.info('Bug report form coming soon')}
-                      className="w-full bg-white/[0.03] hover:bg-white/[0.05] border border-white/12 text-white py-6 rounded-xl text-base font-medium hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/20 transition-all"
-                      style={{ justifyContent: 'flex-start' }}
-                    >
-                      <Bug className="w-5 h-5 mr-3" />
-                      Report a Bug
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="pt-8 mt-8 border-t border-white/10">
-                  <Button 
-                    onClick={handleSave} 
-                    className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-6 px-8 text-lg font-semibold premium-button shadow-lg hover:shadow-purple-500/30 hover:scale-[1.02]"
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      const url = (linkedin || "").trim();
+                      if (!url) return toast.error("Add a LinkedIn URL first.");
+                      window.open(
+                        url.startsWith("http") ? url : `https://${url}`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }}
+                    className="justify-center sm:justify-start border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5"
                   >
-                    <Check className="w-5 h-5 mr-2" />
-                    Save Changes
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Open LinkedIn
                   </Button>
-                </div>
-              </div>
-            </TabsContent>
 
-            <TabsContent value="resume" className="max-w-4xl">
-              <div className="space-y-12">
-                <div className="flex items-start gap-4 p-6 rounded-xl bg-purple-500/5 border border-purple-500/30">
-                  <Sparkles className="w-6 h-6 text-purple-400 shrink-0 mt-1" />
-                  <p className="text-base leading-relaxed" style={{ color: '#B3B3B8' }}>
-                    This information helps our AI generate more accurate, personalized cover letters and resume bullets tailored to each job.
-                  </p>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Current Job Title</label>
-                    <Input
-                      value={resumeProfile.currentTitle}
-                      onChange={(e) => setResumeProfile({ ...resumeProfile, currentTitle: e.target.value })}
-                      className="border-white/12 text-white py-6 rounded-xl text-base"
-                      style={{ background: '#141414' }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Years of Experience</label>
-                    <Input
-                      value={resumeProfile.yearsExp}
-                      onChange={(e) => setResumeProfile({ ...resumeProfile, yearsExp: e.target.value })}
-                      className="border-white/12 text-white py-6 rounded-xl text-base"
-                      style={{ background: '#141414' }}
-                    />
+                  <div className="text-xs text-white/30">
+                    Tip: You can leave these blank—nothing breaks.
                   </div>
                 </div>
+              </Section>
 
-                <div>
-                  <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Skills</label>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {resumeProfile.skills.map((skill, i) => (
-                      <div key={i} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-sm font-medium">
-                        {skill}
-                        <button onClick={() => setResumeProfile({ ...resumeProfile, skills: resumeProfile.skills.filter((_, idx) => idx !== i) })} className="hover:text-purple-200">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+              <Section
+                title="Support"
+                subtitle="Having issues? Reach out and we’ll help."
+                icon={LifeBuoy}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-sm text-white/50">
+                    Contact support for account, resume upload, or billing help.
                   </div>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add a skill"
-                      value={newSkill}
-                      onChange={(e) => setNewSkill(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && newSkill.trim()) {
-                          setResumeProfile({ ...resumeProfile, skills: [...resumeProfile.skills, newSkill] });
-                          setNewSkill("");
-                        }
-                      }}
-                      className="border-white/12 text-white py-6 rounded-xl text-base"
-                      style={{ background: '#141414' }}
-                    />
-                    <Button
-                      onClick={() => {
-                        if (newSkill.trim()) {
-                          setResumeProfile({ ...resumeProfile, skills: [...resumeProfile.skills, newSkill] });
-                          setNewSkill("");
-                        }
-                      }}
-                      className="bg-white/[0.03] hover:bg-white/[0.05] text-white border border-white/12 rounded-xl px-6 py-6"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Key Experience Bullets</label>
-                  <div className="space-y-3 mb-4">
-                    {resumeProfile.experience.map((exp, i) => (
-                      <div key={i} className="flex items-start gap-3 p-4 rounded-lg border border-white/10" style={{ background: '#141414' }}>
-                        <span className="text-sm flex-1 leading-relaxed" style={{ color: '#B3B3B8' }}>{exp}</span>
-                        <button onClick={() => setResumeProfile({ ...resumeProfile, experience: resumeProfile.experience.filter((_, idx) => idx !== i) })} className="text-white/30 hover:text-white/60">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Textarea
-                      placeholder="Add an experience bullet"
-                      value={newExp}
-                      onChange={(e) => setNewExp(e.target.value)}
-                      rows={2}
-                      className="border-white/12 text-white rounded-xl resize-none text-base"
-                      style={{ background: '#141414' }}
-                    />
-                    <Button
-                      onClick={() => {
-                        if (newExp.trim()) {
-                          setResumeProfile({ ...resumeProfile, experience: [...resumeProfile.experience, newExp] });
-                          setNewExp("");
-                        }
-                      }}
-                      className="bg-white/[0.03] hover:bg-white/[0.05] text-white border border-white/12 rounded-xl px-6"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Education</label>
-                  <Textarea
-                    value={resumeProfile.education}
-                    onChange={(e) => setResumeProfile({ ...resumeProfile, education: e.target.value })}
-                    rows={2}
-                    className="border-white/12 text-white rounded-xl resize-none text-base"
-                    style={{ background: '#141414' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm mb-3 block font-medium" style={{ color: '#B3B3B8' }}>Certifications</label>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {resumeProfile.certifications.map((cert, i) => (
-                      <div key={i} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm font-medium">
-                        {cert}
-                        <button onClick={() => setResumeProfile({ ...resumeProfile, certifications: resumeProfile.certifications.filter((_, idx) => idx !== i) })} className="hover:text-emerald-200">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add a certification"
-                      value={newCert}
-                      onChange={(e) => setNewCert(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && newCert.trim()) {
-                          setResumeProfile({ ...resumeProfile, certifications: [...resumeProfile.certifications, newCert] });
-                          setNewCert("");
-                        }
-                      }}
-                      className="border-white/12 text-white py-6 rounded-xl text-base"
-                      style={{ background: '#141414' }}
-                    />
-                    <Button
-                      onClick={() => {
-                        if (newCert.trim()) {
-                          setResumeProfile({ ...resumeProfile, certifications: [...resumeProfile.certifications, newCert] });
-                          setNewCert("");
-                        }
-                      }}
-                      className="bg-white/[0.03] hover:bg-white/[0.05] text-white border border-white/12 rounded-xl px-6 py-6"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="pt-8 mt-8 border-t border-white/10">
-                  <Button 
-                    onClick={handleSave} 
-                    className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-6 px-8 text-lg font-semibold premium-button shadow-lg hover:shadow-purple-500/30 hover:scale-[1.02]"
+                  <Button
+                    type="button"
+                    onClick={openSupport}
+                    className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl py-5 px-5"
                   >
-                    <Check className="w-5 h-5 mr-2" />
-                    Save Profile
+                    <Mail className="w-4 h-4 mr-2" />
+                    Contact Support
                   </Button>
                 </div>
+              </Section>
+
+              {/* mobile save */}
+              <div className="sm:hidden pt-2">
+                <Button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={!isDirty || saving}
+                  className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? "Saving..." : "Save changes"}
+                </Button>
               </div>
             </TabsContent>
 
-            <TabsContent value="billing" className="max-w-5xl">
-              <div className="space-y-8">
-                <div className="flex items-center justify-between pb-6 border-b border-white/10">
-                  <div>
-                    <h3 className="text-xl font-semibold mb-1" style={{ color: '#F5F5F7' }}>Current Plan</h3>
-                    <p className="text-sm" style={{ color: '#B3B3B8' }}>You're on the Power plan</p>
+            {/* Resume */}
+            <TabsContent value="resume" className="p-4 sm:p-6 space-y-6">
+              <Section
+                title="Resume Library"
+                subtitle="Manage uploads, defaults, and previews."
+                icon={FileText}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-sm text-white/50">
+                    Upload and manage multiple resumes from the Resumes page.
                   </div>
-                  <div className="flex items-center gap-3 px-6 py-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
-                    <Sparkles className="w-5 h-5 text-purple-400" />
-                    <span className="text-base font-semibold text-purple-300">Power — $19.99/mo</span>
-                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => navigate(createPageUrl("Resumes"))}
+                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold"
+                  >
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    Go to Resumes
+                  </Button>
                 </div>
+              </Section>
 
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="rounded-xl p-6 border border-white/12" style={{ background: '#141414' }}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <Coins className="w-6 h-6 text-purple-400" />
-                      <span className="text-sm font-medium" style={{ color: '#B3B3B8' }}>Credits Remaining</span>
+              <Section
+                title="Tip"
+                subtitle="Best parsing results come from clean PDF/DOCX formatting."
+                icon={ShieldCheck}
+              >
+                <ul className="text-sm text-white/50 space-y-2 list-disc pl-5">
+                  <li>Use clear section headers (Experience, Education, Skills).</li>
+                  <li>Avoid heavy graphics-only resumes (images of text).</li>
+                  <li>Keep filenames simple (e.g., “Avo_Suvalian_Resume.pdf”).</li>
+                </ul>
+              </Section>
+            </TabsContent>
+
+            {/* Billing */}
+            <TabsContent value="billing" className="p-4 sm:p-6 space-y-6">
+              <Section
+                title="Billing & Credits"
+                subtitle="View credits and manage your plan."
+                icon={CreditCard}
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                    <div className="text-xs text-white/40">Current plan</div>
+                    <div className="text-lg font-semibold text-white mt-1">
+                      Credits-based
                     </div>
-                    <div className="text-4xl font-bold mb-2" style={{ color: '#F5F5F7' }}>387</div>
-                    <div className="text-sm mb-4" style={{ color: '#8A8A92' }}>out of 500 credits</div>
-                    <div className="h-2.5 bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 rounded-full" style={{ width: "77%" }} />
+                    <div className="text-sm text-white/40 mt-2">
+                      Credits are used when generating cover letters and bullet points.
                     </div>
                   </div>
-                  <div className="rounded-xl p-6 border border-white/12" style={{ background: '#141414' }}>
-                    <div className="text-sm mb-2 font-medium" style={{ color: '#B3B3B8' }}>Need more credits?</div>
-                    <div className="text-2xl font-bold mb-5" style={{ color: '#F5F5F7' }}>$5 = 20 credits</div>
-                    <Button className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-3.5 premium-button font-semibold shadow-lg hover:shadow-purple-500/30 hover:scale-[1.02]">
-                      <Plus className="w-5 h-5 mr-2" />
-                      Buy Credits
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
+                      onClick={() => toast.message("Billing UI placeholder (wire to Stripe).")}
+                    >
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      Manage billing
+                    </Button>
+
+                    <Button
+                      type="button"
+                      className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold"
+                      onClick={() => toast.message("Upgrade UI placeholder.")}
+                    >
+                      Upgrade
+                      <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
                 </div>
+              </Section>
 
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between py-4 text-base border-b border-white/10">
-                    <span style={{ color: '#B3B3B8' }}>Billing period</span>
-                    <span style={{ color: '#F5F5F7' }} className="font-medium">Monthly</span>
-                  </div>
-                  <div className="flex items-center justify-between py-4 text-base border-b border-white/10">
-                    <span style={{ color: '#B3B3B8' }}>Next billing date</span>
-                    <span style={{ color: '#F5F5F7' }} className="font-medium">March 7, 2026</span>
-                  </div>
-                  <div className="flex items-center justify-between py-4 text-base">
-                    <span style={{ color: '#B3B3B8' }}>Payment method</span>
-                    <span style={{ color: '#F5F5F7' }} className="font-medium">•••• 4242</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                  <Button className="flex-1 bg-white/[0.03] hover:bg-white/[0.05] border border-white/12 rounded-xl py-4 text-base font-semibold hover:scale-[1.02] transition-all" style={{ color: '#F5F5F7' }}>
-                    Change Plan
-                  </Button>
-                  <Button variant="ghost" className="flex-1 text-red-400/70 hover:text-red-400 hover:bg-red-500/5 rounded-xl py-4 text-base font-semibold">
-                    Cancel Subscription
-                  </Button>
-                </div>
-              </div>
+              <Section
+                title="Support"
+                subtitle="Questions about billing or credits?"
+                icon={LifeBuoy}
+              >
+                <Button
+                  type="button"
+                  onClick={openSupport}
+                  className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl py-5 px-5"
+                >
+                  <Mail className="w-4 h-4 mr-2" />
+                  Contact billing support
+                </Button>
+              </Section>
             </TabsContent>
-        </Tabs>
-      </motion.div>
+          </Tabs>
+        </div>
+      </div>
     </div>
   );
 }
