@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+// AppHome.jsx (single-file, production-polished, no “Last 7 days (applications added)” section)
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import AppNav from "@/components/app/AppNav";
 import GoalProgress from "@/components/app/GoalProgress";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { motion } from "framer-motion";
 import {
   Plus,
   FileText,
@@ -17,174 +20,34 @@ import {
   Zap,
   Lightbulb,
   ListChecks,
-  Square,
   CalendarDays,
   Building2,
-  ArrowUpRight,
 } from "lucide-react";
-import { motion } from "framer-motion";
 
-const APP_GOAL = 200;
-const RESUME_GOAL = 10;
+/* ---------------------------------------
+   Config (env-safe)
+---------------------------------------- */
+const env =
+  (typeof import.meta !== "undefined" && import.meta.env) ||
+  (typeof process !== "undefined" && process.env) ||
+  {};
 
-const CircularMetric = ({ value, label, color = "purple", max = 20 }) => {
-  const safeMax = Math.max(1, Number(max) || 20);
-  const percentage = Math.min((Number(value || 0) / safeMax) * 100, 100);
-  const circumference = 2 * Math.PI * 45;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+const APP_GOAL = Number(env.VITE_APP_GOAL || env.REACT_APP_APP_GOAL || 200);
+const RESUME_GOAL = Number(env.VITE_RESUME_GOAL || env.REACT_APP_RESUME_GOAL || 10);
+const API_BASE = String(env.VITE_API_BASE || env.REACT_APP_API_BASE || "");
 
-  const colorClasses = {
-    purple: {
-      stroke: "stroke-purple-500",
-      text: "text-purple-400",
-      bg: "bg-purple-500/10",
-    },
-    cyan: {
-      stroke: "stroke-cyan-500",
-      text: "text-cyan-400",
-      bg: "bg-cyan-500/10",
-    },
-    green: {
-      stroke: "stroke-green-500",
-      text: "text-green-400",
-      bg: "bg-green-500/10",
-    },
-  };
+/* ---------------------------------------
+   Small utilities
+---------------------------------------- */
+const cx = (...c) => c.filter(Boolean).join(" ");
 
-  const colors = colorClasses[color] || colorClasses.purple;
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--ds-bg))]";
 
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-32 h-32">
-        <svg className="w-32 h-32 transform -rotate-90">
-          <circle
-            cx="64"
-            cy="64"
-            r="45"
-            stroke="currentColor"
-            strokeWidth="8"
-            fill="none"
-            className="text-white/5"
-          />
-          <circle
-            cx="64"
-            cy="64"
-            r="45"
-            stroke="currentColor"
-            strokeWidth="8"
-            fill="none"
-            className={colors.stroke}
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 900ms ease-out" }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-3xl font-bold text-white">{value}</span>
-        </div>
-      </div>
-      <p className="text-sm text-white/60 mt-3">{label}</p>
-      <p className="text-xs text-white/30 mt-1">vs last week</p>
-    </div>
-  );
-};
-
-const GoalRing = ({ value = 0, goal = 100, label, color = "purple" }) => {
-  const v = Math.max(0, Number(value) || 0);
-  const g = Math.max(1, Number(goal) || 1);
-  const pct = Math.min((v / g) * 100, 100);
-
-  const circumference = 2 * Math.PI * 42;
-  const strokeDashoffset = circumference - (pct / 100) * circumference;
-
-  const colorClasses = {
-    purple: {
-      stroke: "stroke-purple-500",
-      badge: "bg-purple-500/10 text-purple-300",
-    },
-    cyan: {
-      stroke: "stroke-cyan-500",
-      badge: "bg-cyan-500/10 text-cyan-300",
-    },
-    green: {
-      stroke: "stroke-green-500",
-      badge: "bg-green-500/10 text-green-300",
-    },
-    amber: {
-      stroke: "stroke-amber-500",
-      badge: "bg-amber-500/10 text-amber-300",
-    },
-  };
-
-  const c = colorClasses[color] || colorClasses.purple;
-
-  return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-white/80">{label}</div>
-        <span className={`text-xs px-2 py-1 rounded-lg ${c.badge}`}>
-          {Math.round(pct)}%
-        </span>
-      </div>
-
-      <div className="mt-3 flex items-center gap-4">
-        <div className="relative w-24 h-24 shrink-0">
-          <svg className="w-24 h-24 transform -rotate-90">
-            <circle
-              cx="48"
-              cy="48"
-              r="42"
-              stroke="currentColor"
-              strokeWidth="8"
-              fill="none"
-              className="text-white/5"
-            />
-            <circle
-              cx="48"
-              cy="48"
-              r="42"
-              stroke="currentColor"
-              strokeWidth="8"
-              fill="none"
-              className={c.stroke}
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
-              style={{ transition: "stroke-dashoffset 900ms ease-out" }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-lg font-bold text-white">{v}</div>
-              <div className="text-[11px] text-white/35">/ {g}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-white/40">Progress</div>
-          <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
-            <div
-              className="h-2 rounded-full bg-white/20"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <div className="mt-2 text-xs text-white/35">
-            {g - v > 0 ? `${g - v} to go` : "Goal hit 🎉"}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------
-// Helpers (data only)
-// ---------------------------
-const apiFetch = async (path, options = {}) => {
-  const res = await fetch(path, {
+const apiFetch = async (path, options = {}, signal) => {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    signal,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -245,10 +108,8 @@ const timeAgo = (date) => {
   return `${yr} year${yr === 1 ? "" : "s"} ago`;
 };
 
-const startOfDay = (d) =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 const normalizeStatus = (s) => String(s ?? "").trim().toLowerCase();
-
 const titleCase = (s) => {
   const t = String(s ?? "").trim();
   if (!t) return "";
@@ -258,18 +119,11 @@ const titleCase = (s) => {
 const normalizeJobsList = (jobs) =>
   Array.isArray(jobs) ? jobs : jobs?.jobs || jobs?.items || jobs?.resources || [];
 
-const pickJobTitle = (job) =>
-  job?.job_title || job?.jobTitle || job?.title || job?.role || "Job";
-
-const pickCompany = (job) =>
-  job?.company || job?.companyName || job?.employer || "Company";
+const pickJobTitle = (job) => job?.job_title || job?.jobTitle || job?.title || job?.role || "Job";
+const pickCompany = (job) => job?.company || job?.companyName || job?.employer || "Company";
 
 const pickCreated = (job) =>
-  job?.created_date ||
-  job?.createdAt ||
-  job?.created_at ||
-  job?.created ||
-  job?.timestamp;
+  job?.created_date || job?.createdAt || job?.created_at || job?.created || job?.timestamp;
 
 const pickUpdated = (job) =>
   job?.status_updated_at ||
@@ -374,8 +228,7 @@ const normalizeRecentActivityFromDashboard = (dash) => {
 const computeThisWeekMetricsFromJobs = (jobs) => {
   const list = normalizeJobsList(jobs);
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const cutoff = todayStart - 6 * 24 * 60 * 60 * 1000;
+  const cutoff = startOfDay(now) - 6 * 24 * 60 * 60 * 1000;
 
   let apps = 0;
   let interviews = 0;
@@ -399,7 +252,6 @@ const computeThisWeekMetricsFromJobs = (jobs) => {
 };
 
 const buildLastNDaysSeries = (jobs, days = 7) => {
-  const list = normalizeJobsList(jobs);
   const now = new Date();
   const start = startOfDay(now) - (days - 1) * 24 * 60 * 60 * 1000;
 
@@ -409,13 +261,12 @@ const buildLastNDaysSeries = (jobs, days = 7) => {
     buckets.set(t, 0);
   }
 
+  const list = normalizeJobsList(jobs);
   for (const job of list) {
     const created = toDate(pickCreated(job));
     if (!created) continue;
     const key = startOfDay(created);
-    if (key >= start && buckets.has(key)) {
-      buckets.set(key, (buckets.get(key) || 0) + 1);
-    }
+    if (key >= start && buckets.has(key)) buckets.set(key, (buckets.get(key) || 0) + 1);
   }
 
   return Array.from(buckets.entries())
@@ -444,7 +295,6 @@ const countStatusesAllTime = (jobs) => {
     if (counts[st] != null) counts[st] += 1;
     else counts.other += 1;
   }
-
   return counts;
 };
 
@@ -460,11 +310,10 @@ const computeStreak = (dailySeries) => {
 };
 
 const buildMonthGrid = (year, monthIndex) => {
-  // Sunday-based week grid
   const first = new Date(year, monthIndex, 1);
   const last = new Date(year, monthIndex + 1, 0);
-  const start = new Date(year, monthIndex, 1 - first.getDay()); // start Sunday
-  const end = new Date(year, monthIndex, last.getDate() + (6 - last.getDay())); // end Saturday
+  const start = new Date(year, monthIndex, 1 - first.getDay());
+  const end = new Date(year, monthIndex, last.getDate() + (6 - last.getDay()));
 
   const cells = [];
   const cur = new Date(start);
@@ -479,11 +328,372 @@ const buildMonthGrid = (year, monthIndex) => {
   return cells;
 };
 
+/* ---------------------------------------
+   Inline “component system” (in-file)
+---------------------------------------- */
+function Card({ as: Comp = "section", className, children, ...props }) {
+  return (
+    <Comp
+      className={cx(
+        "min-w-0 rounded-[var(--ds-radius-card)] border border-white/10 bg-white/[0.04]",
+        "shadow-[var(--ds-shadow-card)]",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </Comp>
+  );
+}
+
+function CardHeader({ title, description, action, className }) {
+  return (
+    <div className={cx("flex items-start justify-between gap-4 p-6 pb-0", className)}>
+      <div className="min-w-0">
+        {title ? (
+          <h2 className="text-[length:var(--ds-h2)] font-semibold text-slate-100 leading-snug">
+            {title}
+          </h2>
+        ) : null}
+        {description ? (
+          <div className="mt-1 text-[length:var(--ds-body)] text-slate-400 leading-relaxed">
+            {description}
+          </div>
+        ) : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+function CardContent({ className, children }) {
+  return <div className={cx("p-6", className)}>{children}</div>;
+}
+
+function Badge({ variant = "default", className, children, ...props }) {
+  const styles = {
+    default: "bg-white/5 text-slate-200 border-white/10",
+    muted: "bg-white/5 text-slate-400 border-white/10",
+    success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+    info: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
+    warning: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+    purple: "bg-purple-500/10 text-purple-300 border-purple-500/20",
+  };
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[length:var(--ds-caption)] font-medium",
+        styles[variant] || styles.default,
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </span>
+  );
+}
+
+function PrimaryButton({ className, ...props }) {
+  return (
+    <Button
+      className={cx(
+        "rounded-[var(--ds-radius-control)] bg-[hsl(var(--ds-accent))] text-white",
+        "hover:bg-[hsl(var(--ds-accent))]/90 active:bg-[hsl(var(--ds-accent))]/85",
+        "shadow-sm shadow-black/30",
+        focusRing,
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+function SecondaryButton({ className, variant = "outline", ...props }) {
+  return (
+    <Button
+      variant={variant}
+      className={cx(
+        "rounded-[var(--ds-radius-control)] border-white/10 bg-white/[0.04] text-slate-100",
+        "hover:bg-white/[0.07] active:bg-white/[0.09]",
+        focusRing,
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+const ringColors = {
+  purple: "stroke-purple-500",
+  cyan: "stroke-cyan-500",
+  green: "stroke-emerald-500",
+  amber: "stroke-amber-500",
+};
+
+const ProgressRing = React.memo(function ProgressRing({
+  value = 0,
+  max = 100,
+  size = 92,
+  stroke = 10,
+  color = "purple",
+  label,
+  ariaLabel,
+}) {
+  const safeMax = Math.max(1, Number(max) || 1);
+  const v = Math.max(0, Number(value) || 0);
+  const pct = Math.min((v / safeMax) * 100, 100);
+
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (pct / 100) * circumference;
+
+  return (
+    <div role="group" aria-label={ariaLabel || (label ? `${label}: ${v}` : undefined)} className="flex flex-col items-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          className="block -rotate-90"
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          aria-hidden="true"
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={stroke}
+            fill="none"
+            className="text-white/7"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={stroke}
+            fill="none"
+            className={ringColors[color] || ringColors.purple}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            style={{ transition: "stroke-dashoffset 800ms ease" }}
+          />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center">
+          <div className="text-center leading-tight">
+            <div className="text-xl font-semibold text-slate-100">{v}</div>
+            <div className="text-[length:var(--ds-caption)] text-slate-500">this week</div>
+          </div>
+        </div>
+      </div>
+      {label ? (
+        <div className="mt-2 text-[length:var(--ds-body)] font-medium text-slate-200">
+          {label}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+function StatCard({ label, value, icon: Icon, hint, className }) {
+  return (
+    <Card
+      className={cx(
+        "p-4 hover:bg-white/[0.055] transition-colors",
+        className
+      )}
+      title={hint}
+      aria-label={`${label}: ${value}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[length:var(--ds-caption)] text-slate-400">{label}</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">{value}</div>
+        </div>
+        {Icon ? (
+          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-2">
+            <Icon className="h-4 w-4 text-slate-300" aria-hidden="true" />
+          </div>
+        ) : null}
+      </div>
+      {hint ? (
+        <div className="mt-2 text-[length:var(--ds-caption)] text-slate-500">{hint}</div>
+      ) : null}
+    </Card>
+  );
+}
+
+const CalendarDay = React.memo(function CalendarDay({
+  date,
+  inMonth,
+  count = 0,
+  isToday,
+  isFuture,
+}) {
+  const day = date.getDate();
+  const done = inMonth && !isFuture && count > 0;
+
+  const label = inMonth
+    ? `${date.toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })}: ${done ? `${count} job${count === 1 ? "" : "s"} added` : "No jobs added"}${
+        isToday ? " (Today)" : ""
+      }${isFuture ? " (Future)" : ""}`
+    : "";
+
+  return (
+    <div
+      role="gridcell"
+      aria-label={label}
+      aria-disabled={!inMonth || isFuture}
+      className={cx(
+        "h-14 rounded-xl border border-white/10 bg-white/[0.035] p-2",
+        "flex flex-col justify-between min-w-0 transition-colors",
+        inMonth ? "opacity-100" : "opacity-35",
+        isFuture ? "opacity-60" : "",
+        isToday ? "ring-1 ring-purple-500/35" : ""
+      )}
+      title={label}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-medium text-slate-200">{day}</div>
+
+        {inMonth ? (
+          done ? (
+            <Badge variant="success" className="px-2 py-0.5">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Done</span>
+            </Badge>
+          ) : (
+            <Badge variant="muted" className="px-2 py-0.5">
+              <span className="hidden sm:inline">—</span>
+            </Badge>
+          )
+        ) : (
+          <div className="h-5" />
+        )}
+      </div>
+
+      <div className="flex items-end justify-between">
+        <div className="text-[11px] text-slate-500 truncate">
+          {done ? `${count} job${count === 1 ? "" : "s"}` : ""}
+        </div>
+        {isToday ? (
+          <Badge variant="purple" className="px-2 py-0.5 text-[10px]">
+            today
+          </Badge>
+        ) : null}
+      </div>
+    </div>
+  );
+});
+
+function DashboardSkeleton() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="lg:col-span-7 space-y-6">
+        <Card className="p-6">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="mt-3 h-4 w-72" />
+          <div className="mt-4 grid grid-cols-7 gap-2">
+            {Array.from({ length: 28 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="mt-3 h-4 w-96" />
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+          </div>
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-6 w-52" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="lg:col-span-5 space-y-6">
+        <Card className="p-6">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="mt-4 h-24 rounded-2xl" />
+          <Skeleton className="mt-4 h-24 rounded-2xl" />
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-5 w-28" />
+          <div className="mt-4 grid grid-cols-3 gap-4">
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+          </div>
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-5 w-36" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-xl" />
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function ErrorState({ title = "Something went wrong", message, onRetry }) {
+  return (
+    <Card>
+      <CardHeader title={title} description={message} />
+      <CardContent className="pt-4">
+        {onRetry ? (
+          <PrimaryButton onClick={onRetry} aria-label="Retry loading dashboard">
+            Retry
+          </PrimaryButton>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    // Replace with your logging hook (Sentry/AppInsights/etc.)
+    // eslint-disable-next-line no-console
+    console.error("AppHome ErrorBoundary:", error, info);
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback || null;
+    return this.props.children;
+  }
+}
+
+/* ---------------------------------------
+   Page
+---------------------------------------- */
 export default function AppHome() {
   const navigate = useNavigate();
 
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
+  const [recentActivity, setRecentActivity] = useState([]);
   const [weekApps, setWeekApps] = useState(0);
   const [weekInterviews, setWeekInterviews] = useState(0);
   const [weekOffers, setWeekOffers] = useState(0);
@@ -491,7 +701,7 @@ export default function AppHome() {
   const [totalApps, setTotalApps] = useState(0);
   const [resumeCount, setResumeCount] = useState(0);
 
-  const [dailySeries, setDailySeries] = useState([]);
+  const [dailySeries, setDailySeries] = useState([]); // kept for streak (no chart shown)
   const [statusCounts, setStatusCounts] = useState({
     generated: 0,
     applied: 0,
@@ -501,36 +711,34 @@ export default function AppHome() {
     other: 0,
   });
 
-  // store normalized list for real-data UI panels (calendar + insights)
   const [jobsList, setJobsList] = useState([]);
 
-  const handleNewJob = () => {
+  const handleNewJob = useCallback(() => {
     navigate(createPageUrl("NewJob"));
-  };
+  }, [navigate]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadDashboard = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError("");
 
-    const load = async () => {
+    const controller = new AbortController();
+
+    try {
       const [dashRes, jobsRes, resumesRes] = await Promise.allSettled([
-        apiFetch("/api/dashboard", { method: "GET" }),
-        apiFetch("/api/jobs", { method: "GET" }),
-        apiFetch("/api/resume/list", { method: "GET" }),
+        apiFetch("/api/dashboard", { method: "GET" }, controller.signal),
+        apiFetch("/api/jobs", { method: "GET" }, controller.signal),
+        apiFetch("/api/resume/list", { method: "GET" }, controller.signal),
       ]);
-
-      if (cancelled) return;
 
       const dash = dashRes.status === "fulfilled" ? dashRes.value : null;
       const jobs = jobsRes.status === "fulfilled" ? jobsRes.value : null;
       const resumes = resumesRes.status === "fulfilled" ? resumesRes.value : null;
 
-      // --- Recent Activity ---
       const dashActivity = dash ? normalizeRecentActivityFromDashboard(dash) : [];
       if (dashActivity.length) setRecentActivity(dashActivity);
       else if (jobs) setRecentActivity(buildRecentActivityFromJobs(jobs));
       else setRecentActivity([]);
 
-      // --- Week Metrics ---
       const wk =
         dash?.thisWeek ||
         dash?.week ||
@@ -541,11 +749,7 @@ export default function AppHome() {
         null;
 
       const wkAppsRaw =
-        wk?.applications ??
-        wk?.apps ??
-        wk?.jobs ??
-        wk?.applicationsCount ??
-        wk?.totalApplications;
+        wk?.applications ?? wk?.apps ?? wk?.jobs ?? wk?.applicationsCount ?? wk?.totalApplications;
       const wkInterviewsRaw = wk?.interviews ?? wk?.interview ?? wk?.interviewsCount;
       const wkOffersRaw = wk?.offers ?? wk?.offer ?? wk?.offersCount;
 
@@ -565,18 +769,17 @@ export default function AppHome() {
         setWeekOffers(w.offers);
       }
 
-      // --- Totals + Charts (from jobs) ---
       if (jobs) {
         const list = normalizeJobsList(jobs);
         setJobsList(list);
         setTotalApps(list.length);
-        setDailySeries(buildLastNDaysSeries(jobs, 7));
+        setDailySeries(buildLastNDaysSeries(jobs, 7)); // streak only
         setStatusCounts(countStatusesAllTime(jobs));
       } else {
         setJobsList([]);
+        setTotalApps(0);
       }
 
-      // --- Resume count ---
       if (resumes) {
         const items =
           resumes?.items ||
@@ -585,33 +788,53 @@ export default function AppHome() {
           resumes?.files ||
           (Array.isArray(resumes) ? resumes : []);
         setResumeCount(Array.isArray(items) ? items.length : 0);
+      } else {
+        setResumeCount(0);
       }
-    };
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+      const allFailed =
+        dashRes.status === "rejected" && jobsRes.status === "rejected" && resumesRes.status === "rejected";
+
+      if (allFailed) {
+        const msg =
+          dashRes.reason?.message || jobsRes.reason?.message || resumesRes.reason?.message || "Failed to load dashboard.";
+        setLoadError(msg);
+      }
+    } catch (err) {
+      setLoadError(err?.message || "Failed to load dashboard.");
+    } finally {
+      setIsLoading(false);
+    }
+
+    return () => controller.abort();
   }, []);
 
-  const weekMax = useMemo(() => {
-    return Math.max(20, weekApps, weekInterviews, weekOffers);
-  }, [weekApps, weekInterviews, weekOffers]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!mounted) return;
+      await loadDashboard();
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [loadDashboard]);
 
-  const dailyMax = useMemo(() => {
-    const m = Math.max(1, ...(dailySeries || []).map((d) => d.value || 0));
-    return m;
-  }, [dailySeries]);
+  const weekMax = useMemo(() => Math.max(20, weekApps, weekInterviews, weekOffers), [
+    weekApps,
+    weekInterviews,
+    weekOffers,
+  ]);
+
+  const streak = useMemo(() => computeStreak(dailySeries), [dailySeries]);
 
   const topStatusRows = useMemo(() => {
     const entries = Object.entries(statusCounts || {});
-    const keep = entries
+    return entries
       .filter(([k]) => k !== "other")
-      .sort((a, b) => (b[1] || 0) - (a[1] || 0));
-    return keep.slice(0, 5);
+      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+      .slice(0, 5);
   }, [statusCounts]);
-
-  const streak = useMemo(() => computeStreak(dailySeries), [dailySeries]);
 
   const achievements = useMemo(() => {
     const hasApps = totalApps > 0;
@@ -620,41 +843,13 @@ export default function AppHome() {
     const firstOffer = (statusCounts?.offer || 0) > 0;
 
     const tiers = [
-      {
-        label: "First job added",
-        done: hasApps,
-        hint: "Add a job to start your pipeline.",
-      },
-      {
-        label: "First resume uploaded",
-        done: hasResume,
-        hint: "Upload a resume to generate docs faster.",
-      },
-      {
-        label: "10 applications",
-        done: totalApps >= 10,
-        hint: "Momentum beats intensity — keep it consistent.",
-      },
-      {
-        label: "25 applications",
-        done: totalApps >= 25,
-        hint: "Nice volume — keep your tracking clean.",
-      },
-      {
-        label: "First interview",
-        done: firstInterview,
-        hint: "Interviews come from follow-ups + volume.",
-      },
-      {
-        label: "First offer",
-        done: firstOffer,
-        hint: "Offers come from reps + tight targeting.",
-      },
-      {
-        label: "3-day streak",
-        done: streak >= 3,
-        hint: "Try 1 job/day — consistency wins.",
-      },
+      { label: "First job added", done: hasApps, hint: "Add a job to start your pipeline." },
+      { label: "First resume uploaded", done: hasResume, hint: "Upload a resume to generate docs faster." },
+      { label: "10 applications", done: totalApps >= 10, hint: "Momentum beats intensity — stay consistent." },
+      { label: "25 applications", done: totalApps >= 25, hint: "Nice volume — keep tracking clean." },
+      { label: "First interview", done: firstInterview, hint: "Follow-ups + targeting are your levers." },
+      { label: "First offer", done: firstOffer, hint: "Offers come from reps + iteration." },
+      { label: "3-day streak", done: streak >= 3, hint: "Try 1 job/day to keep momentum." },
     ];
 
     const notDone = tiers.filter((t) => !t.done);
@@ -664,35 +859,31 @@ export default function AppHome() {
 
   const tips = useMemo(() => {
     const t = [];
-
     if (weekApps <= 2) t.push("Aim for 3–5 adds/week to keep your pipeline warm.");
-    else t.push("Great weekly pace — keep it consistent, not spiky.");
+    else t.push("Great weekly pace — consistency beats spikes.");
 
     if ((statusCounts?.applied || 0) > 0 && (statusCounts?.interview || 0) === 0) {
-      t.push("Add a simple follow-up 48h after applying — it boosts replies.");
+      t.push("Follow up 48 hours after applying — it increases reply rates.");
     } else if ((statusCounts?.interview || 0) > 0) {
-      t.push("Track questions you missed + improve one answer per interview.");
+      t.push("Log missed questions and improve one answer per interview.");
     }
 
-    if (resumeCount === 0) t.push("Upload 1 strong baseline resume. Then clone per role type.");
-    else if (resumeCount < 3) t.push("Create 2–3 resume variants by role (Help Desk, DevOps, SWE).");
+    if (resumeCount === 0) t.push("Upload 1 baseline resume. Then clone per role type.");
+    else if (resumeCount < 3) t.push("Maintain 2–3 resume variants by role.");
 
-    t.push("Keep every job entry clean: title, company, link, and status date.");
-
+    t.push("Keep every job entry complete: title, company, link, and latest status date.");
     return t.slice(0, 4);
   }, [resumeCount, statusCounts, weekApps]);
 
   const checklist = useMemo(() => {
-    const items = [
+    return [
       { label: "Add 1–3 jobs today", done: streak > 0 },
       { label: "Generate docs for 1 job", done: (statusCounts?.generated || 0) > 0 },
       { label: "Follow up on 2 applications", done: weekApps > 0 },
       { label: "Upload / update a resume", done: resumeCount > 0 },
     ];
-    return items.slice(0, 4);
   }, [resumeCount, statusCounts, streak, weekApps]);
 
-  // --- Calendar + bottom insights (real data derived from jobsList) ---
   const jobAddsByDay = useMemo(() => {
     const m = new Map();
     for (const job of jobsList || []) {
@@ -725,52 +916,8 @@ export default function AppHome() {
       }
     }
 
-    return {
-      year,
-      monthIndex,
-      monthName,
-      cells,
-      todayKey,
-      activeDays,
-      jobsThisMonth,
-    };
+    return { monthName, cells, todayKey, activeDays, jobsThisMonth };
   }, [jobAddsByDay]);
-
-  const last30 = useMemo(() => {
-    const now = new Date();
-    const cutoff = startOfDay(now) - 29 * 24 * 60 * 60 * 1000;
-    let adds = 0;
-    const uniqueDays = new Set();
-    const dayCounts = new Map();
-
-    for (const job of jobsList || []) {
-      const created = toDate(pickCreated(job));
-      if (!created) continue;
-      const k = startOfDay(created);
-      if (k < cutoff) continue;
-      adds += 1;
-      uniqueDays.add(k);
-      dayCounts.set(k, (dayCounts.get(k) || 0) + 1);
-    }
-
-    let bestDayTs = null;
-    let bestDayCount = 0;
-    for (const [k, c] of dayCounts.entries()) {
-      if (c > bestDayCount) {
-        bestDayCount = c;
-        bestDayTs = k;
-      }
-    }
-
-    const bestDayLabel = bestDayTs
-      ? new Date(bestDayTs).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-      : "—";
-
-    const activeDays = uniqueDays.size;
-    const avg = activeDays ? (adds / activeDays).toFixed(1) : "0.0";
-
-    return { adds, activeDays, avg, bestDayLabel, bestDayCount };
-  }, [jobsList]);
 
   const conversion = useMemo(() => {
     const applied = Number(statusCounts?.applied || 0);
@@ -781,14 +928,7 @@ export default function AppHome() {
     const offerFromInterview = interviews ? Math.round((offers / interviews) * 100) : 0;
     const offerFromApplied = applied ? Math.round((offers / applied) * 100) : 0;
 
-    return {
-      applied,
-      interviews,
-      offers,
-      interviewRate,
-      offerFromInterview,
-      offerFromApplied,
-    };
+    return { applied, interviews, offers, interviewRate, offerFromInterview, offerFromApplied };
   }, [statusCounts]);
 
   const topCompanies = useMemo(() => {
@@ -798,684 +938,543 @@ export default function AppHome() {
       if (!c) continue;
       map.set(c, (map.get(c) || 0) + 1);
     }
-    const arr = Array.from(map.entries())
+    const rows = Array.from(map.entries())
       .sort((a, b) => (b[1] || 0) - (a[1] || 0))
       .slice(0, 5)
       .map(([company, count]) => ({ company, count }));
 
-    const max = Math.max(1, ...arr.map((x) => x.count || 0));
-    return { rows: arr, max };
+    const max = Math.max(1, ...rows.map((x) => x.count || 0));
+    return { rows, max };
   }, [jobsList]);
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+    <div
+      className="min-h-screen bg-[hsl(var(--ds-bg))] text-slate-100"
+      style={{
+        "--ds-bg": "240 10% 4%",
+        "--ds-surface": "240 10% 8%",
+        "--ds-border": "240 10% 18%",
+        "--ds-fg": "0 0% 98%",
+        "--ds-muted": "240 6% 72%",
+        "--ds-muted-2": "240 5% 60%",
+        "--ds-accent": "267 84% 64%",
+        "--ds-accent-2": "198 92% 56%",
+        "--ds-success": "142 71% 45%",
+        "--ds-warning": "38 92% 50%",
+        "--ds-radius-card": "16px",
+        "--ds-radius-control": "12px",
+        "--ds-shadow-card": "0 1px 0 rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.35)",
+        "--ds-h1": "24px",
+        "--ds-h1-lg": "30px",
+        "--ds-h2": "16px",
+        "--ds-h3": "14px",
+        "--ds-body": "14px",
+        "--ds-caption": "12px",
+      }}
+    >
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-black"
+      >
+        Skip to content
+      </a>
+
       <AppNav currentPage="AppHome" />
 
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.3 }}
-        className="max-w-7xl mx-auto px-4 sm:px-6 py-8"
+      <ErrorBoundary
+        fallback={
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+            <ErrorState
+              title="Dashboard crashed"
+              message="A UI error occurred. Try refreshing."
+              onRetry={() => window.location.reload()}
+            />
+          </div>
+        }
       >
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-            <p className="text-white/35 mt-1 text-sm">
-              All-time:{" "}
-              <span className="text-white/70 font-semibold">{totalApps}</span>{" "}
-              applications •{" "}
-              <span className="text-white/70 font-semibold">{resumeCount}</span>{" "}
-              resumes
-            </p>
+        <motion.main
+          id="main"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="max-w-7xl mx-auto px-4 sm:px-6 py-8"
+        >
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+            <div className="min-w-0">
+              <h1 className="text-[length:var(--ds-h1)] sm:text-[length:var(--ds-h1-lg)] font-semibold tracking-tight text-slate-100">
+                Dashboard
+              </h1>
+              <p className="mt-1 text-[length:var(--ds-body)] text-slate-400">
+                All-time:{" "}
+                <span className="text-slate-200 font-semibold">{totalApps}</span>{" "}
+                applications •{" "}
+                <span className="text-slate-200 font-semibold">{resumeCount}</span>{" "}
+                resumes
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <PrimaryButton onClick={handleNewJob} aria-label="Create a new job">
+                <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+                New Job
+              </PrimaryButton>
+
+              <SecondaryButton
+                onClick={() => navigate(createPageUrl("Analytics"))}
+                aria-label="Open analytics"
+              >
+                <BarChart3 className="w-4 h-4 mr-2" aria-hidden="true" />
+                Analytics
+              </SecondaryButton>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleNewJob}
-              className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Job
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => navigate(createPageUrl("Analytics"))}
-              className="rounded-xl border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
-            </Button>
-          </div>
-        </div>
-
-        {/* MAIN GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* LEFT COLUMN */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Calendar ABOVE New Job */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-white/50" />
-                  <div className="text-sm font-semibold text-white/75">
-                    {monthMeta.monthName} activity
-                  </div>
-                </div>
-                <div className="text-xs text-white/35">
-                  <span className="text-white/70 font-semibold">
-                    {monthMeta.activeDays}
-                  </span>{" "}
-                  active days •{" "}
-                  <span className="text-white/70 font-semibold">
-                    {monthMeta.jobsThisMonth}
-                  </span>{" "}
-                  jobs added
-                </div>
-              </div>
-
-              {/* weekday header */}
-              <div className="grid grid-cols-7 gap-2 text-[11px] text-white/30 mb-2">
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                  <div key={d} className="text-center">
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-2">
-                {monthMeta.cells.map((cell) => {
-                  const k = startOfDay(cell.date);
-                  const count = jobAddsByDay.get(k) || 0;
-                  const isFuture = k > monthMeta.todayKey;
-                  const isToday = k === monthMeta.todayKey;
-
-                  const base =
-                    "rounded-xl border border-white/10 bg-white/5 p-2 h-[54px] flex flex-col justify-between";
-                  const muted = !cell.inMonth ? "opacity-35" : "";
-                  const future = isFuture ? "opacity-60" : "";
-                  const todayRing = isToday ? "ring-1 ring-purple-500/35" : "";
-
-                  const done = count > 0 && cell.inMonth && !isFuture;
-
-                  return (
-                    <div
-                      key={cell.key}
-                      className={`${base} ${muted} ${future} ${todayRing}`}
-                      title={
-                        cell.inMonth
-                          ? done
-                            ? `${count} job${count === 1 ? "" : "s"} added`
-                            : "No job added"
-                          : ""
+          {isLoading ? (
+            <DashboardSkeleton />
+          ) : loadError ? (
+            <ErrorState title="Couldn’t load dashboard" message={loadError} onRetry={loadDashboard} />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* LEFT */}
+                <div className="lg:col-span-7 space-y-6">
+                  {/* Calendar */}
+                  <Card aria-label="Activity calendar">
+                    <CardHeader
+                      title={`${monthMeta.monthName} activity`}
+                      description={
+                        <span className="text-slate-400">
+                          <span className="text-slate-200 font-semibold">{monthMeta.activeDays}</span>{" "}
+                          active days •{" "}
+                          <span className="text-slate-200 font-semibold">{monthMeta.jobsThisMonth}</span>{" "}
+                          jobs added
+                        </span>
                       }
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="text-xs text-white/70">
-                          {cell.date.getDate()}
-                        </div>
-
-                        {cell.inMonth ? (
-                          done ? (
-                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-green-500/10 text-green-300 text-[11px]">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Done</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 text-white/35 text-[11px]">
-                              <Square className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">—</span>
-                            </div>
-                          )
-                        ) : (
-                          <div className="h-6" />
-                        )}
-                      </div>
-
-                      <div className="flex items-end justify-between">
-                        <div className="text-[11px] text-white/35">
-                          {done ? `${count} job${count === 1 ? "" : "s"}` : ""}
-                        </div>
-                        {isToday && (
-                          <div className="text-[10px] px-2 py-1 rounded-lg bg-purple-500/10 text-purple-300">
-                            today
+                      action={<CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" />}
+                    />
+                    <CardContent className="pt-5">
+                      <div className="grid grid-cols-7 gap-2 text-[11px] text-slate-500 mb-2">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                          <div key={d} className="text-center">
+                            {d}
                           </div>
-                        )}
+                        ))}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
 
-              <div className="mt-4 text-xs text-white/35">
-                Tip: keep a streak by adding at least{" "}
-                <span className="text-white/70 font-semibold">1 job/day</span>.
-              </div>
-            </div>
+                      <div role="grid" aria-label="Monthly activity grid" className="grid grid-cols-7 gap-2">
+                        {monthMeta.cells.map((cell) => {
+                          const k = startOfDay(cell.date);
+                          const count = jobAddsByDay.get(k) || 0;
+                          const isFuture = k > monthMeta.todayKey;
+                          const isToday = k === monthMeta.todayKey;
 
-            {/* BIGGER New Job Hero */}
-            <button
-              onClick={handleNewJob}
-              className="relative w-full rounded-[28px] bg-gradient-to-br from-purple-600/25 to-purple-600/5 border-2 border-purple-500/35 hover:border-purple-500/55 hover:shadow-2xl hover:shadow-purple-500/25 hover:-translate-y-1 transition-all group overflow-hidden"
-            >
-              <div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer"
-                style={{ backgroundSize: "200% 100%" }}
-              />
-              <div className="relative flex flex-col md:flex-row items-center justify-between gap-10 p-12 sm:p-14 md:p-16 min-h-[240px]">
-                <div className="flex items-center gap-6 w-full">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xl shadow-purple-500/40">
-                    <Plus className="w-12 h-12 sm:w-14 sm:h-14 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <h3 className="text-3xl sm:text-4xl font-extrabold text-white mb-2">
-                      New Job
-                    </h3>
-                    <p className="text-white/50 text-sm sm:text-base max-w-xl">
-                      Add a job, then generate tailored documents and track status changes.
-                    </p>
-
-                    <div className="mt-5 flex flex-wrap items-center gap-2">
-                      <span className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white/60">
-                        Faster pipeline
-                      </span>
-                      <span className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white/60">
-                        Clean tracking
-                      </span>
-                      <span className="text-xs px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white/60">
-                        Better follow-ups
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="w-full md:w-auto flex md:flex-col items-center md:items-end gap-3">
-                  <div className="grid grid-cols-3 md:grid-cols-1 gap-3 w-full md:w-[180px]">
-                    <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-                      <div className="text-xs text-white/35">This week</div>
-                      <div className="text-xl font-bold text-white">{weekApps} apps</div>
-                    </div>
-                    <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-                      <div className="text-xs text-white/35">Streak</div>
-                      <div className="text-xl font-bold text-white">{streak}d</div>
-                    </div>
-                    <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-                      <div className="text-xs text-white/35">Offers</div>
-                      <div className="text-xl font-bold text-white">{weekOffers}</div>
-                    </div>
-                  </div>
-
-                  <div className="hidden md:flex items-center gap-2 text-xs text-white/40 mt-1">
-                    <span className="px-2 py-1 rounded-lg bg-purple-500/10 text-purple-200">
-                      click to add
-                    </span>
-                    <ArrowUpRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
-            </button>
-
-            {/* Activity Graph + Breakdown */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-purple-400" />
-                  <h2 className="text-sm font-medium text-white/60">
-                    Last 7 days (applications added)
-                  </h2>
-                </div>
-                {/* removed "from Cosmos (jobs.createdAt)" */}
-              </div>
-
-              <div className="grid grid-cols-7 gap-3 items-end h-28">
-                {(dailySeries.length
-                  ? dailySeries
-                  : Array.from({ length: 7 }).map((_, i) => ({
-                      label: "—",
-                      value: 0,
-                      ts: i,
-                    }))
-                ).map((d, i) => {
-                  const h = Math.round(((d.value || 0) / dailyMax) * 100);
-                  return (
-                    <div
-                      key={d.ts || i}
-                      className="flex flex-col items-center gap-2"
-                    >
-                      <div className="w-full h-20 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-end">
-                        <div
-                          className="w-full bg-white/20"
-                          style={{ height: `${Math.max(6, h)}%` }}
-                        />
-                      </div>
-                      <div className="text-[11px] text-white/35">
-                        {d.label || "—"}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Target className="w-4 h-4 text-cyan-400" />
-                    <div className="text-sm font-semibold text-white/75">
-                      Status breakdown
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {topStatusRows.map(([k, v]) => {
-                      const pct = totalApps
-                        ? Math.round(((v || 0) / totalApps) * 100)
-                        : 0;
-                      return (
-                        <div key={k} className="flex items-center gap-3">
-                          <div className="w-20 text-xs text-white/45 capitalize">
-                            {k}
-                          </div>
-                          <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
-                            <div
-                              className="h-2 bg-white/20 rounded-full"
-                              style={{ width: `${pct}%` }}
+                          return (
+                            <CalendarDay
+                              key={cell.key}
+                              date={cell.date}
+                              inMonth={cell.inMonth}
+                              count={count}
+                              isFuture={isFuture}
+                              isToday={isToday}
                             />
+                          );
+                        })}
+                      </div>
+
+                      <p className="mt-4 text-[length:var(--ds-caption)] text-slate-500">
+                        Tip: keep momentum by adding{" "}
+                        <span className="text-slate-200 font-medium">1 job/day</span>.
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* New Job CTA (polished, subtle) */}
+                  <Card
+                    aria-label="New Job call to action"
+                    className="border-purple-500/20 bg-gradient-to-b from-purple-500/10 to-white/[0.03]"
+                  >
+                    <CardContent className="p-6 sm:p-8">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                        <div className="min-w-0">
+                          <h2 className="text-xl sm:text-2xl font-semibold text-slate-100">
+                            Add a job to your pipeline
+                          </h2>
+                          <p className="mt-2 text-[length:var(--ds-body)] text-slate-400 max-w-xl">
+                            Track statuses, generate documents, and keep your outreach consistent — all in one place.
+                          </p>
+
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <Badge variant="purple">Faster workflow</Badge>
+                            <Badge variant="info">Cleaner tracking</Badge>
+                            <Badge variant="success">Better follow-ups</Badge>
                           </div>
-                          <div className="w-10 text-right text-xs text-white/45">
-                            {v}
+
+                          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                            <PrimaryButton onClick={handleNewJob} aria-label="Add a new job">
+                              <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+                              Add New Job
+                            </PrimaryButton>
+                            <SecondaryButton
+                              onClick={() => navigate(createPageUrl("Applications"))}
+                              aria-label="Go to applications"
+                            >
+                              <TrendingUp className="w-4 h-4 mr-2" aria-hidden="true" />
+                              View Applications
+                            </SecondaryButton>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
 
-                <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap className="w-4 h-4 text-green-400" />
-                    <div className="text-sm font-semibold text-white/75">
-                      Momentum
-                    </div>
-                  </div>
-                  <div className="text-xs text-white/40">
-                    Keep the graph “warm” by adding 1–3 jobs/day. It makes your
-                    pipeline predictable (and your stats climb faster).
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-3">
-                    <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
-                      <div className="text-[11px] text-white/35">This week</div>
-                      <div className="text-lg font-bold text-white">{weekApps}</div>
-                    </div>
-                    <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
-                      <div className="text-[11px] text-white/35">Interviews</div>
-                      <div className="text-lg font-bold text-white">
-                        {weekInterviews}
+                        <div className="grid grid-cols-3 md:grid-cols-1 gap-3 w-full md:w-[220px]">
+                          <StatCard label="This week" value={`${weekApps}`} icon={Clock} hint="Jobs added in last 7 days" />
+                          <StatCard label="Streak" value={`${streak}d`} icon={Zap} hint="Days with at least 1 job added" />
+                          <StatCard label="Offers" value={`${weekOffers}`} icon={Target} hint="Offers updated in last 7 days" />
+                        </div>
                       </div>
-                    </div>
-                    <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
-                      <div className="text-[11px] text-white/35">Offers</div>
-                      <div className="text-lg font-bold text-white">{weekOffers}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+                    </CardContent>
+                  </Card>
 
-            {/* Recent Activity */}
-            <div className="glass-card rounded-2xl p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Recent Activity</h2>
-                <Clock className="w-5 h-5 text-white/40" />
-              </div>
+                  {/* Insights (NOTE: Removed the entire “Last 7 days (applications added)” chart/labels) */}
+                  <Card aria-label="Insights">
+                    <CardHeader title="Insights" description="Status mix and weekly momentum at a glance." />
+                    <CardContent className="pt-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Card className="p-4" aria-label="Status breakdown">
+                          <div className="flex items-center gap-2">
+                            <Target className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+                            <div className="text-[length:var(--ds-h3)] font-semibold text-slate-200">
+                              Status breakdown
+                            </div>
+                          </div>
 
-              {recentActivity.length > 0 ? (
-                <div className="space-y-4">
-                  {recentActivity.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="flex items-start gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
-                    >
-                      <div
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          activity.type === "job_added"
-                            ? "bg-purple-500/10"
-                            : activity.type === "doc_generated"
-                            ? "bg-cyan-500/10"
-                            : "bg-green-500/10"
-                        }`}
-                      >
-                        {activity.type === "job_added" && (
-                          <Plus className="w-5 h-5 text-purple-400" />
-                        )}
-                        {activity.type === "doc_generated" && (
-                          <FileText className="w-5 h-5 text-cyan-400" />
-                        )}
-                        {activity.type === "status_changed" && (
-                          <TrendingUp className="w-5 h-5 text-green-400" />
-                        )}
+                          <div className="mt-4 space-y-3">
+                            {topStatusRows.map(([k, v]) => {
+                              const pct = totalApps ? Math.round(((v || 0) / totalApps) * 100) : 0;
+                              return (
+                                <div key={k} className="flex items-center gap-3">
+                                  <div className="w-24 text-[length:var(--ds-caption)] text-slate-400 capitalize">
+                                    {k}
+                                  </div>
+                                  <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
+                                    <div
+                                      className="h-2 rounded-full bg-white/20"
+                                      style={{ width: `${pct}%` }}
+                                      aria-hidden="true"
+                                    />
+                                  </div>
+                                  <div className="w-10 text-right text-[length:var(--ds-caption)] text-slate-300">
+                                    {v}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </Card>
+
+                        <Card className="p-4" aria-label="This week metrics">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-slate-300" aria-hidden="true" />
+                            <div className="text-[length:var(--ds-h3)] font-semibold text-slate-200">
+                              This week
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-3 gap-3">
+                            <ProgressRing value={weekApps} max={weekMax} color="purple" label="Apps" ariaLabel="Applications this week" />
+                            <ProgressRing value={weekInterviews} max={weekMax} color="cyan" label="Interviews" ariaLabel="Interviews this week" />
+                            <ProgressRing value={weekOffers} max={weekMax} color="green" label="Offers" ariaLabel="Offers this week" />
+                          </div>
+
+                          <p className="mt-4 text-[length:var(--ds-caption)] text-slate-500">
+                            Tip: consistency drives replies — keep adds steady and follow up regularly.
+                          </p>
+                        </Card>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-white/80">{activity.text}</p>
-                        <p className="text-xs text-white/40 mt-1">{activity.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <p className="text-white/40 mb-4">No activity yet</p>
-                  <Button
-                    onClick={handleNewJob}
-                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Your First Job
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
+                    </CardContent>
+                  </Card>
 
-          {/* RIGHT COLUMN */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Goals */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-purple-400" />
-                  <h2 className="text-sm font-medium text-white/60">Goals</h2>
-                </div>
-                <span className="text-xs text-white/30">custom</span>
-              </div>
+                  {/* Recent Activity */}
+                  <Card aria-label="Recent activity">
+                    <CardHeader title="Recent activity" action={<Clock className="h-4 w-4 text-slate-400" aria-hidden="true" />} />
+                    <CardContent className="pt-5">
+                      {recentActivity.length > 0 ? (
+                        <ul className="space-y-3" role="list">
+                          {recentActivity.map((activity) => (
+                            <li
+                              key={activity.id}
+                              className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-4 hover:bg-white/[0.06] transition-colors"
+                            >
+                              <div
+                                className={cx(
+                                  "mt-0.5 grid place-items-center h-9 w-9 rounded-xl border border-white/10",
+                                  activity.type === "job_added"
+                                    ? "bg-purple-500/10"
+                                    : activity.type === "doc_generated"
+                                    ? "bg-cyan-500/10"
+                                    : "bg-emerald-500/10"
+                                )}
+                                aria-hidden="true"
+                              >
+                                {activity.type === "job_added" && <Plus className="h-4 w-4 text-purple-300" />}
+                                {activity.type === "doc_generated" && <FileText className="h-4 w-4 text-cyan-300" />}
+                                {activity.type === "status_changed" && <TrendingUp className="h-4 w-4 text-emerald-300" />}
+                              </div>
 
-              <div className="space-y-4">
-                <GoalProgress applicationCount={totalApps} />
-                <GoalRing
-                  value={totalApps}
-                  goal={APP_GOAL}
-                  label={`Applications goal (${APP_GOAL})`}
-                  color="purple"
-                />
-                <GoalRing
-                  value={resumeCount}
-                  goal={RESUME_GOAL}
-                  label={`Resumes goal (${RESUME_GOAL})`}
-                  color="cyan"
-                />
-              </div>
-            </div>
-
-            {/* This Week */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-white/50" />
-                  <h2 className="text-sm font-medium text-white/60">This Week</h2>
-                </div>
-                <span className="text-xs text-white/30">last 7 days</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-6">
-                <CircularMetric
-                  value={weekApps}
-                  label="Apps"
-                  color="purple"
-                  max={weekMax}
-                />
-                <CircularMetric
-                  value={weekInterviews}
-                  label="Interviews"
-                  color="cyan"
-                  max={weekMax}
-                />
-                <CircularMetric
-                  value={weekOffers}
-                  label="Offers"
-                  color="green"
-                  max={weekMax}
-                />
-              </div>
-            </div>
-
-            {/* Achievements */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-amber-300" />
-                  <h2 className="text-sm font-medium text-white/60">Achievements</h2>
-                </div>
-                <span className="text-xs text-white/30">progress</span>
-              </div>
-
-              <div className="space-y-3">
-                {achievements.map((a) => (
-                  <div
-                    key={a.label}
-                    className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10"
-                  >
-                    <div className="mt-0.5">
-                      {a.done ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[length:var(--ds-body)] text-slate-200">{activity.text}</p>
+                                <p className="mt-1 text-[length:var(--ds-caption)] text-slate-500">{activity.time}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
                       ) : (
-                        <Sparkles className="w-4 h-4 text-purple-300" />
+                        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-center">
+                          <p className="text-slate-400">No activity yet.</p>
+                          <div className="mt-4 flex justify-center">
+                            <PrimaryButton onClick={handleNewJob} aria-label="Add your first job">
+                              <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+                              Add your first job
+                            </PrimaryButton>
+                          </div>
+                        </div>
                       )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-white/80">{a.label}</div>
-                      {!a.done && (
-                        <div className="text-xs text-white/35 mt-0.5">{a.hint}</div>
-                      )}
-                    </div>
-                    <div
-                      className={`text-[11px] px-2 py-1 rounded-lg ${
-                        a.done
-                          ? "bg-green-500/10 text-green-300"
-                          : "bg-white/5 text-white/45"
-                      }`}
-                    >
-                      {a.done ? "done" : "next"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Tips */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4 text-cyan-300" />
-                  <h2 className="text-sm font-medium text-white/60">Quick Tips</h2>
+                    </CardContent>
+                  </Card>
                 </div>
-                <span className="text-xs text-white/30">today</span>
-              </div>
 
-              <div className="space-y-3">
-                {tips.map((t, i) => (
-                  <div
-                    key={`${i}-${t}`}
-                    className="p-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/75"
-                  >
-                    {t}
-                  </div>
-                ))}
-              </div>
-            </div>
+                {/* RIGHT */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Goals */}
+                  <Card aria-label="Goals">
+                    <CardHeader title="Goals" description="Track progress across applications and resumes." />
+                    <CardContent className="pt-5 space-y-4">
+                      {/* Keep your existing donut chart component */}
+                      <Card className="p-4">
+                        <div className="text-[length:var(--ds-h3)] font-semibold text-slate-200 mb-3">
+                          Goal progress
+                        </div>
+                        <GoalProgress applicationCount={totalApps} />
+                      </Card>
 
-            {/* Next Actions */}
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <ListChecks className="w-4 h-4 text-purple-300" />
-                  <h2 className="text-sm font-medium text-white/60">Next Actions</h2>
-                </div>
-                <span className="text-xs text-white/30">checklist</span>
-              </div>
+                      {/* Applications goal */}
+                      <Card className="p-4" aria-label="Applications goal progress">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="text-[length:var(--ds-caption)] text-slate-400">Applications goal</div>
+                            <div className="mt-1 text-[length:var(--ds-h3)] font-semibold text-slate-200">
+                              {totalApps} / {APP_GOAL}
+                            </div>
+                            <div className="mt-3 h-2 rounded-full bg-white/5 overflow-hidden">
+                              <div
+                                className="h-2 rounded-full bg-purple-500/40"
+                                style={{
+                                  width: `${Math.min((totalApps / Math.max(1, APP_GOAL)) * 100, 100)}%`,
+                                }}
+                                aria-hidden="true"
+                              />
+                            </div>
+                            <div className="mt-2 text-[length:var(--ds-caption)] text-slate-500">
+                              {Math.max(APP_GOAL - totalApps, 0)} to go
+                            </div>
+                          </div>
 
-              <div className="space-y-2">
-                {checklist.map((c) => (
-                  <div
-                    key={c.label}
-                    className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
-                  >
-                    <div className="text-sm text-white/80">{c.label}</div>
-                    <span
-                      className={`text-[11px] px-2 py-1 rounded-lg ${
-                        c.done
-                          ? "bg-green-500/10 text-green-300"
-                          : "bg-white/5 text-white/45"
-                      }`}
-                    >
-                      {c.done ? "done" : "todo"}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                          <Badge variant="purple">
+                            {Math.round(Math.min((totalApps / Math.max(1, APP_GOAL)) * 100, 100))}%
+                          </Badge>
+                        </div>
+                      </Card>
 
-              <div className="mt-4 flex items-center gap-2">
-                <Button
-                  onClick={() => navigate(createPageUrl("Applications"))}
-                  variant="outline"
-                  className="flex-1 rounded-xl border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
-                >
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Applications
-                </Button>
-                <Button
-                  onClick={() => navigate(createPageUrl("Resumes"))}
-                  variant="outline"
-                  className="flex-1 rounded-xl border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Resumes
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+                      {/* Resumes goal */}
+                      <Card className="p-4" aria-label="Resumes goal progress">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="text-[length:var(--ds-caption)] text-slate-400">Resumes goal</div>
+                            <div className="mt-1 text-[length:var(--ds-h3)] font-semibold text-slate-200">
+                              {resumeCount} / {RESUME_GOAL}
+                            </div>
+                            <div className="mt-3 h-2 rounded-full bg-white/5 overflow-hidden">
+                              <div
+                                className="h-2 rounded-full bg-cyan-500/40"
+                                style={{
+                                  width: `${Math.min((resumeCount / Math.max(1, RESUME_GOAL)) * 100, 100)}%`,
+                                }}
+                                aria-hidden="true"
+                              />
+                            </div>
+                            <div className="mt-2 text-[length:var(--ds-caption)] text-slate-500">
+                              {Math.max(RESUME_GOAL - resumeCount, 0)} to go
+                            </div>
+                          </div>
 
-        {/* BOTTOM: more real-data filler */}
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Pipeline Conversion */}
-          <div className="lg:col-span-4 glass-card rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-purple-300" />
-                <h3 className="text-sm font-medium text-white/70">Pipeline conversion</h3>
-              </div>
-              <span className="text-xs text-white/30">all-time</span>
-            </div>
+                          <Badge variant="info">
+                            {Math.round(Math.min((resumeCount / Math.max(1, RESUME_GOAL)) * 100, 100))}%
+                          </Badge>
+                        </div>
+                      </Card>
+                    </CardContent>
+                  </Card>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Applied</div>
-                <div className="text-2xl font-bold text-white mt-1">{conversion.applied}</div>
-              </div>
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Interviews</div>
-                <div className="text-2xl font-bold text-white mt-1">{conversion.interviews}</div>
-              </div>
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Offers</div>
-                <div className="text-2xl font-bold text-white mt-1">{conversion.offers}</div>
-              </div>
-            </div>
+                  {/* Achievements */}
+                  <Card aria-label="Achievements">
+                    <CardHeader title="Achievements" description="Next milestones to unlock." action={<Trophy className="h-4 w-4 text-amber-300" aria-hidden="true" />} />
+                    <CardContent className="pt-5 space-y-3">
+                      {achievements.map((a) => (
+                        <div
+                          key={a.label}
+                          className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-4"
+                        >
+                          <div className="mt-0.5" aria-hidden="true">
+                            {a.done ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                            ) : (
+                              <Sparkles className="h-4 w-4 text-purple-300" />
+                            )}
+                          </div>
 
-            <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <div className="text-white/60">Interview rate (interviews / applied)</div>
-                <div className="text-white/85 font-semibold">{conversion.interviewRate}%</div>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="text-white/60">Offer rate (offers / interviews)</div>
-                <div className="text-white/85 font-semibold">{conversion.offerFromInterview}%</div>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="text-white/60">Offer rate (offers / applied)</div>
-                <div className="text-white/85 font-semibold">{conversion.offerFromApplied}%</div>
-              </div>
-            </div>
-          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[length:var(--ds-body)] text-slate-200">{a.label}</div>
+                            {!a.done ? (
+                              <div className="mt-1 text-[length:var(--ds-caption)] text-slate-500">{a.hint}</div>
+                            ) : null}
+                          </div>
 
-          {/* Last 30 Days Summary */}
-          <div className="lg:col-span-4 glass-card rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-white/50" />
-                <h3 className="text-sm font-medium text-white/70">Last 30 days</h3>
-              </div>
-              <span className="text-xs text-white/30">real totals</span>
-            </div>
+                          <Badge variant={a.done ? "success" : "muted"}>{a.done ? "done" : "next"}</Badge>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Jobs added</div>
-                <div className="text-2xl font-bold text-white mt-1">{last30.adds}</div>
-              </div>
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Active days</div>
-                <div className="text-2xl font-bold text-white mt-1">{last30.activeDays}</div>
-              </div>
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs text-white/35">Avg / active day</div>
-                <div className="text-2xl font-bold text-white mt-1">{last30.avg}</div>
-              </div>
-            </div>
+                  {/* Quick Tips */}
+                  <Card aria-label="Quick tips">
+                    <CardHeader title="Quick tips" description="Small actions that move results." action={<Lightbulb className="h-4 w-4 text-cyan-300" aria-hidden="true" />} />
+                    <CardContent className="pt-5">
+                      <ul className="space-y-3" role="list">
+                        {tips.map((t, i) => (
+                          <li
+                            key={`${i}-${t}`}
+                            className="rounded-xl border border-white/10 bg-white/[0.035] p-4 text-[length:var(--ds-body)] text-slate-200"
+                          >
+                            {t}
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
 
-            <div className="mt-5 rounded-2xl bg-white/5 border border-white/10 p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-white/70">Best day</div>
-                <div className="text-sm text-white/85 font-semibold">
-                  {last30.bestDayLabel} • {last30.bestDayCount || 0} job
-                  {(last30.bestDayCount || 0) === 1 ? "" : "s"}
+                  {/* Next Actions */}
+                  <Card aria-label="Next actions">
+                    <CardHeader title="Next actions" description="Today’s checklist." action={<ListChecks className="h-4 w-4 text-purple-300" aria-hidden="true" />} />
+                    <CardContent className="pt-5">
+                      <div className="space-y-2">
+                        {checklist.map((c) => (
+                          <div
+                            key={c.label}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-4"
+                          >
+                            <div className="text-[length:var(--ds-body)] text-slate-200">{c.label}</div>
+                            <Badge variant={c.done ? "success" : "muted"}>{c.done ? "done" : "todo"}</Badge>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-3">
+                        <SecondaryButton
+                          onClick={() => navigate(createPageUrl("Applications"))}
+                          aria-label="Open Applications"
+                          className="flex-1"
+                        >
+                          <TrendingUp className="w-4 h-4 mr-2" aria-hidden="true" />
+                          Applications
+                        </SecondaryButton>
+                        <SecondaryButton
+                          onClick={() => navigate(createPageUrl("Resumes"))}
+                          aria-label="Open Resumes"
+                          className="flex-1"
+                        >
+                          <FileText className="w-4 h-4 mr-2" aria-hidden="true" />
+                          Resumes
+                        </SecondaryButton>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
-              <div className="text-xs text-white/35 mt-2">
-                Keep this steady—consistency is what turns into interviews.
-              </div>
-            </div>
-          </div>
 
-          {/* Top Companies */}
-          <div className="lg:col-span-4 glass-card rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-cyan-300" />
-                <h3 className="text-sm font-medium text-white/70">Top companies</h3>
-              </div>
-              <span className="text-xs text-white/30">by count</span>
-            </div>
+              {/* Bottom: Conversion + Top Companies */}
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <Card className="lg:col-span-4" aria-label="Pipeline conversion">
+                  <CardHeader title="Pipeline conversion" description="How your funnel is performing." action={<Target className="h-4 w-4 text-purple-300" aria-hidden="true" />} />
+                  <CardContent className="pt-5">
+                    <div className="grid grid-cols-3 gap-3">
+                      <StatCard label="Applied" value={conversion.applied} icon={Target} />
+                      <StatCard label="Interviews" value={conversion.interviews} icon={Clock} />
+                      <StatCard label="Offers" value={conversion.offers} icon={Zap} />
+                    </div>
 
-            {topCompanies.rows.length ? (
-              <div className="space-y-3">
-                {topCompanies.rows.map((r) => {
-                  const pct = Math.round(((r.count || 0) / topCompanies.max) * 100);
-                  return (
-                    <div key={r.company} className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                    <div className="mt-5 space-y-3 text-[length:var(--ds-body)]">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm text-white/80 truncate pr-3">{r.company}</div>
-                        <div className="text-sm text-white/70 font-semibold">{r.count}</div>
+                        <div className="text-slate-400">Interview rate</div>
+                        <div className="text-slate-200 font-semibold">{conversion.interviewRate}%</div>
                       </div>
-                      <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
-                        <div className="h-2 rounded-full bg-white/20" style={{ width: `${pct}%` }} />
+                      <div className="flex items-center justify-between">
+                        <div className="text-slate-400">Offer rate (from interviews)</div>
+                        <div className="text-slate-200 font-semibold">{conversion.offerFromInterview}%</div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-slate-400">Offer rate (from applied)</div>
+                        <div className="text-slate-200 font-semibold">{conversion.offerFromApplied}%</div>
                       </div>
                     </div>
-                  );
-                })}
-                <div className="text-xs text-white/35">
-                  If one company dominates, consider widening targets to increase reply rate.
-                </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="lg:col-span-8" aria-label="Top companies">
+                  <CardHeader
+                    title="Top companies"
+                    description="Where you’ve applied most. Use this to diversify targeting."
+                    action={<Building2 className="h-4 w-4 text-cyan-300" aria-hidden="true" />}
+                  />
+                  <CardContent className="pt-5">
+                    {topCompanies.rows.length ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {topCompanies.rows.map((r) => {
+                          const pct = Math.round(((r.count || 0) / topCompanies.max) * 100);
+                          return (
+                            <div
+                              key={r.company}
+                              className="rounded-xl border border-white/10 bg-white/[0.035] p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[length:var(--ds-body)] text-slate-200 truncate">
+                                  {r.company}
+                                </div>
+                                <div className="text-[length:var(--ds-body)] text-slate-200 font-semibold">
+                                  {r.count}
+                                </div>
+                              </div>
+                              <div className="mt-3 h-2 rounded-full bg-white/5 overflow-hidden">
+                                <div
+                                  className="h-2 rounded-full bg-white/20"
+                                  style={{ width: `${pct}%` }}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-slate-400">
+                        No company data yet — add a job to start tracking.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-            ) : (
-              <div className="text-sm text-white/40">
-                No company data yet—add a job to start tracking.
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.div>
+            </>
+          )}
+        </motion.main>
+      </ErrorBoundary>
     </div>
   );
 }
