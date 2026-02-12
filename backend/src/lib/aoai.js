@@ -8,7 +8,7 @@ function getAoaiConfig() {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
   const apiKey = process.env.AZURE_OPENAI_API_KEY;
   const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview";
 
   return { endpoint, apiKey, deployment, apiVersion };
 }

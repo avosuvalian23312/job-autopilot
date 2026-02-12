@@ -7,6 +7,37 @@ let _pdfjs = null;
 let _pdfjsPromise = null;
 
 /**
+ * pdf-lib StandardFonts use WinAnsi encoding.
+ * WinAnsi cannot encode many Unicode chars (ex: ●, •, smart quotes, etc).
+ * This sanitizer maps common offenders to safe ASCII/Latin-1 and strips the rest.
+ */
+function toWinAnsiSafe(input) {
+  let s = String(input || "");
+
+  // normalize whitespace
+  s = s.replace(/\r\n/g, "\n").replace(/\u00A0/g, " ");
+
+  // typography -> ASCII
+  s = s
+    .replace(/[“”„]/g, '"')
+    .replace(/[’‘‚]/g, "'")
+    .replace(/[–—−]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/→/g, "->");
+
+  // bullets -> hyphen
+  s = s.replace(/[●•◦∙·▪■]/g, "-");
+
+  // keep ASCII + Latin-1 only
+  s = s.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+
+  // collapse spaces
+  s = s.replace(/\s+/g, " ").trim();
+
+  return s;
+}
+
+/**
  * pdfjs-dist v5 is ESM (pdf.mjs).
  * This loader supports both older CJS builds and v5+ ESM builds.
  */
@@ -93,18 +124,16 @@ async function extractPdfLayout(pdfBuffer, opts = {}) {
   const yTolerance = Number(opts.yTolerance || 2.5);
 
   // pdfjs-dist v5 rejects Buffer; it wants Uint8Array
-const data =
-  Buffer.isBuffer(pdfBuffer)
+  const data = Buffer.isBuffer(pdfBuffer)
     ? new Uint8Array(pdfBuffer)
     : pdfBuffer instanceof Uint8Array
       ? pdfBuffer
       : new Uint8Array(pdfBuffer); // handles ArrayBuffer-like
 
-const loadingTask = pdfjs.getDocument({
-  data,
-  disableWorker: true,
-});
-
+  const loadingTask = pdfjs.getDocument({
+    data,
+    disableWorker: true,
+  });
 
   const pdf = await loadingTask.promise;
   const pageCount = Math.min(pdf.numPages, maxPages);
@@ -216,9 +245,8 @@ const loadingTask = pdfjs.getDocument({
 
 /**
  * Extract bullet blocks from a layout.
- * Each bullet block includes line slots so applyBulletEdits can rewrite within same boxes.
  *
- * Output shape (used by your applyPrepare):
+ * Output shape:
  * [{ id, pageIndex, rawText, lineCount, lines:[{x,y,width,height,fontSize}], prefix }]
  */
 function extractBulletBlocks(layout, opts = {}) {
@@ -251,13 +279,16 @@ function extractBulletBlocks(layout, opts = {}) {
           if (blocks.length >= maxBullets) return blocks;
         }
 
-        const prefix = `${m[1]} `;
+        // IMPORTANT: store a WinAnsi-safe prefix (●/• etc -> "- ")
+        const safeBulletChar = toWinAnsiSafe(m[1]) || "-";
+        const prefix = `${safeBulletChar} `;
+
         const body = String(m[2] || "").trim();
 
         current = {
           id: `b${bIndex++}`,
           pageIndex,
-          prefix,
+          prefix, // safe prefix
           rawText: body,
           lineCount: 1,
           lines: [
@@ -274,9 +305,6 @@ function extractBulletBlocks(layout, opts = {}) {
       }
 
       // Continuation line heuristics:
-      // - must have an active bullet
-      // - typically indented compared to bullet line
-      // - and close-ish vertically (pdfjs already grouped by y)
       if (current) {
         const firstX = current.lines[0]?.x ?? 0;
         const isIndented = ln.x > firstX + 6;
@@ -325,11 +353,12 @@ async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const blockById = new Map((bulletBlocks || []).map((b) => [String(b.id), b]));
-
   const measure = (s, size) => font.widthOfTextAtSize(String(s || ""), size);
 
   const wrapToSlots = (fullText, slots, fontSize) => {
-    const words = String(fullText || "").split(/\s+/).filter(Boolean);
+    const safeText = toWinAnsiSafe(fullText);
+    const words = String(safeText || "").split(/\s+/).filter(Boolean);
+
     const linesOut = [];
     let wi = 0;
 
@@ -351,14 +380,13 @@ async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {
       if (wi >= words.length) break;
     }
 
-    // If overflow, add ellipsis on last line
+    // If overflow, add ASCII ellipsis on last line
     if (wi < words.length && linesOut.length) {
       const lastIdx = linesOut.length - 1;
       let base = linesOut[lastIdx] || "";
       const maxW = Math.max(40, Number(slots[lastIdx]?.width || 240));
 
-      // try to fit "…" at end
-      const ell = "…";
+      const ell = "...";
       while (base && measure(`${base}${ell}`, fontSize) > maxW) {
         base = base.split(" ").slice(0, -1).join(" ");
       }
@@ -370,8 +398,8 @@ async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {
 
   for (const e of edits || []) {
     const bulletId = String(e?.bulletId || "").trim();
-    const newText = String(e?.text || "").trim();
-    if (!bulletId || !newText) continue;
+    const newTextRaw = String(e?.text || "").trim();
+    if (!bulletId || !newTextRaw) continue;
 
     const block = blockById.get(bulletId);
     if (!block) continue;
@@ -405,14 +433,22 @@ async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {
       });
     }
 
-    const full = `${String(block.prefix || "• ")}${newText}`;
+    // IMPORTANT: sanitize prefix + text so pdf-lib never sees ●/•/unicode bullets
+    const safePrefix = toWinAnsiSafe(block.prefix || "- ") || "- ";
+    const safeNewText = toWinAnsiSafe(newTextRaw);
+
+    const full = `${safePrefix}${safeNewText}`;
 
     // Wrap to available slots
     let wrapped = wrapToSlots(full, slots, fontSize);
 
     // If first line is too wide even alone, scale font down a bit
-    if (wrapped[0] && measure(wrapped[0], fontSize) > Math.max(40, slots[0].width || 240)) {
-      const maxW = Math.max(40, slots[0].width || 240);
+    if (
+      wrapped[0] &&
+      measure(wrapped[0], fontSize) >
+        Math.max(40, Number(slots[0]?.width || 240))
+    ) {
+      const maxW = Math.max(40, Number(slots[0]?.width || 240));
       const measured = measure(wrapped[0], fontSize);
       const scale = maxW / measured;
       fontSize = Math.max(7, fontSize * scale * 0.98);
@@ -421,7 +457,7 @@ async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {
 
     // Draw wrapped lines into their original slots
     for (let i = 0; i < wrapped.length; i++) {
-      const lineText = wrapped[i];
+      const lineText = toWinAnsiSafe(wrapped[i]);
       if (!lineText) continue;
 
       const s = slots[i];
@@ -444,10 +480,10 @@ module.exports = {
   // pdfjs
   getPdfJs,
 
-  // Layout (your applyPrepare imports THIS name)
+  // Layout
   extractPdfLayout,
 
-  // Bullet tooling (your applyPrepare imports THESE names)
+  // Bullet tooling
   extractBulletBlocks,
   applyBulletEdits,
 
