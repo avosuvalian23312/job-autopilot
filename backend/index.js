@@ -141,26 +141,6 @@ app.http("userinfo", {
 });
 
 // ========================
-// ✅ NEW: Settings APIs (Profile/Links/Prefs persistence)
-// ========================
-app.http("settings", {
-  methods: ["GET", "POST", "OPTIONS"],
-  route: "settings",
-  authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/settings.js"))
-});
-
-// ========================
-// ✅ NEW: Support API (Contact Support -> Cosmos + Email)
-// ========================
-app.http("support", {
-  methods: ["POST", "OPTIONS"],
-  route: "support",
-  authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/support.js"))
-});
-
-// ========================
 // Job sub-routes
 // ========================
 
