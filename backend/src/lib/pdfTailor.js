@@ -92,10 +92,19 @@ async function extractPdfLayout(pdfBuffer, opts = {}) {
   const maxPages = Number(opts.maxPages || 12);
   const yTolerance = Number(opts.yTolerance || 2.5);
 
-  const loadingTask = pdfjs.getDocument({
-    data: pdfBuffer,
-    disableWorker: true, // important in Azure Functions
-  });
+  // pdfjs-dist v5 rejects Buffer; it wants Uint8Array
+const data =
+  Buffer.isBuffer(pdfBuffer)
+    ? new Uint8Array(pdfBuffer)
+    : pdfBuffer instanceof Uint8Array
+      ? pdfBuffer
+      : new Uint8Array(pdfBuffer); // handles ArrayBuffer-like
+
+const loadingTask = pdfjs.getDocument({
+  data,
+  disableWorker: true,
+});
+
 
   const pdf = await loadingTask.promise;
   const pageCount = Math.min(pdf.numPages, maxPages);
