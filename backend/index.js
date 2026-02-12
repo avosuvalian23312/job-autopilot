@@ -221,7 +221,7 @@ app.http("resumeOptimize", {
 });
 const { applyPrepare } = require("./src/functions/applyPrepare");
 
-const { coverLettersList } = require("./src/functions/coverLettersList");
+
 
 
 app.http("applyPrepare", {
@@ -237,12 +237,7 @@ app.http("applyPrepare", {
   handler: applyPrepare,
 });
 
-app.http("coverLettersList", {
-  methods: ["GET", "OPTIONS"],
-  route: "coverletters",
-  authLevel: "anonymous",
-  handler: coverLettersList,
-});
+
 
 app.http("coverLettersGet", {
   methods: ["GET", "OPTIONS"],
