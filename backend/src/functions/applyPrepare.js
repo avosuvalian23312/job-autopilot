@@ -562,18 +562,30 @@ async function applyPrepare(request, context) {
       },
     };
   } catch (err) {
-    context.log.error("applyPrepare error:", err);
-    const code = err?.code || "UNKNOWN";
-    return {
-      status: 500,
-      jsonBody: {
-        ok: false,
-        error: "Internal Server Error",
-        code,
-        detail: err?.message || String(err),
-      },
-    };
+  // ✅ Azure Functions v4: context.log is a function; it usually has no .error
+  try {
+    if (context && typeof context.log === "function") {
+      context.log("applyPrepare error:", err);
+    } else {
+      // fallback
+      console.error("applyPrepare error:", err);
+    }
+  } catch {
+    console.error("applyPrepare error:", err);
   }
+
+  const code = err?.code || "UNKNOWN";
+  return {
+    status: 500,
+    jsonBody: {
+      ok: false,
+      error: "Internal Server Error",
+      code,
+      detail: err?.message || String(err),
+    },
+  };
+}
+
 }
 
 module.exports = { applyPrepare };
