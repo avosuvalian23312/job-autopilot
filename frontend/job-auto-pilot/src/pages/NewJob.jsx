@@ -948,11 +948,11 @@ const prepared = await apiFetch("/api/apply/prepare", {
     jobDescription: jdForApi,
     jobUrl: null,
 
-    aiMode: aiMode,           // ✅ "elite" or "standard"
-    studentMode: studentMode, // ✅ true/false
-    // mode: "real",          // optional
+    aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
+    studentMode: !!studentMode,
   }),
 });
+
 
 
 
