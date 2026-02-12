@@ -1,4 +1,8 @@
+// backend/src/functions/resumeSave.js
+"use strict";
+
 const { CosmosClient } = require("@azure/cosmos");
+const crypto = require("crypto");
 
 function safeUserId(userId) {
   return String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -16,7 +20,6 @@ function stripQuery(url) {
 }
 
 function getSwaUser(request) {
-  // v4 headers are a Headers-like object
   const header =
     request.headers.get("x-ms-client-principal") ||
     request.headers.get("X-MS-CLIENT-PRINCIPAL");
@@ -40,9 +43,23 @@ function getSwaUser(request) {
   }
 }
 
+function normalizeResumeText(t) {
+  // Keep it simple + stable for hashing
+  const s = String(t || "")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((x) => x.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+  return s.trim();
+}
+
+function sha256(s) {
+  return crypto.createHash("sha256").update(String(s || ""), "utf8").digest("hex");
+}
+
 module.exports = async function (request, context) {
   try {
-    // Handle preflight if you’re calling from browser
     if (request.method === "OPTIONS") {
       return {
         status: 204,
@@ -54,28 +71,35 @@ module.exports = async function (request, context) {
       };
     }
 
-    // ENV checks (safe in v4)
     const COSMOS_CONNECTION_STRING = process.env.COSMOS_CONNECTION_STRING;
     const COSMOS_DB_NAME = process.env.COSMOS_DB_NAME;
-    const COSMOS_RESUMES_CONTAINER_NAME = process.env.COSMOS_RESUMES_CONTAINER_NAME;
+    const COSMOS_RESUMES_CONTAINER_NAME =
+      process.env.COSMOS_RESUMES_CONTAINER_NAME;
 
     if (!COSMOS_CONNECTION_STRING) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_CONNECTION_STRING" } };
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Missing COSMOS_CONNECTION_STRING" },
+      };
     }
     if (!COSMOS_DB_NAME) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_DB_NAME" } };
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Missing COSMOS_DB_NAME" },
+      };
     }
     if (!COSMOS_RESUMES_CONTAINER_NAME) {
-      return { status: 500, jsonBody: { ok: false, error: "Missing COSMOS_RESUMES_CONTAINER_NAME" } };
+      return {
+        status: 500,
+        jsonBody: { ok: false, error: "Missing COSMOS_RESUMES_CONTAINER_NAME" },
+      };
     }
 
-    // Must be logged in via SWA
     const user = getSwaUser(request);
     if (!user) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
 
-    // Read JSON body (v4)
     let body = {};
     try {
       body = await request.json();
@@ -94,35 +118,39 @@ module.exports = async function (request, context) {
 
     const blobUrl = body.uploadUrl ? stripQuery(body.uploadUrl) : "";
 
-    const cosmos = new CosmosClient(COSMOS_CONNECTION_STRING);
-    const container = cosmos.database(COSMOS_DB_NAME).container(COSMOS_RESUMES_CONTAINER_NAME);
+    // ✅ Optional: accept extracted text from frontend or another step
+    const incomingText = normalizeResumeText(body.text || body.resumeText || "");
+    const hasText = !!incomingText;
 
     const now = new Date().toISOString();
 
-const doc = {
-  // UNIQUE per upload
-  id: `resume:${safeUserId(user.userId)}:${Date.now()}`,
+    const doc = {
+      id: `resume:${safeUserId(user.userId)}:${Date.now()}`,
+      userId: user.userId,
+      email: user.email,
 
-  // Partition key
-  userId: user.userId,
+      name: body.name || originalName,
+      isDefault: body.isDefault ?? false,
 
-  email: user.email,
+      blobName,
+      blobUrl,
+      originalName,
+      contentType,
+      size,
 
-  // UI fields
-  name: body.name || originalName,
-  isDefault: body.isDefault ?? false,
+      // ✅ NEW: text fields (critical for ATS tailoring)
+      text: hasText ? incomingText : null,
+      textHash: hasText ? sha256(incomingText) : null,
+      textStatus: hasText ? "ready" : "pending", // pending until you parse it
+      textUpdatedAt: hasText ? now : null,
+      textError: null,
 
-  // Blob info
-  blobName,
-  blobUrl,
-  originalName,
-  contentType,
-  size,
+      uploadedAt: now,
+      updated_date: now.split("T")[0],
+    };
 
-  uploadedAt: now,
-  updated_date: now.split("T")[0],
-};
-
+    const cosmos = new CosmosClient(COSMOS_CONNECTION_STRING);
+    const container = cosmos.database(COSMOS_DB_NAME).container(COSMOS_RESUMES_CONTAINER_NAME);
 
     await container.items.upsert(doc, { partitionKey: user.userId });
 

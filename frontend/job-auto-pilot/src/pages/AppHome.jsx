@@ -1300,46 +1300,58 @@ export default function AppHome() {
                     </AnimatePresence>
                   </Card>
 
-                  {/* UPDATED: New Job CTA — BIG PURPLE + only, high-contrast border */}
-                  <Card
-                    as="button"
-                    type="button"
-                    aria-label="Create a new job"
-                    onClick={handleNewJob}
-                    className={cx(
-                      "w-full relative overflow-hidden min-h-[220px]",
-                      "border-2 border-purple-500/70 ring-1 ring-purple-500/35",
-                      "bg-gradient-to-b from-purple-500/18 via-purple-500/[0.06] to-white/[0.03]",
-                      "shadow-[0_0_0_1px_rgba(168,85,247,0.35),0_30px_90px_rgba(168,85,247,0.14)]",
-                      "hover:border-purple-400/85 hover:ring-purple-400/45 hover:bg-white/[0.05]",
-                      "transition-colors",
-                      focusRing
-                    )}
-                  >
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/18 blur-3xl"
-                    />
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute -bottom-28 -right-28 h-72 w-72 rounded-full bg-purple-500/14 blur-3xl"
-                    />
+                 {/* New Job CTA — BIGGER + label under icon */}
+<Card
+  as="button"
+  type="button"
+  aria-label="Create a new job"
+  onClick={handleNewJob}
+  className={cx(
+    "w-full relative overflow-hidden",
+    // MUCH bigger height so it catches the eye
+    "min-h-[320px] sm:min-h-[360px] lg:min-h-[420px]",
+    // stronger, eye-catching border + glow
+    "border-2 border-purple-500/70 ring-1 ring-purple-500/35",
+    "bg-gradient-to-b from-purple-500/18 via-purple-500/[0.06] to-white/[0.03]",
+    "shadow-[0_0_0_1px_rgba(168,85,247,0.35),0_30px_90px_rgba(168,85,247,0.14)]",
+    "hover:border-purple-400/85 hover:ring-purple-400/45 hover:bg-white/[0.05]",
+    "transition-colors",
+    focusRing
+  )}
+>
+  {/* glow */}
+  <div
+    aria-hidden="true"
+    className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-purple-500/18 blur-3xl"
+  />
+  <div
+    aria-hidden="true"
+    className="pointer-events-none absolute -bottom-28 -right-28 h-80 w-80 rounded-full bg-purple-500/14 blur-3xl"
+  />
 
-                    <CardContent className="p-10 sm:p-12 grid place-items-center">
-                      <motion.div
-                        initial={{ scale: 1 }}
-                        animate={{ scale: [1, 1.03, 1] }}
-                        transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                        className="grid place-items-center"
-                      >
-                        <Plus
-                          className="h-24 w-24 sm:h-28 sm:w-28 text-purple-300 drop-shadow-[0_18px_55px_rgba(168,85,247,0.35)]"
-                          aria-hidden="true"
-                        />
-                        <span className="sr-only">New Job</span>
-                      </motion.div>
-                    </CardContent>
-                  </Card>
+  <CardContent className="p-10 sm:p-12 lg:p-14 flex flex-col items-center justify-center text-center">
+    <motion.div
+      initial={{ scale: 1 }}
+      animate={{ scale: [1, 1.035, 1] }}
+      transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+      className="grid place-items-center"
+    >
+      <Plus
+        className="h-28 w-28 sm:h-32 sm:w-32 lg:h-36 lg:w-36 text-purple-300 drop-shadow-[0_18px_55px_rgba(168,85,247,0.35)]"
+        aria-hidden="true"
+      />
+    </motion.div>
+
+    {/* TEXT UNDER THE ICON */}
+    <div className="mt-6 text-2xl sm:text-3xl font-semibold text-slate-100">
+      New Job
+    </div>
+    <div className="mt-2 text-[length:var(--ds-body)] text-slate-400 max-w-[38ch]">
+      Add a job to track status, generate docs, and build your pipeline.
+    </div>
+  </CardContent>
+</Card>
+
 
                   {/* Insights */}
                   <Card aria-label="Insights">
