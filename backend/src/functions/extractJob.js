@@ -18,6 +18,94 @@ const HTML_ENTITY_MAP = {
   "&lt;": "<",
   "&gt;": ">",
 };
+function isGenericJobTitle(title) {
+  const t = String(title || "").trim().toLowerCase();
+  if (!t) return true;
+
+  // common junk titles that appear in job descriptions
+  const bad = new Set([
+    "individuals",
+    "individual",
+    "candidate",
+    "candidates",
+    "person",
+    "people",
+    "professional",
+    "professionals",
+    "team member",
+    "team members",
+    "employee",
+    "employees",
+    "role",
+    "position",
+    "opportunity",
+  ]);
+
+  if (bad.has(t)) return true;
+
+  // too short or obviously not a title
+  if (t.length < 4) return true;
+
+  return false;
+}
+
+function cleanJobTitleCandidate(s) {
+  let t = String(s || "").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+
+  // remove Indeed suffix
+  t = t.replace(/\s*-\s*job post\s*$/i, "").trim();
+
+  // remove trailing separators
+  t = t.replace(/[\-|–|—]\s*$/g, "").trim();
+
+  if (isGenericJobTitle(t)) return null;
+  return t;
+}
+
+function cleanUrl(u) {
+  return String(u || "")
+    .trim()
+    .replace(/[)\],.;]+$/g, "") // strip trailing punctuation
+    .trim();
+}
+
+function pickBestWebsite(text, company) {
+  const raw = String(text || "");
+
+  // 1) Prefer explicit "Website:" label
+  const labeled = raw.match(/\bWebsite\s*:\s*(https?:\/\/[^\s)]+)/i);
+  if (labeled?.[1]) return cleanUrl(labeled[1]);
+
+  // 2) Collect all urls
+  const urls = Array.from(raw.matchAll(/https?:\/\/[^\s)]+/gi)).map((m) => cleanUrl(m[0]));
+
+  if (!urls.length) return null;
+
+  // filter obvious non-company sites
+  const isBad = (u) =>
+    /(youtube\.com|youtu\.be|facebook\.com|twitter\.com|x\.com|linkedin\.com|instagram\.com|tiktok\.com|indeed\.com|glassdoor\.com)/i.test(
+      u
+    );
+
+  const good = urls.filter((u) => !isBad(u));
+  const pool = good.length ? good : urls;
+
+  // 3) If company name exists, prefer domain containing a company token
+  const tokens = String(company || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((x) => x.length >= 4 && !["inc", "llc", "corp", "company"].includes(x));
+
+  if (tokens.length) {
+    const match = pool.find((u) => tokens.some((tok) => u.toLowerCase().includes(tok)));
+    if (match) return match;
+  }
+
+  // 4) fallback: first decent url
+  return pool[0] || null;
+}
 
 function decodeHtmlEntities(input) {
   let s = String(input || "");
@@ -883,21 +971,37 @@ function fallbackExtract(description) {
     /(?:hiring|seeking|looking for)\s+(?:a|an)?\s*([^\n,]+?)(?:\s+at|\s+to|\s+in|\s*\n)/i,
     /^([A-Z][^\n]{10,80}?)(?:\s+at|\s+-|\s*\n)/m,
   ];
+    // Title (prefer top-of-post)
   let jobTitle = null;
-  for (const p of titlePatterns) {
-    const m = text.match(p);
-    if (m) {
-      jobTitle = m[1].trim();
+
+  // 1) First non-empty line often contains the title (Indeed)
+  const linesTop = splitLines(text).slice(0, 8);
+  for (const line of linesTop) {
+    const cand = cleanJobTitleCandidate(line);
+    if (cand) {
+      jobTitle = cand;
       break;
     }
+  }
+
+  // 2) Labeled title fields
+  if (!jobTitle) {
+    const m = text.match(/(?:position|role|job title|title):\s*([^\n]+)/i);
+    jobTitle = cleanJobTitleCandidate(m?.[1]);
+  }
+
+  // 3) “Hiring for …” but reject generic captures
+  if (!jobTitle) {
+    const m = text.match(/(?:hiring|seeking|looking for)\s+(?:a|an)?\s*([^\n,]+?)(?:\s+at|\s+to|\s+in|\s*\n)/i);
+    jobTitle = cleanJobTitleCandidate(m?.[1]);
   }
 
   // Company
   let company = parseCompanyFallback(text);
 
-  // Website
-  const urlMatch = text.match(/https?:\/\/[^\s]+/);
-  const website = urlMatch ? urlMatch[0] : null;
+  // Website (better selection)
+  const website = pickBestWebsite(text, company);
+
 
   // Location
   const location = parseLocationFallback(text);
@@ -1046,17 +1150,8 @@ module.exports = async function (request, context) {
      * - We pass FALLBACK_JSON and force the model to ONLY override when explicit.
      * - This reduces hallucinations + fixes “wrong company/pay/location”.
      */
-    const system = `
-You are a job-posting data extractor AND validator.
-
-You will receive:
-1) A cleaned JOB DESCRIPTION
-2) A FALLBACK_JSON object produced by deterministic parsers
-
-Your job:
-- Treat FALLBACK_JSON as the default answer.
-- Only change a field if the JOB DESCRIPTION contains explicit evidence that the fallback is wrong or missing.
-- If unsure, keep the fallback value.
+   const system = `
+You extract structured job posting fields from raw job descriptions.
 
 Return ONLY valid JSON with EXACT keys:
 
@@ -1067,10 +1162,10 @@ location (string|null),
 seniority (string|null),
 keywords (string[]),
 
-employmentType (string|null),   // "Full-time"|"Contract"|"Part-time"|"Internship"
-workModel (string|null),        // "Remote"|"Hybrid"|"On-site"
-experienceLevel (string|null),  // "0–2 yrs"|"3–5 yrs"|"5+ yrs"
-complianceTags (string[]),      // ex: ["US Citizen required","Clearance required","No sponsorship"]
+employmentType (string|null),   // one of: "Full-time","Contract","Part-time","Internship"
+workModel (string|null),        // one of: "Remote","Hybrid","On-site"
+experienceLevel (string|null),  // one of: "0–2 yrs","3–5 yrs","5+ yrs"
+complianceTags (string[]),
 
 requirements (object|null) with keys:
   skillsRequired (string[]),
@@ -1078,34 +1173,24 @@ requirements (object|null) with keys:
   educationRequired (string|null),
   yearsExperienceMin (number|null),
   certificationsPreferred (string[]),
-  workModelRequired (string|null) // "Remote"|"Hybrid"|"On-site"|null
+  workModelRequired (string|null)
 
 payText (string|null),
 payMin (number|null),
 payMax (number|null),
-payCurrency (string|null),      // ex: "USD"
-payPeriod (string|null),        // "hour"|"year"|"month"|"week"|"day"
-payConfidence (number|null)     // 0..1 confidence about pay
+payCurrency (string|null),
+payPeriod (string|null),
+payConfidence (number|null)
 
-Hard rules:
-- DO NOT invent pay. Only fill pay fields if salary/compensation is explicitly present.
-- If pay is not explicit: payText=null, payMin=null, payMax=null, payPeriod=null, payConfidence=0.
-- company must be the employer (NOT "Indeed", "LinkedIn", "Job Post", etc.). If unclear, use null.
-- location should be geographic (e.g., "Dallas, TX"). Do NOT put "Remote" as location; use workModel for that.
-- keywords should be real skills/tools/tech only (5–12 items). No soft skills like "team player".
-- Use null for unknown scalars; [] for unknown arrays.
-- No extra keys. No markdown. No commentary.
-
-Quality checks before returning:
-- If company looks generic, set company=null.
-- If payMin/payMax are present but not supported by explicit numbers, set all pay fields null and payConfidence=0.
-
-Example 1 (no pay in text):
-{ "payText": null, "payMin": null, "payMax": null, "payPeriod": null, "payConfidence": 0 }
-
-Example 2 (explicit pay):
-"$25 - $32 per hour" => payMin=25, payMax=32, payPeriod="hour", payCurrency="USD", payConfidence>=0.8
+CRITICAL RULES:
+- jobTitle MUST be the actual role name (e.g. "Technical Support Engineer"), usually found at the very top.
+- NEVER use generic words as jobTitle (reject: "individuals", "candidate", "person", "opportunity", "role", "position").
+- website MUST be the company's primary website. Ignore social links (YouTube/Facebook/Twitter/LinkedIn).
+  Prefer a link labeled "Website:"; otherwise choose the best company domain.
+- Do NOT invent pay. If not explicitly stated, set payText/payMin/payMax/payPeriod/payConfidence = null.
+- If unknown, use null (or [] for arrays). No extra keys. No markdown. No commentary.
 `.trim();
+
 
     // Provide fallback JSON as baseline for the model to verify/correct
     const user = `JOB DESCRIPTION:\n${jobDescription}\n\nFALLBACK_JSON:\n${JSON.stringify(
