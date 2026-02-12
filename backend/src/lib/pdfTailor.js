@@ -4,31 +4,62 @@
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 let _pdfjs = null;
+let _pdfjsPromise = null;
 
-function getPdfJs() {
+/**
+ * pdfjs-dist v5+ ships ESM (.mjs). In CommonJS (your backend),
+ * we must load it via dynamic import().
+ *
+ * We try legacy first (most Node-friendly), then modern build,
+ * then fall back to old CommonJS paths for v2/v3 if someone pins later.
+ */
+async function getPdfJs() {
   if (_pdfjs) return _pdfjs;
+  if (_pdfjsPromise) return _pdfjsPromise;
 
-  // ✅ CommonJS-friendly path (works with pdfjs-dist 2.x/3.x)
-  try {
-    // eslint-disable-next-line global-require
-    _pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-    return _pdfjs;
-  } catch (e1) {
-    // Fallback (older installs)
+  const load = async () => {
+    // --- v5+ (ESM) ---
     try {
-      // eslint-disable-next-line global-require
-      _pdfjs = require("pdfjs-dist/build/pdf.js");
+      const mod = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      _pdfjs = mod?.default || mod;
       return _pdfjs;
-    } catch (e2) {
-      const msg =
-        "pdfjs-dist is missing or incompatible for CommonJS. " +
-        "Install it as a dependency (NOT devDependency) and prefer pdfjs-dist@3.x. " +
-        "Tried: pdfjs-dist/legacy/build/pdf.js and pdfjs-dist/build/pdf.js";
-      const err = new Error(msg);
-      err.cause = { e1: e1?.message, e2: e2?.message };
-      throw err;
+    } catch (e1) {
+      try {
+        const mod = await import("pdfjs-dist/build/pdf.mjs");
+        _pdfjs = mod?.default || mod;
+        return _pdfjs;
+      } catch (e2) {
+        // --- v2/v3 (CommonJS) fallback ---
+        try {
+          // eslint-disable-next-line global-require
+          _pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+          return _pdfjs;
+        } catch (e3) {
+          try {
+            // eslint-disable-next-line global-require
+            _pdfjs = require("pdfjs-dist/build/pdf.js");
+            return _pdfjs;
+          } catch (e4) {
+            const msg =
+              "pdfjs-dist is missing or incompatible. " +
+              "For pdfjs-dist@5.x (your current version), CommonJS MUST use dynamic import of .mjs. " +
+              "Tried: legacy/build/pdf.mjs, build/pdf.mjs, legacy/build/pdf.js, build/pdf.js";
+            const err = new Error(msg);
+            err.cause = {
+              e1: e1?.message,
+              e2: e2?.message,
+              e3: e3?.message,
+              e4: e4?.message,
+            };
+            throw err;
+          }
+        }
+      }
     }
-  }
+  };
+
+  _pdfjsPromise = load();
+  return _pdfjsPromise;
 }
 
 function norm(s) {
@@ -54,13 +85,13 @@ function chunkText(text, maxLen = 14000) {
  *  - resumeText: page-marked text (good for AOAI prompts)
  */
 async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
-  const pdfjs = getPdfJs();
+  const pdfjs = await getPdfJs();
 
   const maxPages = Number(opts.maxPages || 12);
   const yTolerance = Number(opts.yTolerance || 2.5);
 
   const loadingTask = pdfjs.getDocument({
-    data: pdfBuffer,
+    data: pdfBuffer, // Buffer is Uint8Array in Node -> ok
     disableWorker: true, // ✅ important in Functions/Node
   });
 
