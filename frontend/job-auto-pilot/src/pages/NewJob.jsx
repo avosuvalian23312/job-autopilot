@@ -842,6 +842,7 @@ export default function NewJob() {
           jobUrl: null,
         }),
       });
+localStorage.setItem("latestPrepareResult", JSON.stringify(prepared));
 
       const jobData = prepared?.jobData || null;
       const tailoredResume = prepared?.tailoredResume || null;
@@ -862,16 +863,14 @@ export default function NewJob() {
       toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, { id: toastId });
       toastId = null;
 
-      // Navigate to packet. Keep the existing pattern, but also include the new ids as query params.
-      const packetId = coverLetter?.id || tailoredResume?.id || "";
-      localStorage.setItem("latestJobId", String(packetId || "")); // keep existing key for compatibility
+    // ✅ Packet should render from the cached prepare result (no /api/jobs polling)
+const qs = new URLSearchParams();
+qs.set("mode", "prepare");
+if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
+if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
 
-      const qs = new URLSearchParams();
-      if (packetId) qs.set("id", String(packetId));
-      if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
-      if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
+navigate(`/packet?${qs.toString()}`);
 
-      navigate(`/packet?${qs.toString()}`);
     } catch (e) {
       console.error(e);
       if (toastId) toast.dismiss(toastId);

@@ -56,9 +56,102 @@ export default function Packet() {
     return data;
   };
 
+  // ---------------------------
+  // Download helpers
+  // ---------------------------
+  const downloadTextFile = (filename, text) => {
+    if (!text) return toast.error("No document available");
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "document.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded");
+  };
+
+  const downloadPdfFromUrl = async (url, filename) => {
+    if (!url) return toast.error("No PDF available");
+
+    try {
+      // Try to fetch as blob (best UX: forces download)
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) throw new Error(`PDF download failed (${res.status})`);
+
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = filename || "resume.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(objUrl);
+      toast.success("Downloaded");
+    } catch (e) {
+      // If storage CORS blocks fetch, fall back to opening in new tab
+      console.error(e);
+      window.open(url, "_blank", "noopener,noreferrer");
+      toast.message("Opened PDF in a new tab (download from there).");
+    }
+  };
+
+  // ---------------------------
+  // Main logic
+  // ---------------------------
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+
+    // NEW: allow Packet to run in "prepare mode"
+    const mode = (urlParams.get("mode") || "").toLowerCase();
+
+    // Old job pipeline id
     const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
+
+    // If you used /api/apply/prepare, store its result here
+    const prepareCacheRaw = localStorage.getItem("latestPrepareResult");
+    let prepareCache = null;
+    try {
+      prepareCache = prepareCacheRaw ? JSON.parse(prepareCacheRaw) : null;
+    } catch {
+      prepareCache = null;
+    }
+
+    // ✅ If we’re in prepare mode, show results immediately from cache
+    if (mode === "prepare") {
+      if (prepareCache?.ok && (prepareCache?.tailoredResume || prepareCache?.coverLetter)) {
+        setPacketData({ ...prepareCache, __mode: "prepare" });
+        setIsGenerating(false);
+        return;
+      }
+
+      toast.error("No prepared packet found. Please run Prepare again.");
+      navigate(createPageUrl("AppHome"));
+      return;
+    }
+
+    // If jobId looks like a coverLetter/resume id, it's NOT a job id.
+    // Instead of polling /api/jobs/cl:..., tell the user to use prepare mode.
+    if (jobId && (jobId.startsWith("cl:") || jobId.startsWith("resume:"))) {
+      if (prepareCache?.ok) {
+        // auto-switch to prepare cache if available
+        setPacketData({ ...prepareCache, __mode: "prepare" });
+        setIsGenerating(false);
+        return;
+      }
+
+      toast.error("This link is not a job packet. Please generate again.");
+      navigate(createPageUrl("AppHome"));
+      return;
+    }
 
     if (!jobId) {
       navigate(createPageUrl("AppHome"));
@@ -105,6 +198,13 @@ export default function Packet() {
           return;
         }
 
+        if (e?.status === 404) {
+          toast.error("Job not found.");
+          setIsGenerating(false);
+          navigate(createPageUrl("AppHome"));
+          return;
+        }
+
         toast.error(e?.message || "Status request failed.");
         setIsGenerating(false);
       }
@@ -114,7 +214,7 @@ export default function Packet() {
       try {
         setIsGenerating(true);
 
-        // ✅ First try to read job — avoid re-generating if already completed
+        // First try to read job — avoid re-generating if already completed
         try {
           const payload = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
             method: "GET",
@@ -133,31 +233,26 @@ export default function Packet() {
             return;
           }
         } catch (e) {
-          // If auth expired, bounce to login; if job missing, go home.
           if (e?.status === 401) return goLogin();
           if (e?.status === 404) {
             toast.error("Job not found.");
             navigate(createPageUrl("AppHome"));
             return;
           }
-          // Otherwise: proceed to try generation kickoff
+          // Otherwise proceed to kickoff
         }
 
-        // ✅ Kick off generation (idempotent-friendly)
+        // Kick off generation (idempotent-friendly)
         try {
           await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}/generate`, {
             method: "POST",
             body: JSON.stringify({}),
           });
         } catch (e) {
-          // If already generating, just poll.
           if (e?.status === 401) return goLogin();
-          if (e?.status !== 409 && e?.status !== 423) {
-            throw e;
-          }
+          if (e?.status !== 409 && e?.status !== 423) throw e;
         }
 
-        // ✅ Poll until completed
         poll();
       } catch (e) {
         console.error(e);
@@ -178,30 +273,30 @@ export default function Packet() {
     };
   }, [navigate]);
 
-  // ✅ Real downloads (downloads as .txt from saved outputs)
-  const downloadTextFile = (filename, text) => {
-    if (!text) return toast.error("No document available");
-
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "document.txt";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-    toast.success("Downloaded");
-  };
-
+  // ---------------------------
+  // Download handlers (supports both modes)
+  // ---------------------------
   const handleDownloadResume = () => {
+    // Prepare mode: download PDF from blobUrl
+    if (packetData?.__mode === "prepare") {
+      const url = packetData?.tailoredResume?.blobUrl;
+      const name = packetData?.tailoredResume?.name || "tailored_resume.pdf";
+      return downloadPdfFromUrl(url, name);
+    }
+
+    // Old job mode: text downloads
     const resume = packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
     downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
   };
 
   const handleDownloadCoverLetter = () => {
+    // Prepare mode: cover letter is text
+    if (packetData?.__mode === "prepare") {
+      const text = packetData?.coverLetter?.text || "";
+      const name = "cover-letter.txt";
+      return downloadTextFile(name, text);
+    }
+
     const cover = packetData?.outputs?.coverLetter;
     downloadTextFile(cover?.fileName || "cover-letter.txt", cover?.text || "");
   };
