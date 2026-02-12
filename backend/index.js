@@ -21,22 +21,19 @@ const withOptions = (handler) => async (request, context) => {
 // ========================
 // Health
 // ========================
-app.http(
-  "health",
-  {
-    methods: ["GET", "OPTIONS"],
-    route: "health",
-    authLevel: "anonymous",
-    handler: async (request) => {
-      if (request.method === "OPTIONS") return { status: 204 };
-      return {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ok: true })
-      };
-    }
-  }
-);
+app.http("health", {
+  methods: ["GET", "OPTIONS"],
+  route: "health",
+  authLevel: "anonymous",
+  handler: async (request) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+    return {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ok: true }),
+    };
+  },
+});
 
 // ========================
 // Core APIs
@@ -60,14 +57,14 @@ app.http("jobs", {
     }
 
     return { status: 405, body: "Method not allowed" };
-  }
+  },
 });
 
 app.http("updateJobStatus", {
   methods: ["PUT", "PATCH", "OPTIONS"],
   route: "jobs/{jobId}/status",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/updateJobStatus.js").updateJobStatus)
+  handler: withOptions(require("./src/functions/updateJobStatus.js").updateJobStatus),
 });
 
 // ========================
@@ -77,7 +74,7 @@ app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/authExchange.js"))
+  handler: withOptions(require("./src/functions/authExchange.js")),
 });
 
 // ========================
@@ -88,56 +85,56 @@ app.http("resumeUploadUrl", {
   methods: ["POST", "OPTIONS"],
   route: "resume/upload-url",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeUploadUrl.js"))
+  handler: withOptions(require("./src/functions/resumeUploadUrl.js")),
 });
 
 app.http("resumeSave", {
   methods: ["POST", "OPTIONS"],
   route: "resume/save",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeSave.js"))
+  handler: withOptions(require("./src/functions/resumeSave.js")),
 });
 
 app.http("resumeList", {
   methods: ["GET", "OPTIONS"],
   route: "resume/list",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeList.js"))
+  handler: withOptions(require("./src/functions/resumeList.js")),
 });
 
 app.http("resumeReadUrl", {
   methods: ["POST", "OPTIONS"],
   route: "resume/read-url",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeReadUrl.js"))
+  handler: withOptions(require("./src/functions/resumeReadUrl.js")),
 });
 
 app.http("resumeRename", {
   methods: ["POST", "OPTIONS"],
   route: "resume/rename",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeRename.js"))
+  handler: withOptions(require("./src/functions/resumeRename.js")),
 });
 
 app.http("resumeDelete", {
   methods: ["POST", "OPTIONS"],
   route: "resume/delete",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeDelete.js"))
+  handler: withOptions(require("./src/functions/resumeDelete.js")),
 });
 
 app.http("resumeSetDefault", {
   methods: ["POST", "OPTIONS"],
   route: "resume/set-default",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/resumeSetDefault.js"))
+  handler: withOptions(require("./src/functions/resumeSetDefault.js")),
 });
 
 app.http("userinfo", {
   methods: ["GET", "OPTIONS"],
   route: "userinfo",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/userinfo.js"))
+  handler: withOptions(require("./src/functions/userinfo.js")),
 });
 
 // ========================
@@ -148,45 +145,44 @@ app.http("generateJobDocuments", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/{jobId}/generate",
   authLevel: "anonymous",
-  handler: withOptions(
-    require("./src/functions/generateJobDocuments.js").generateJobDocuments
-  )
+  handler: withOptions(require("./src/functions/generateJobDocuments.js").generateJobDocuments),
 });
 
 app.http("getJob", {
   methods: ["GET", "OPTIONS"],
   route: "jobs/{jobId}",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/getJob.js").getJob)
+  handler: withOptions(require("./src/functions/getJob.js").getJob),
 });
 
 app.http("extractJob", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/extract",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/extractJob.js"))
+  handler: withOptions(require("./src/functions/extractJob.js")),
 });
 
 app.http("previewJob", {
   methods: ["POST", "OPTIONS"],
   route: "jobs/preview",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/previewJob.js"))
+  handler: withOptions(require("./src/functions/previewJob.js")),
 });
 
 app.http("debugAuth", {
   methods: ["GET", "OPTIONS"],
   route: "debug/auth",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/debugAuth.js").debugAuth)
+  handler: withOptions(require("./src/functions/debugAuth.js").debugAuth),
 });
 
 app.http("dashboard", {
   methods: ["GET", "OPTIONS"],
   route: "dashboard",
   authLevel: "anonymous",
-  handler: withOptions(require("./src/functions/dashboard.js").dashboard)
+  handler: withOptions(require("./src/functions/dashboard.js").dashboard),
 });
+
 app.http("settings", {
   methods: ["GET", "POST", "OPTIONS"],
   route: "settings",
@@ -205,39 +201,37 @@ app.http("settings", {
     return { status: 405, body: "Method not allowed" };
   },
 });
+
 app.http("supportCreate", {
   methods: ["POST", "OPTIONS"],
   route: "support",
   authLevel: "anonymous",
-  handler: withOptions(
-    require("./src/functions/supportCreate.js").supportCreate
-  ),
+  handler: withOptions(require("./src/functions/supportCreate.js").supportCreate),
 });
+
 app.http("resumeOptimize", {
   methods: ["POST", "OPTIONS"],
   route: "resume/optimize",
   authLevel: "anonymous",
   handler: withOptions(require("./src/functions/resumeOptimize.js").resumeOptimize),
 });
+
+// ========================
+// Apply / Cover Letters (FIXED for v4 + OPTIONS)
+// ========================
 const { applyPrepare } = require("./src/functions/applyPrepare");
 const { coverLettersGet } = require("./src/functions/coverLettersGet");
-
-
-
 
 app.http("applyPrepare", {
   methods: ["POST", "OPTIONS"],
   route: "apply/prepare",
   authLevel: "anonymous",
-  handler: applyPrepare,
+  handler: withOptions(applyPrepare), // ✅ important
 });
-
-
-
 
 app.http("coverLettersGet", {
   methods: ["GET", "OPTIONS"],
   route: "coverletters/{id}",
   authLevel: "anonymous",
-  handler: coverLettersGet,
+  handler: withOptions(coverLettersGet), // ✅ important
 });
