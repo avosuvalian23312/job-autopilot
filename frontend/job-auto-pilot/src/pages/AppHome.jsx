@@ -555,9 +555,10 @@ const WeekDayPill = React.memo(function WeekDayPill({
         )}
         title={label}
       >
+        {/* CENTERED DAY NUMBER */}
         <div
           className={cx(
-            "absolute left-2 top-2 text-[12px] font-semibold tabular-nums",
+            "text-[14px] font-semibold tabular-nums",
             isPast ? "text-slate-500" : "text-slate-200"
           )}
           aria-hidden="true"
@@ -565,9 +566,13 @@ const WeekDayPill = React.memo(function WeekDayPill({
           {dayNum}
         </div>
 
+        {/* CENTERED CHECKMARK (overlaps number on purpose) */}
         {hasActivity ? (
           <Check
-            className={cx("h-5 w-5", isPast ? "text-slate-500" : "text-emerald-300")}
+            className={cx(
+              "absolute inset-0 m-auto h-5 w-5",
+              isPast ? "text-slate-500" : "text-emerald-300"
+            )}
             aria-hidden="true"
           />
         ) : null}
@@ -711,9 +716,11 @@ export default function AppHome() {
 
   const [jobsList, setJobsList] = useState([]);
 
-  // Monthly calendar preview (hover)
+  // Monthly calendar preview (CLICK ONLY)
   const [monthPreviewOpen, setMonthPreviewOpen] = useState(false);
-  const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [monthCursor, setMonthCursor] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  );
 
   const handleNewJob = useCallback(() => {
     navigate(createPageUrl("NewJob"));
@@ -856,11 +863,7 @@ export default function AppHome() {
         done: hasResume,
         hint: "Upload a resume to generate docs faster.",
       },
-      {
-        label: "10 applications",
-        done: totalApps >= 10,
-        hint: "Momentum beats intensity — stay consistent.",
-      },
+      { label: "10 applications", done: totalApps >= 10, hint: "Momentum beats intensity — stay consistent." },
       { label: "25 applications", done: totalApps >= 25, hint: "Nice volume — keep tracking clean." },
       { label: "First interview", done: firstInterview, hint: "Follow-ups + targeting are your levers." },
       { label: "First offer", done: firstOffer, hint: "Offers come from reps + iteration." },
@@ -910,12 +913,10 @@ export default function AppHome() {
     return m;
   }, [jobsList]);
 
-  // Small calendar: current week (Sun-Sat), with checkmark inside pill; past days greyed out.
+  // Small calendar: current week (Sun-Sat)
   const weekMeta = useMemo(() => {
     const now = new Date();
     const todayKey = startOfDay(now);
-
-    // Sunday-start week (matches labels below)
     const startKey = todayKey - now.getDay() * DAY_MS;
 
     const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -939,7 +940,7 @@ export default function AppHome() {
     return { days, activeDays, jobsThisWeek };
   }, [jobAddsByDay]);
 
-  // Month preview grid (for hover popover)
+  // Month preview grid
   const monthPreview = useMemo(() => {
     const today = new Date();
     const todayKey = startOfDay(today);
@@ -1005,9 +1006,9 @@ export default function AppHome() {
     return { rows, max };
   }, [jobsList]);
 
-  const openMonthPreview = useCallback(() => setMonthPreviewOpen(true), []);
-  const closeMonthPreview = useCallback(() => setMonthPreviewOpen(false), []);
+  // CLICK ONLY open/close
   const toggleMonthPreview = useCallback(() => setMonthPreviewOpen((v) => !v), []);
+  const closeMonthPreview = useCallback(() => setMonthPreviewOpen(false), []);
 
   const goPrevMonth = useCallback(() => setMonthCursor((d) => addMonths(d, -1)), []);
   const goNextMonth = useCallback(() => {
@@ -1030,6 +1031,16 @@ export default function AppHome() {
       return cur.getTime() > max.getTime() ? max : cur;
     });
   }, []);
+
+  // ESC closes month preview (no extra polling / no network)
+  useEffect(() => {
+    if (!monthPreviewOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") closeMonthPreview();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [monthPreviewOpen, closeMonthPreview]);
 
   return (
     <div
@@ -1091,10 +1102,8 @@ export default function AppHome() {
               </h1>
               <p className="mt-1 text-[length:var(--ds-body)] text-slate-400">
                 All-time:{" "}
-                <span className="text-slate-200 font-semibold">{totalApps}</span>{" "}
-                applications •{" "}
-                <span className="text-slate-200 font-semibold">{resumeCount}</span>{" "}
-                resumes
+                <span className="text-slate-200 font-semibold">{totalApps}</span> applications •{" "}
+                <span className="text-slate-200 font-semibold">{resumeCount}</span> resumes
               </p>
             </div>
 
@@ -1123,13 +1132,8 @@ export default function AppHome() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* LEFT */}
                 <div className="lg:col-span-7 space-y-6">
-                  {/* Small Calendar (7 days) + hover month preview */}
-                  <Card
-                    aria-label="Weekly activity calendar"
-                    className="relative"
-                    onMouseEnter={openMonthPreview}
-                    onMouseLeave={closeMonthPreview}
-                  >
+                  {/* Small Calendar (7 days) + CLICK-only month preview */}
+                  <Card aria-label="Weekly activity calendar" className="relative">
                     <CardHeader
                       className="items-center pb-4"
                       title="This week"
@@ -1173,7 +1177,7 @@ export default function AppHome() {
                       </div>
                     </CardContent>
 
-                    {/* Hover preview: full month calendar with month picker */}
+                    {/* Click preview: full month calendar with month picker */}
                     <AnimatePresence>
                       {monthPreviewOpen ? (
                         <motion.div
@@ -1181,10 +1185,7 @@ export default function AppHome() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 8 }}
                           transition={{ duration: 0.16 }}
-                          className={cx(
-                            "absolute left-0 top-full mt-3 z-50",
-                            "w-full sm:w-[560px]"
-                          )}
+                          className={cx("absolute left-0 top-full mt-3 z-50", "w-full sm:w-[560px]")}
                         >
                           <div className="rounded-2xl border border-white/10 bg-[hsl(var(--ds-bg))] shadow-[0_20px_60px_rgba(0,0,0,.6)] overflow-hidden">
                             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-white/10 bg-white/[0.03]">
@@ -1258,12 +1259,14 @@ export default function AppHome() {
                                         "relative h-12 rounded-xl border border-white/10 bg-white/[0.03]",
                                         "grid place-items-center select-none transition-colors",
                                         d.inMonth ? "hover:bg-white/[0.06] hover:border-white/15" : "opacity-30",
-                                        d.isToday ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10" : ""
+                                        d.isToday
+                                          ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10"
+                                          : ""
                                       )}
                                     >
                                       <div
                                         className={cx(
-                                          "absolute left-2 top-2 text-[12px] font-semibold tabular-nums",
+                                          "text-[13px] font-semibold tabular-nums",
                                           d.inMonth ? "text-slate-200" : "text-slate-500"
                                         )}
                                         aria-hidden="true"
@@ -1272,9 +1275,10 @@ export default function AppHome() {
                                       </div>
 
                                       {d.hasActivity ? (
-                                        <div className="grid place-items-center">
-                                          <Check className="h-5 w-5 text-emerald-300" aria-hidden="true" />
-                                        </div>
+                                        <Check
+                                          className="absolute inset-0 m-auto h-5 w-5 text-emerald-300"
+                                          aria-hidden="true"
+                                        />
                                       ) : null}
                                     </div>
                                   );
@@ -1286,7 +1290,7 @@ export default function AppHome() {
                                   <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400/80" />
                                   Days you added jobs
                                 </div>
-                                <div className="text-slate-600">Tip: use ◀ ▶ to browse past months</div>
+                                <div className="text-slate-600">Press Esc to close</div>
                               </div>
                             </div>
                           </div>
@@ -1295,16 +1299,17 @@ export default function AppHome() {
                     </AnimatePresence>
                   </Card>
 
-                  {/* New Job CTA — BIGGER card + “NEW JOB” text + huge + */}
+                  {/* New Job CTA — bigger vertically, bigger +, centered layout */}
                   <Card
                     as="button"
                     type="button"
                     aria-label="Create a new job"
                     onClick={handleNewJob}
                     className={cx(
-                      "text-left w-full relative overflow-hidden",
+                      "w-full relative overflow-hidden",
                       "border-purple-500/25 bg-gradient-to-b from-purple-500/12 to-white/[0.03]",
                       "hover:from-purple-500/16 hover:bg-white/[0.05] transition-colors",
+                      "min-h-[220px]",
                       focusRing
                     )}
                   >
@@ -1313,43 +1318,39 @@ export default function AppHome() {
                       aria-hidden="true"
                       className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/10 blur-2xl"
                     />
-                    <CardContent className="p-8 sm:p-10">
-                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
-                        {/* Left: huge + + NEW JOB */}
-                        <div className="flex items-center gap-6">
+                    <CardContent className="p-10 sm:p-12">
+                      <div className="flex flex-col items-center text-center gap-8">
+                        <div className="flex flex-col items-center gap-4">
                           <div
                             className={cx(
-                              "h-20 w-20 sm:h-24 sm:w-24 rounded-3xl",
+                              "h-24 w-24 sm:h-28 sm:w-28 rounded-3xl",
                               "grid place-items-center",
                               "border border-purple-500/25 bg-purple-500/15"
                             )}
                             aria-hidden="true"
                           >
-                            <Plus className="h-10 w-10 sm:h-12 sm:w-12 text-purple-200" />
+                            <Plus className="h-12 w-12 sm:h-14 sm:w-14 text-purple-200" />
                           </div>
 
                           <div className="min-w-0">
                             <div className="text-[12px] text-slate-400">Quick action</div>
-                            <div className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-100">
+                            <div className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight text-slate-100">
                               NEW JOB
                             </div>
-                            <div className="mt-1 text-[length:var(--ds-body)] text-slate-400">
+                            <div className="mt-2 text-[length:var(--ds-body)] text-slate-400 max-w-xl mx-auto">
                               Add a role to your pipeline and start tracking.
                             </div>
                           </div>
                         </div>
 
-                        {/* Right: stats */}
-                        <div className="w-full lg:w-auto">
+                        <div className="w-full max-w-md">
                           <div className="grid grid-cols-3 gap-3">
                             <MiniStat label="This week" value={`${weekApps}`} icon={Clock} />
                             <MiniStat label="Streak" value={`${streak}d`} icon={Zap} />
                             <MiniStat label="Offers" value={`${weekOffers}`} icon={Target} />
                           </div>
 
-                          <div className="mt-3 text-[12px] text-slate-500">
-                            Click anywhere on this card
-                          </div>
+                          <div className="mt-3 text-[12px] text-slate-500">Click anywhere on this card</div>
                         </div>
                       </div>
                     </CardContent>
@@ -1401,9 +1402,27 @@ export default function AppHome() {
                           </div>
 
                           <div className="mt-4 grid grid-cols-3 gap-3">
-                            <ProgressRing value={weekApps} max={weekMax} color="purple" label="Apps" ariaLabel="Applications this week" />
-                            <ProgressRing value={weekInterviews} max={weekMax} color="cyan" label="Interviews" ariaLabel="Interviews this week" />
-                            <ProgressRing value={weekOffers} max={weekMax} color="green" label="Offers" ariaLabel="Offers this week" />
+                            <ProgressRing
+                              value={weekApps}
+                              max={weekMax}
+                              color="purple"
+                              label="Apps"
+                              ariaLabel="Applications this week"
+                            />
+                            <ProgressRing
+                              value={weekInterviews}
+                              max={weekMax}
+                              color="cyan"
+                              label="Interviews"
+                              ariaLabel="Interviews this week"
+                            />
+                            <ProgressRing
+                              value={weekOffers}
+                              max={weekMax}
+                              color="green"
+                              label="Offers"
+                              ariaLabel="Offers this week"
+                            />
                           </div>
 
                           <p className="mt-4 text-[length:var(--ds-caption)] text-slate-500">
@@ -1416,7 +1435,10 @@ export default function AppHome() {
 
                   {/* Recent Activity */}
                   <Card aria-label="Recent activity">
-                    <CardHeader title="Recent activity" action={<Clock className="h-4 w-4 text-slate-400" aria-hidden="true" />} />
+                    <CardHeader
+                      title="Recent activity"
+                      action={<Clock className="h-4 w-4 text-slate-400" aria-hidden="true" />}
+                    />
                     <CardContent className="pt-5">
                       {recentActivity.length > 0 ? (
                         <ul className="space-y-3" role="list">
@@ -1431,14 +1453,20 @@ export default function AppHome() {
                                   activity.type === "job_added"
                                     ? "bg-purple-500/10"
                                     : activity.type === "doc_generated"
-                                    ? "bg-cyan-500/10"
-                                    : "bg-emerald-500/10"
+                                      ? "bg-cyan-500/10"
+                                      : "bg-emerald-500/10"
                                 )}
                                 aria-hidden="true"
                               >
-                                {activity.type === "job_added" && <Plus className="h-4 w-4 text-purple-300" />}
-                                {activity.type === "doc_generated" && <FileText className="h-4 w-4 text-cyan-300" />}
-                                {activity.type === "status_changed" && <TrendingUp className="h-4 w-4 text-emerald-300" />}
+                                {activity.type === "job_added" && (
+                                  <Plus className="h-4 w-4 text-purple-300" />
+                                )}
+                                {activity.type === "doc_generated" && (
+                                  <FileText className="h-4 w-4 text-cyan-300" />
+                                )}
+                                {activity.type === "status_changed" && (
+                                  <TrendingUp className="h-4 w-4 text-emerald-300" />
+                                )}
                               </div>
 
                               <div className="min-w-0 flex-1">
@@ -1467,7 +1495,11 @@ export default function AppHome() {
                 <div className="lg:col-span-5 space-y-6">
                   {/* Goals */}
                   <Card aria-label="Goals">
-                    <CardHeader className="items-center pb-4" title="Goals" description="Track progress across applications and resumes." />
+                    <CardHeader
+                      className="items-center pb-4"
+                      title="Goals"
+                      description="Track progress across applications and resumes."
+                    />
                     <CardContent className="pt-0 space-y-4">
                       {/* Keep your existing donut chart component */}
                       <Card className="p-4">
@@ -1481,7 +1513,9 @@ export default function AppHome() {
                       <Card className="p-4" aria-label="Applications goal progress">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
-                            <div className="text-[length:var(--ds-caption)] text-slate-400">Applications goal</div>
+                            <div className="text-[length:var(--ds-caption)] text-slate-400">
+                              Applications goal
+                            </div>
                             <div className="mt-1 text-[length:var(--ds-h3)] font-semibold text-slate-200">
                               {totalApps} / {APP_GOAL}
                             </div>
@@ -1537,7 +1571,11 @@ export default function AppHome() {
 
                   {/* Achievements */}
                   <Card aria-label="Achievements">
-                    <CardHeader title="Achievements" description="Next milestones to unlock." action={<Trophy className="h-4 w-4 text-amber-300" aria-hidden="true" />} />
+                    <CardHeader
+                      title="Achievements"
+                      description="Next milestones to unlock."
+                      action={<Trophy className="h-4 w-4 text-amber-300" aria-hidden="true" />}
+                    />
                     <CardContent className="pt-5 space-y-3">
                       {achievements.map((a) => (
                         <div
@@ -1567,7 +1605,11 @@ export default function AppHome() {
 
                   {/* Quick Tips */}
                   <Card aria-label="Quick tips">
-                    <CardHeader title="Quick tips" description="Small actions that move results." action={<Lightbulb className="h-4 w-4 text-cyan-300" aria-hidden="true" />} />
+                    <CardHeader
+                      title="Quick tips"
+                      description="Small actions that move results."
+                      action={<Lightbulb className="h-4 w-4 text-cyan-300" aria-hidden="true" />}
+                    />
                     <CardContent className="pt-5">
                       <ul className="space-y-3" role="list">
                         {tips.map((t, i) => (
@@ -1584,7 +1626,11 @@ export default function AppHome() {
 
                   {/* Next Actions */}
                   <Card aria-label="Next actions">
-                    <CardHeader title="Next actions" description="Today’s checklist." action={<ListChecks className="h-4 w-4 text-purple-300" aria-hidden="true" />} />
+                    <CardHeader
+                      title="Next actions"
+                      description="Today’s checklist."
+                      action={<ListChecks className="h-4 w-4 text-purple-300" aria-hidden="true" />}
+                    />
                     <CardContent className="pt-5">
                       <div className="space-y-2">
                         {checklist.map((c) => (
@@ -1624,7 +1670,11 @@ export default function AppHome() {
               {/* Bottom: Conversion + Top Companies */}
               <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <Card className="lg:col-span-4" aria-label="Pipeline conversion">
-                  <CardHeader title="Pipeline conversion" description="How your funnel is performing." action={<Target className="h-4 w-4 text-purple-300" aria-hidden="true" />} />
+                  <CardHeader
+                    title="Pipeline conversion"
+                    description="How your funnel is performing."
+                    action={<Target className="h-4 w-4 text-purple-300" aria-hidden="true" />}
+                  />
                   <CardContent className="pt-5">
                     <div className="grid grid-cols-3 gap-3">
                       <StatCard label="Applied" value={conversion.applied} icon={Target} />
