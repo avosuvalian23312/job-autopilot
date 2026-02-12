@@ -202,9 +202,7 @@ const normalizeRecentActivityFromDashboard = (dash) => {
 
   const mapped = raw
     .map((x, i) => {
-      const dt = toDate(
-        x?.ts || x?.time || x?.date || x?.createdAt || x?.created_date
-      );
+      const dt = toDate(x?.ts || x?.time || x?.date || x?.createdAt || x?.created_date);
       return {
         id: x?.id ?? `${i}`,
         type: x?.type || x?.kind || x?.eventType || "job_added",
@@ -448,7 +446,11 @@ const ProgressRing = React.memo(function ProgressRing({
   const dashOffset = circumference - (pct / 100) * circumference;
 
   return (
-    <div role="group" aria-label={ariaLabel || (label ? `${label}: ${v}` : undefined)} className="flex flex-col items-center">
+    <div
+      role="group"
+      aria-label={ariaLabel || (label ? `${label}: ${v}` : undefined)}
+      className="flex flex-col items-center"
+    >
       <div className="relative" style={{ width: size, height: size }}>
         <svg
           className="block -rotate-90"
@@ -499,10 +501,7 @@ const ProgressRing = React.memo(function ProgressRing({
 function StatCard({ label, value, icon: Icon, hint, className }) {
   return (
     <Card
-      className={cx(
-        "p-4 hover:bg-white/[0.055] transition-colors",
-        className
-      )}
+      className={cx("p-4 hover:bg-white/[0.055] transition-colors", className)}
       title={hint}
       aria-label={`${label}: ${value}`}
     >
@@ -524,68 +523,97 @@ function StatCard({ label, value, icon: Icon, hint, className }) {
   );
 }
 
-const CalendarDay = React.memo(function CalendarDay({
-  date,
-  inMonth,
-  count = 0,
-  isToday,
-  isFuture,
-}) {
+const CalendarDay = React.memo(function CalendarDay({ date, inMonth, count = 0, isToday, isFuture }) {
   const day = date.getDate();
   const done = inMonth && !isFuture && count > 0;
+  const interactive = inMonth && !isFuture;
 
   const label = inMonth
     ? `${date.toLocaleDateString(undefined, {
         month: "long",
         day: "numeric",
         year: "numeric",
-      })}: ${done ? `${count} job${count === 1 ? "" : "s"} added` : "No jobs added"}${
-        isToday ? " (Today)" : ""
-      }${isFuture ? " (Future)" : ""}`
+      })}: ${
+        done ? `${count} job${count === 1 ? "" : "s"} added` : "No jobs added"
+      }${isToday ? " (Today)" : ""}${isFuture ? " (Future)" : ""}`
     : "";
 
   return (
     <div
       role="gridcell"
       aria-label={label}
-      aria-disabled={!inMonth || isFuture}
+      aria-disabled={!interactive}
+      tabIndex={interactive ? 0 : -1}
       className={cx(
-        "h-14 rounded-xl border border-white/10 bg-white/[0.035] p-2",
-        "flex flex-col justify-between min-w-0 transition-colors",
+        // Layout: strict 8px spacing (gap-2 / p-2) and square cells.
+        "w-full aspect-square min-w-0 overflow-hidden select-none",
+        "rounded-xl border border-white/10 bg-white/[0.035] p-2",
+        "flex flex-col justify-between",
+        // States
         inMonth ? "opacity-100" : "opacity-35",
         isFuture ? "opacity-60" : "",
-        isToday ? "ring-1 ring-purple-500/35" : ""
+        isToday ? "ring-1 ring-purple-500/30" : "",
+        // Interaction polish (no layout shift)
+        interactive
+          ? "transition-colors duration-150 hover:bg-white/[0.055] hover:border-white/15"
+          : "transition-colors duration-150",
+        // Accessibility
+        focusRing,
+        "focus-visible:ring-purple-500/35"
       )}
       title={label}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-xs font-medium text-slate-200">{day}</div>
+      {/* Top row */}
+      <div className="flex items-center justify-between gap-2 min-h-5">
+        <div className="min-w-0 text-[12px] leading-none font-medium text-slate-200 tabular-nums">
+          {day}
+        </div>
 
-        {inMonth ? (
-          done ? (
-            <Badge variant="success" className="px-2 py-0.5">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Done</span>
-            </Badge>
+        <div className="shrink-0 h-5 flex items-center justify-end">
+          {inMonth ? (
+            done ? (
+              <Badge
+                variant="success"
+                className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Done</span>
+              </Badge>
+            ) : (
+              <Badge
+                variant="muted"
+                className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
+                aria-hidden="true"
+              >
+                <span className="hidden sm:inline">—</span>
+                <span className="sm:hidden">•</span>
+              </Badge>
+            )
           ) : (
-            <Badge variant="muted" className="px-2 py-0.5">
-              <span className="hidden sm:inline">—</span>
-            </Badge>
-          )
-        ) : (
-          <div className="h-5" />
-        )}
+            <span className="h-5" aria-hidden="true" />
+          )}
+        </div>
       </div>
 
-      <div className="flex items-end justify-between">
-        <div className="text-[11px] text-slate-500 truncate">
+      {/* Bottom row */}
+      <div className="flex items-center justify-between gap-2 min-h-5">
+        <div className="min-w-0 text-[11px] leading-none text-slate-400 truncate">
           {done ? `${count} job${count === 1 ? "" : "s"}` : ""}
         </div>
-        {isToday ? (
-          <Badge variant="purple" className="px-2 py-0.5 text-[10px]">
-            today
-          </Badge>
-        ) : null}
+
+        <div className="shrink-0 h-5 flex items-center justify-end">
+          {isToday ? (
+            <Badge
+              variant="purple"
+              className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
+            >
+              <span className="sm:hidden">•</span>
+              <span className="hidden sm:inline">today</span>
+            </Badge>
+          ) : (
+            <span className="h-5" aria-hidden="true" />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -600,7 +628,7 @@ function DashboardSkeleton() {
           <Skeleton className="mt-3 h-4 w-72" />
           <div className="mt-4 grid grid-cols-7 gap-2">
             {Array.from({ length: 28 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+              <Skeleton key={i} className="aspect-square w-full rounded-xl" />
             ))}
           </div>
         </Card>
@@ -793,11 +821,16 @@ export default function AppHome() {
       }
 
       const allFailed =
-        dashRes.status === "rejected" && jobsRes.status === "rejected" && resumesRes.status === "rejected";
+        dashRes.status === "rejected" &&
+        jobsRes.status === "rejected" &&
+        resumesRes.status === "rejected";
 
       if (allFailed) {
         const msg =
-          dashRes.reason?.message || jobsRes.reason?.message || resumesRes.reason?.message || "Failed to load dashboard.";
+          dashRes.reason?.message ||
+          jobsRes.reason?.message ||
+          resumesRes.reason?.message ||
+          "Failed to load dashboard.";
         setLoadError(msg);
       }
     } catch (err) {
@@ -844,7 +877,11 @@ export default function AppHome() {
 
     const tiers = [
       { label: "First job added", done: hasApps, hint: "Add a job to start your pipeline." },
-      { label: "First resume uploaded", done: hasResume, hint: "Upload a resume to generate docs faster." },
+      {
+        label: "First resume uploaded",
+        done: hasResume,
+        hint: "Upload a resume to generate docs faster.",
+      },
       { label: "10 applications", done: totalApps >= 10, hint: "Momentum beats intensity — stay consistent." },
       { label: "25 applications", done: totalApps >= 25, hint: "Nice volume — keep tracking clean." },
       { label: "First interview", done: firstInterview, hint: "Follow-ups + targeting are your levers." },
@@ -1042,6 +1079,7 @@ export default function AppHome() {
                   {/* Calendar */}
                   <Card aria-label="Activity calendar">
                     <CardHeader
+                      className="items-center pb-4"
                       title={`${monthMeta.monthName} activity`}
                       description={
                         <span className="text-slate-400">
@@ -1053,8 +1091,8 @@ export default function AppHome() {
                       }
                       action={<CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" />}
                     />
-                    <CardContent className="pt-5">
-                      <div className="grid grid-cols-7 gap-2 text-[11px] text-slate-500 mb-2">
+                    <CardContent className="pt-0">
+                      <div className="grid grid-cols-7 gap-2 mb-2 text-[12px] font-medium leading-none text-slate-400">
                         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                           <div key={d} className="text-center">
                             {d}
@@ -1134,7 +1172,7 @@ export default function AppHome() {
                     </CardContent>
                   </Card>
 
-                  {/* Insights (NOTE: Removed the entire “Last 7 days (applications added)” chart/labels) */}
+                  {/* Insights */}
                   <Card aria-label="Insights">
                     <CardHeader title="Insights" description="Status mix and weekly momentum at a glance." />
                     <CardContent className="pt-5">
@@ -1246,8 +1284,8 @@ export default function AppHome() {
                 <div className="lg:col-span-5 space-y-6">
                   {/* Goals */}
                   <Card aria-label="Goals">
-                    <CardHeader title="Goals" description="Track progress across applications and resumes." />
-                    <CardContent className="pt-5 space-y-4">
+                    <CardHeader className="items-center pb-4" title="Goals" description="Track progress across applications and resumes." />
+                    <CardContent className="pt-0 space-y-4">
                       {/* Keep your existing donut chart component */}
                       <Card className="p-4">
                         <div className="text-[length:var(--ds-h3)] font-semibold text-slate-200 mb-3">
