@@ -100,7 +100,7 @@ async function uploadPdfBuffer(connectionString, containerName, blobName, buffer
 
 /**
  * pdf-lib standard fonts use WinAnsi encoding.
- * This sanitizer keeps content safe and prevents the broken "..." / unicode bullets.
+ * This sanitizer keeps content safe and prevents broken unicode bullets / smart punctuation.
  */
 function toWinAnsiSafe(input) {
   let s = String(input || "");
@@ -119,10 +119,30 @@ function toWinAnsiSafe(input) {
   // remove unsupported unicode (keep ASCII + Latin-1)
   s = s.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
 
-  // collapse spaces
+  // collapse spaces (but keep line breaks)
   s = s.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 
   return s;
+}
+
+function safeStr(x) {
+  const s = toWinAnsiSafe(x);
+  return s || "";
+}
+
+function uniqStrings(arr, { max = 30 } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const v of Array.isArray(arr) ? arr : []) {
+    const s = safeStr(v);
+    if (!s) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 function cleanBullet(b) {
@@ -133,6 +153,9 @@ function cleanBullet(b) {
 
   // prevent trailing "for" / awkward incomplete endings
   s = s.replace(/\bfor\s*$/i, "").trim();
+
+  // enforce no "..."
+  s = s.replace(/\.{2,}/g, ".");
 
   // ensure ends cleanly
   if (s && !/[.!?]$/.test(s)) s += ".";
@@ -155,6 +178,106 @@ function buildResumeTextFromLayout(layout, { maxChars = 16000 } = {}) {
   const full = parts.join("\n");
   if (full.length <= maxChars) return full;
   return full.slice(0, maxChars);
+}
+
+/**
+ * Extract a canonical full name from the source resume text.
+ * This prevents the model from randomly changing the name (e.g., "Gavin").
+ */
+function detectCanonicalNameFromResumeText(resumeText) {
+  const text = String(resumeText || "");
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 40);
+
+  const looksLikeContact = (s) => {
+    const t = s.toLowerCase();
+    return (
+      t.includes("@") ||
+      t.includes("linkedin") ||
+      t.includes("github") ||
+      t.includes("portfolio") ||
+      /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(s) ||
+      /\b\d{1,5}\s+\w+/.test(s) // address-ish
+    );
+  };
+
+  const scoreName = (s) => {
+    // Prefer all-caps multi-word names, not too long, not contact-ish
+    if (!s) return 0;
+    if (looksLikeContact(s)) return 0;
+
+    const words = s.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 5) return 0;
+
+    // must mostly be letters
+    const letters = s.replace(/[^A-Za-z]/g, "").length;
+    if (letters < 6) return 0;
+
+    const isAllCaps = s === s.toUpperCase() && /[A-Z]/.test(s);
+    const isTitleCase =
+      words.every((w) => /^[A-Z][a-z]+$/.test(w)) || words.some((w) => /^[A-Z][a-z]+$/.test(w));
+
+    let score = 0;
+    if (isAllCaps) score += 4;
+    if (isTitleCase) score += 2;
+
+    // penalize weird punctuation
+    if (/[@|]/.test(s)) score -= 2;
+
+    // shorter is usually better
+    score += Math.max(0, 6 - words.length);
+
+    return score;
+  };
+
+  let best = "";
+  let bestScore = 0;
+
+  for (const l of lines) {
+    // ignore lines that are obviously headings (SUMMARY, SKILLS, etc.)
+    if (/^(professional|technical|experience|education|certifications|projects)\b/i.test(l)) continue;
+
+    const cleaned = l.replace(/\s{2,}/g, " ").trim();
+    const sc = scoreName(cleaned);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = cleaned;
+    }
+  }
+
+  // normalize spacing and keep letters/spaces only (but preserve hyphen)
+  best = best.replace(/[^A-Za-z\s-]/g, "").replace(/\s{2,}/g, " ").trim();
+
+  // last sanity check
+  if (best.split(/\s+/).length >= 2 && best.length >= 6) return best;
+  return "";
+}
+
+function buildTargetKeywords(jobData) {
+  const kw = [];
+  const add = (v) => {
+    const s = safeStr(v);
+    if (!s) return;
+    if (s.length > 40) return;
+    kw.push(s);
+  };
+
+  for (const k of Array.isArray(jobData?.keywords) ? jobData.keywords : []) add(k);
+
+  const req = jobData?.requirements && typeof jobData.requirements === "object" ? jobData.requirements : null;
+  if (req) {
+    for (const k of Array.isArray(req.skillsRequired) ? req.skillsRequired : []) add(k);
+    for (const k of Array.isArray(req.skillsPreferred) ? req.skillsPreferred : []) add(k);
+    for (const k of Array.isArray(req.certificationsPreferred) ? req.certificationsPreferred : []) add(k);
+    add(req.educationRequired);
+    add(req.workModelRequired);
+  }
+
+  // Deduplicate + cap
+  return uniqStrings(kw, { max: 36 });
 }
 
 /**
@@ -206,10 +329,20 @@ No extra keys. No markdown.
 /**
  * Build a structured, ATS-style resume draft from resume text + job data.
  * IMPORTANT: must be grounded in resume text; no hallucinations.
+ *
+ * This is PASS 1 (Draft).
  */
-async function buildTailoredResumeDraft({ jobData, resumeText, profile, aiMode, studentMode }) {
+async function buildTailoredResumeDraft({
+  jobData,
+  resumeText,
+  profile,
+  aiMode,
+  studentMode,
+  canonicalFullName,
+  targetKeywords,
+}) {
   const system = `
-You are an expert ATS resume writer.
+You are an expert ATS resume writer and resume architect.
 
 Return ONLY valid JSON with EXACT keys:
 {
@@ -244,21 +377,34 @@ Return ONLY valid JSON with EXACT keys:
   ]
 }
 
-RULES (VERY IMPORTANT):
-- Use ONLY information supported by RESUME TEXT or PROFILE. Do NOT invent employers, dates, degrees, tools, certs, or achievements.
-- You MAY rephrase bullets for clarity and ATS alignment, but keep them truthful.
-- Do NOT use "..." anywhere.
-- Bullets must be complete sentences or strong phrases; never end with "for" or incomplete fragments.
-- Keep bullets concise: ideally <= 110 characters each.
-- Prioritize skills/keywords that match JOB DATA.
+HARD CONSTRAINTS (DO NOT VIOLATE):
+- The candidate's name MUST be exactly: CANONICAL_FULL_NAME (case preserved). Do NOT change it to another name.
+- Use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, dates, degrees, tools, certs, titles, metrics, or achievements.
+- No "..." anywhere. No truncations. No incomplete endings like "for".
+- Bullets must be strong, complete phrases or sentences; action verb first; keep them tight.
+- If you include metrics, they MUST be present in RESUME TEXT (no made-up numbers).
+- Keep output designed to fit on 1 page (concise, no fluff).
+
+QUALITY GOAL:
+- Make the resume EXTREMELY tailored to JOB DATA.
+- Weave TARGET_KEYWORDS naturally into Summary/Skills/Experience where truthful.
+- Prioritize what recruiters scan: headline, summary, skills categories, then experience bullets.
+
+AI MODE:
+- If aiMode is "elite", you may rewrite more aggressively for impact, but still cannot add facts.
 - If studentMode is true, emphasize projects/coursework and reduce reliance on work experience claims.
-- If aiMode is "elite", still do NOT invent facts.
+
 No markdown. JSON only.
 `.trim();
 
   const user = `
+CANONICAL_FULL_NAME: ${JSON.stringify(canonicalFullName || "")}
+
 AI MODE: ${aiMode || "standard"}
 STUDENT MODE: ${studentMode ? "true" : "false"}
+
+TARGET_KEYWORDS (prioritize weaving these in naturally when truthful):
+${JSON.stringify(targetKeywords || [], null, 2)}
 
 PROFILE (trusted):
 ${JSON.stringify(profile || {}, null, 2)}
@@ -273,37 +419,166 @@ ${String(resumeText || "")}
   const { content } = await callAoaiChat({
     system,
     user,
-    temperature: 0.25,
-    max_tokens: 1400,
+    temperature: 0.28,
+    max_tokens: 1600,
   });
 
-  const parsed = safeJsonParse(content) || {};
-  return parsed;
+  return safeJsonParse(content) || {};
 }
 
-function safeStr(x) {
-  const s = toWinAnsiSafe(x);
-  return s || "";
+/**
+ * PASS 2 (Refine): make it more "experimental" / best possible:
+ * - Stronger wording
+ * - Better keyword coverage
+ * - Cleaner categories
+ * - Removes weak/filler bullets
+ * Still grounded (no new facts).
+ */
+async function refineTailoredResumeDraft({
+  draft,
+  jobData,
+  resumeText,
+  profile,
+  aiMode,
+  studentMode,
+  canonicalFullName,
+  targetKeywords,
+}) {
+  const system = `
+You are an expert resume editor and ATS optimizer.
+
+You will receive:
+- A draft resume JSON (same schema)
+- JOB DATA and TARGET_KEYWORDS
+- RESUME TEXT (ground truth)
+
+Task:
+Improve the draft to be the BEST possible resume for this specific job:
+- Maximize relevance & ATS alignment
+- Strengthen bullet verbs and specificity
+- Remove fluff and redundancy
+- Reorder content to match the job's priorities
+- Ensure no broken/truncated phrases
+- Ensure candidate name stays EXACT
+
+Return ONLY JSON in the SAME schema as the draft.
+Do NOT add new keys.
+
+HARD CONSTRAINTS:
+- header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+- Use ONLY facts supported by RESUME TEXT or PROFILE.
+- No "..." anywhere. No incomplete "for".
+- Bullets <= 110 characters preferred.
+- Bullets must be complete and end cleanly (period is fine).
+- Keep to 1 page: be concise.
+
+No markdown. JSON only.
+`.trim();
+
+  const user = `
+CANONICAL_FULL_NAME: ${JSON.stringify(canonicalFullName || "")}
+AI MODE: ${aiMode || "standard"}
+STUDENT MODE: ${studentMode ? "true" : "false"}
+
+TARGET_KEYWORDS:
+${JSON.stringify(targetKeywords || [], null, 2)}
+
+JOB DATA:
+${JSON.stringify(jobData || {}, null, 2)}
+
+PROFILE (trusted):
+${JSON.stringify(profile || {}, null, 2)}
+
+RESUME TEXT (ground truth):
+${String(resumeText || "")}
+
+DRAFT JSON (to refine):
+${JSON.stringify(draft || {}, null, 2)}
+`.trim();
+
+  const { content } = await callAoaiChat({
+    system,
+    user,
+    temperature: 0.22,
+    max_tokens: 1700,
+  });
+
+  return safeJsonParse(content) || {};
 }
 
-function uniqStrings(arr, { max = 30 } = {}) {
-  const out = [];
-  const seen = new Set();
-  for (const v of Array.isArray(arr) ? arr : []) {
-    const s = safeStr(v);
-    if (!s) continue;
-    const k = s.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(s);
-    if (out.length >= max) break;
+function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
+  const d = draft && typeof draft === "object" ? draft : {};
+
+  const header = d.header && typeof d.header === "object" ? d.header : {};
+  const out = {
+    header: {
+      fullName: safeStr(canonicalFullName || header.fullName || profile?.fullName || ""),
+      headline: safeStr(header.headline),
+      location: safeStr(header.location || profile?.location),
+      phone: safeStr(header.phone || profile?.phone),
+      email: safeStr(header.email || profile?.email || userEmail || ""),
+      linkedin: safeStr(header.linkedin || profile?.linkedin),
+      portfolio: safeStr(header.portfolio || profile?.portfolio),
+    },
+    summary: uniqStrings(d.summary, { max: 4 }).map((s) => cleanBullet(s).replace(/^- /, "")),
+    skills: [],
+    experience: [],
+    education: [],
+    certifications: uniqStrings(d.certifications, { max: 12 }),
+    projects: [],
+  };
+
+  // Skills
+  const skills = Array.isArray(d.skills) ? d.skills : [];
+  for (const s of skills.slice(0, 12)) {
+    const category = safeStr(s?.category);
+    const items = uniqStrings(s?.items, { max: 14 });
+    if (!category || !items.length) continue;
+    out.skills.push({ category, items });
   }
+
+  // Experience
+  const exp = Array.isArray(d.experience) ? d.experience : [];
+  for (const r of exp.slice(0, 6)) {
+    const bullets = uniqStrings(r?.bullets, { max: 6 }).map(cleanBullet).filter(Boolean);
+    out.experience.push({
+      title: safeStr(r?.title),
+      company: safeStr(r?.company),
+      location: safeStr(r?.location),
+      dates: safeStr(r?.dates),
+      bullets,
+    });
+  }
+
+  // Education
+  const edu = Array.isArray(d.education) ? d.education : [];
+  for (const e of edu.slice(0, 4)) {
+    out.education.push({
+      school: safeStr(e?.school),
+      degree: safeStr(e?.degree),
+      dates: safeStr(e?.dates),
+      details: uniqStrings(e?.details, { max: 4 }).map((x) => cleanBullet(x).replace(/^- /, "")),
+    });
+  }
+
+  // Projects
+  const projects = Array.isArray(d.projects) ? d.projects : [];
+  for (const p of projects.slice(0, 5)) {
+    const name = safeStr(p?.name);
+    const bullets = uniqStrings(p?.bullets, { max: 4 }).map(cleanBullet).filter(Boolean);
+    if (!name && !bullets.length) continue;
+    out.projects.push({ name, bullets });
+  }
+
+  // Final safety: ensure name never becomes empty if we have any profile/name data
+  if (!out.header.fullName) out.header.fullName = safeStr(profile?.fullName || "Resume");
+
   return out;
 }
 
 /**
  * Render an ATS-friendly PDF from the tailored resume draft.
- * Avoids broken in-place PDF overlays completely.
+ * Single-column, clean wrap, consistent spacing.
  */
 async function renderAtsPdf(draft) {
   const pdfDoc = await PDFDocument.create();
@@ -316,29 +591,15 @@ async function renderAtsPdf(draft) {
   const marginX = 54;
   const marginTop = 54;
   const marginBottom = 54;
-
   let y = page.getHeight() - marginTop;
 
-  const drawLine = (text, { size = 11, bold = false, indent = 0, gap = 1.25 } = {}) => {
-    const f = bold ? fontBold : font;
-    const s = safeStr(text);
-    if (!s) return;
+  const lineHeight = (size, gap) => size * (gap || 1.25);
 
-    const lh = size * gap;
-
-    if (y - lh < marginBottom) {
+  const ensureSpace = (need) => {
+    if (y - need < marginBottom) {
       page = pdfDoc.addPage(pageSize);
       y = page.getHeight() - marginTop;
     }
-
-    page.drawText(s, {
-      x: marginX + indent,
-      y: y - size,
-      size,
-      font: f,
-    });
-
-    y -= lh;
   };
 
   const wrap = (text, maxWidth, size, bold = false) => {
@@ -361,16 +622,42 @@ async function renderAtsPdf(draft) {
     return lines;
   };
 
+  const drawTextLine = (text, { size = 11, bold = false, indent = 0, gap = 1.25 } = {}) => {
+    const s = safeStr(text);
+    if (!s) return;
+
+    const f = bold ? fontBold : font;
+    const lh = lineHeight(size, gap);
+
+    ensureSpace(lh);
+
+    page.drawText(s, {
+      x: marginX + indent,
+      y: y - size,
+      size,
+      font: f,
+    });
+
+    y -= lh;
+  };
+
   const drawWrapped = (text, { size = 11, bold = false, indent = 0, maxWidth, gap = 1.25 } = {}) => {
     const width = maxWidth || (page.getWidth() - marginX * 2 - indent);
     const lines = wrap(text, width, size, bold);
-    for (const ln of lines) drawLine(ln, { size, bold, indent, gap });
+    for (const ln of lines) drawTextLine(ln, { size, bold, indent, gap });
   };
 
   const drawSection = (title) => {
-    y -= 6;
-    drawLine(title, { size: 12, bold: true, gap: 1.1 });
-    y -= 2;
+    y -= 8;
+    drawTextLine(title, { size: 12, bold: true, gap: 1.05 });
+    // thin divider
+    ensureSpace(8);
+    page.drawLine({
+      start: { x: marginX, y: y - 2 },
+      end: { x: page.getWidth() - marginX, y: y - 2 },
+      thickness: 0.75,
+    });
+    y -= 8;
   };
 
   const h = draft?.header || {};
@@ -378,8 +665,8 @@ async function renderAtsPdf(draft) {
   const headline = safeStr(h.headline);
 
   // Header
-  drawLine(fullName, { size: 16, bold: true, gap: 1.15 });
-  if (headline) drawLine(headline, { size: 11, bold: false, gap: 1.15 });
+  drawTextLine(fullName, { size: 16, bold: true, gap: 1.15 });
+  if (headline) drawWrapped(headline, { size: 11, gap: 1.15 });
 
   const contactBits = [
     safeStr(h.location),
@@ -393,26 +680,31 @@ async function renderAtsPdf(draft) {
     drawWrapped(contactBits.join(" | "), { size: 10.5, maxWidth: page.getWidth() - marginX * 2 });
   }
 
-  y -= 8;
+  y -= 10;
 
   // Summary
   const summary = uniqStrings(draft?.summary, { max: 4 });
   if (summary.length) {
     drawSection("PROFESSIONAL SUMMARY");
-    for (const s of summary) drawWrapped(s, { size: 10.8, maxWidth: page.getWidth() - marginX * 2 });
+    for (const s of summary) drawWrapped(cleanBullet(s).replace(/^- /, ""), { size: 10.8 });
   }
 
   // Skills
   const skills = Array.isArray(draft?.skills) ? draft.skills : [];
   if (skills.length) {
     drawSection("TECHNICAL SKILLS");
-    for (const cat of skills.slice(0, 10)) {
+    for (const cat of skills.slice(0, 12)) {
       const category = safeStr(cat?.category);
-      const items = uniqStrings(cat?.items, { max: 12 });
+      const items = uniqStrings(cat?.items, { max: 14 });
       if (!category || !items.length) continue;
 
-      drawLine(category + ":", { size: 10.8, bold: true, gap: 1.2 });
-      drawWrapped(items.join(", "), { size: 10.6, indent: 12, maxWidth: page.getWidth() - marginX * 2 - 12 });
+      drawTextLine(category + ":", { size: 10.8, bold: true, gap: 1.2 });
+      drawWrapped(items.join(", "), {
+        size: 10.6,
+        indent: 12,
+        maxWidth: page.getWidth() - marginX * 2 - 12,
+        gap: 1.25,
+      });
       y -= 2;
     }
   }
@@ -430,24 +722,23 @@ async function renderAtsPdf(draft) {
       const headerLeft = [title, company].filter(Boolean).join(" — ");
       const headerRight = [loc, dates].filter(Boolean).join(" | ");
 
-      if (headerLeft) drawLine(headerLeft, { size: 11, bold: true, gap: 1.2 });
-      if (headerRight) drawLine(headerRight, { size: 10.5, bold: false, gap: 1.2 });
+      if (headerLeft) drawTextLine(headerLeft, { size: 11, bold: true, gap: 1.15 });
+      if (headerRight) drawTextLine(headerRight, { size: 10.5, gap: 1.15 });
 
       const bullets = uniqStrings(role?.bullets, { max: 6 }).map(cleanBullet).filter(Boolean);
       for (const b of bullets) {
-        // bullet wrap: first line "- ", following lines indent
         const bulletPrefix = "- ";
-        const maxWidth = page.getWidth() - marginX * 2 - 14;
+        const maxWidth = page.getWidth() - marginX * 2 - 18;
         const lines = wrap(b, maxWidth, 10.6, false);
 
         if (lines.length) {
-          drawLine(bulletPrefix + lines[0], { size: 10.6, indent: 0, gap: 1.25 });
+          drawTextLine(bulletPrefix + lines[0], { size: 10.6, gap: 1.22 });
           for (const ln of lines.slice(1)) {
-            drawLine("  " + ln, { size: 10.6, indent: 14, gap: 1.25 });
+            drawTextLine(ln, { size: 10.6, indent: 18, gap: 1.22 });
           }
         }
       }
-      y -= 4;
+      y -= 6;
     }
   }
 
@@ -461,12 +752,12 @@ async function renderAtsPdf(draft) {
       const dates = safeStr(e?.dates);
 
       const line = [degree, school].filter(Boolean).join(" — ");
-      if (line) drawLine(line, { size: 10.8, bold: true, gap: 1.2 });
-      if (dates) drawLine(dates, { size: 10.5, gap: 1.2 });
+      if (line) drawTextLine(line, { size: 10.8, bold: true, gap: 1.15 });
+      if (dates) drawTextLine(dates, { size: 10.5, gap: 1.15 });
 
       const details = uniqStrings(e?.details, { max: 4 });
-      for (const d of details) drawWrapped(d, { size: 10.5, indent: 12 });
-      y -= 3;
+      for (const d of details) drawWrapped(cleanBullet(d).replace(/^- /, ""), { size: 10.5, indent: 12, gap: 1.2 });
+      y -= 4;
     }
   }
 
@@ -474,27 +765,30 @@ async function renderAtsPdf(draft) {
   const certs = uniqStrings(draft?.certifications, { max: 12 });
   if (certs.length) {
     drawSection("CERTIFICATIONS");
-    for (const c of certs) drawLine("- " + safeStr(c), { size: 10.6, gap: 1.25 });
+    for (const c of certs) drawTextLine("- " + safeStr(c), { size: 10.6, gap: 1.2 });
   }
 
-  // Projects (optional)
+  // Projects
   const projects = Array.isArray(draft?.projects) ? draft.projects : [];
-  const anyProjects = projects.some((p) => safeStr(p?.name) || (Array.isArray(p?.bullets) && p.bullets.length));
+  const anyProjects = projects.some(
+    (p) => safeStr(p?.name) || (Array.isArray(p?.bullets) && p.bullets.length)
+  );
   if (anyProjects) {
     drawSection("PROJECTS");
-    for (const p of projects.slice(0, 4)) {
+    for (const p of projects.slice(0, 5)) {
       const name = safeStr(p?.name);
-      if (name) drawLine(name, { size: 10.8, bold: true, gap: 1.2 });
+      if (name) drawTextLine(name, { size: 10.8, bold: true, gap: 1.15 });
 
       const bullets = uniqStrings(p?.bullets, { max: 4 }).map(cleanBullet).filter(Boolean);
       for (const b of bullets) {
-        const lines = wrap(b, page.getWidth() - marginX * 2 - 14, 10.6, false);
+        const maxWidth = page.getWidth() - marginX * 2 - 18;
+        const lines = wrap(b, maxWidth, 10.6, false);
         if (lines.length) {
-          drawLine("- " + lines[0], { size: 10.6, gap: 1.25 });
-          for (const ln of lines.slice(1)) drawLine("  " + ln, { size: 10.6, indent: 14, gap: 1.25 });
+          drawTextLine("- " + lines[0], { size: 10.6, gap: 1.22 });
+          for (const ln of lines.slice(1)) drawTextLine(ln, { size: 10.6, indent: 18, gap: 1.22 });
         }
       }
-      y -= 3;
+      y -= 5;
     }
   }
 
@@ -545,6 +839,7 @@ Rules:
 - Mention jobTitle and company if available.
 - Professional tone.
 - Pull skill themes from resume text; do NOT invent credentials.
+- No "..." anywhere.
 - No markdown. JSON only.
 `.trim();
 
@@ -562,12 +857,13 @@ ${String(resumeText || "")}
   const { content } = await callAoaiChat({
     system,
     user,
-    temperature: 0.35,
-    max_tokens: 750,
+    temperature: 0.32,
+    max_tokens: 800,
   });
 
   const parsed = safeJsonParse(content) || {};
-  return String(parsed.text || "").trim();
+  const text = String(parsed.text || "").trim();
+  return toWinAnsiSafe(text);
 }
 
 async function applyPrepare(request, context) {
@@ -625,10 +921,7 @@ async function applyPrepare(request, context) {
     if (!resumeDoc) return { status: 404, jsonBody: { ok: false, error: "Resume not found" } };
     if (!resumeDoc.blobName) return { status: 400, jsonBody: { ok: false, error: "Resume doc missing blobName" } };
     if (String(resumeDoc.contentType || "").toLowerCase() !== "application/pdf") {
-      return {
-        status: 400,
-        jsonBody: { ok: false, error: "Only PDF resumes supported." },
-      };
+      return { status: 400, jsonBody: { ok: false, error: "Only PDF resumes supported." } };
     }
 
     // Download PDF bytes
@@ -647,33 +940,56 @@ async function applyPrepare(request, context) {
     const layout = await extractPdfLayout(pdfBytesForExtract, { maxPages: 12 });
     const resumeText = buildResumeTextFromLayout(layout, { maxChars: 16000 });
 
-    // Extract job data
-    const jobData = await extractJobWithAoai(jobDescriptionRaw);
-
     // Load profile (trusted)
     const profile = await tryLoadUserProfile(cosmos, COSMOS_DB_NAME, user.userId);
 
-    // Build tailored ATS resume draft (JSON)
+    // Canonical name (prevents random name changes)
+    const nameFromResume = detectCanonicalNameFromResumeText(resumeText);
+    const canonicalFullName = safeStr(nameFromResume || profile.fullName || "").trim();
+
+    // Extract job data
+    const jobData = await extractJobWithAoai(jobDescriptionRaw);
+
+    // Target keywords for ATS weaving (more aggressive)
+    const targetKeywords = buildTargetKeywords(jobData);
+
+    // PASS 1: Draft
     let draft = await buildTailoredResumeDraft({
       jobData,
       resumeText,
       profile,
       aiMode,
       studentMode,
+      canonicalFullName,
+      targetKeywords,
     });
 
-    // Fill missing header values from profile if needed
-    draft = draft && typeof draft === "object" ? draft : {};
-    draft.header = draft.header && typeof draft.header === "object" ? draft.header : {};
-    draft.header.fullName = draft.header.fullName || profile.fullName || "";
-    draft.header.email = draft.header.email || profile.email || user.email || "";
-    draft.header.phone = draft.header.phone || profile.phone || "";
-    draft.header.location = draft.header.location || profile.location || "";
-    draft.header.linkedin = draft.header.linkedin || profile.linkedin || "";
-    draft.header.portfolio = draft.header.portfolio || profile.portfolio || "";
+    // PASS 2: Refine (more experimental / best possible)
+    try {
+      const refined = await refineTailoredResumeDraft({
+        draft,
+        jobData,
+        resumeText,
+        profile,
+        aiMode,
+        studentMode,
+        canonicalFullName,
+        targetKeywords,
+      });
+      if (refined && typeof refined === "object") draft = refined;
+    } catch (e) {
+      log(context, "refineTailoredResumeDraft failed; using draft:", e?.message || e);
+    }
 
-    // Render ATS PDF (no broken overlays)
-    const tailoredPdfBuffer = await renderAtsPdf(draft);
+    // Normalize + sanitize output (and enforce name)
+    const normalized = normalizeDraft(draft, {
+      canonicalFullName,
+      profile,
+      userEmail: user.email,
+    });
+
+    // Render ATS PDF
+    const tailoredPdfBuffer = await renderAtsPdf(normalized);
 
     // Upload tailored PDF
     const now = new Date();
@@ -712,17 +1028,17 @@ async function applyPrepare(request, context) {
       contentType: "application/pdf",
       size: tailoredPdfBuffer.length,
 
-      atsKeywords: uniqStrings(jobData?.keywords, { max: 30 }),
+      atsKeywords: uniqStrings(targetKeywords, { max: 36 }),
       overlaysAppliedCount: 0,
 
-      tailorMode: "regen-ats",
+      tailorMode: "regen-ats-v2",
       uploadedAt: now.toISOString(),
       updated_date: now.toISOString().split("T")[0],
     };
 
     await resumesContainer.items.upsert(tailoredResumeDoc, { partitionKey: user.userId });
 
-    // Cover letter
+    // Cover letter (grounded)
     const coverLetterText = await generateCoverLetter({ jobData, resumeText, profile });
 
     const coverLetterDoc = {
@@ -739,7 +1055,7 @@ async function applyPrepare(request, context) {
       sourceResumeId: resumeId,
       tailoredResumeId: tailoredResumeDoc.id,
 
-      atsKeywords: uniqStrings(jobData?.keywords, { max: 30 }),
+      atsKeywords: uniqStrings(targetKeywords, { max: 36 }),
       text: toWinAnsiSafe(coverLetterText || ""),
 
       createdAt: now.toISOString(),
