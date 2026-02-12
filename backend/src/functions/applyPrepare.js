@@ -386,34 +386,59 @@ Return ONLY valid JSON with EXACT keys:
 }
 
 HARD CONSTRAINTS:
-- header.fullName MUST be exactly CANONICAL_FULL_NAME. Never change the name.
-- If MODE is "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent anything.
-- If MODE is "training_sample": you MAY include SAMPLE projects/labs, but they MUST be clearly labeled "SAMPLE" and described as practice/learning, not real work.
-- No "..." anywhere. No incomplete endings like "for".
-- No fake metrics unless explicitly labeled SAMPLE and only in training_sample mode.
-- Keep to 1 page: concise, no fluff.
-- Bullets should be action-forward and <= 110 characters preferred.
+- header.fullName MUST be exactly CANONICAL_FULL_NAME.
+- No new keys, no markdown, JSON only.
+- No "..." anywhere.
+- Bullets <= 110 characters preferred.
+- Keep it 1-page dense and recruiter-friendly.
+- Skills must be grouped into 5 to 7 clean, professional categories.
+- Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
 
-MOCK DATA POLICY:
-- MODE "real": You MUST NOT invent any facts. All experience, dates, employers, titles, tools, metrics, and education must come from RESUME TEXT or PROFILE.
-- MODE "training_sample": You MAY generate SAMPLE bullets and SAMPLE projects/labs ONLY if:
-  • They are clearly labeled "SAMPLE".
-  • They are described as practice, training, or learning exercises.
-  • They do NOT imply real employment, real clients, real companies, or real dates.
-  • They stay within the candidate’s demonstrated skill boundaries.
-- SAMPLE bullets MUST be framed as capabilities, practice tasks, or learning exercises—not real work.
-- SAMPLE metrics are allowed ONLY in training_sample mode and MUST be labeled SAMPLE.
-- SAMPLE content may appear ONLY in:
-  • summary
-  • skills
-  • projects
-  • experience.bullets (capability-style only, never implying new employment)
-- Never create fake employers, fake dates, fake titles, or fake job history under any mode.
+MODE RULES:
 
-QUALITY:
-- Extremely tailor to JOB DATA and TARGET_KEYWORDS (weave naturally).
-- Use recruiter-friendly ordering: headline -> summary -> skills -> experience -> education -> certs -> projects.
-- Skills must be grouped into clean categories (5–7 categories).
+MODE "standard":
+- Use ONLY facts supported by RESUME TEXT or PROFILE.
+- Do NOT invent new employers, roles, dates, tools, certifications, or metrics.
+- You MAY rewrite bullets for clarity, strength, and job alignment.
+- You MAY reorganize skills and improve phrasing.
+- You MAY expand existing projects ONLY using information already implied by the resume.
+- No mock experience, no fictional companies, no fictional dates.
+
+MODE "elite":
+- You MAY generate mock experience using REAL companies that match the job’s industry.
+  Examples:
+    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
+- Mock experience MUST include:
+  • a real company name,
+  • a realistic job title,
+  • a location,
+  • dates 1 to 2 years prior,
+  • strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+- Mock experience MUST NOT reference that it is mock or fictional.
+- You MAY generate new enterprise-grade projects aligned to JOB DATA.
+- Projects MUST reflect real-world deliverables such as:
+  • server room and IDF or MDF organization,
+  • smart hands support for network and server teams,
+  • printer hardware repair and warranty coordination,
+  • Teams Rooms and Solstice Pod configuration and firmware updates,
+  • A or V troubleshooting and meeting room readiness,
+  • proactive floor walks and issue identification,
+  • asset lifecycle management including deployment, reuse, and disposal,
+  • SLA improvement and ticket efficiency initiatives,
+  • executive and VIP support.
+- Projects MUST NOT reference that they are mock or fictional.
+
+QUALITY REQUIREMENTS:
+- Strengthen headline and summary positioning.
+- Normalize skills into clean, ATS-friendly categories.
+- Rewrite bullets into concise, impact-oriented language.
+- Remove weak or redundant items.
+- Ensure tense consistency, punctuation consistency, and clean formatting.
+
 No markdown. JSON only.
 `.trim();
 
@@ -526,64 +551,84 @@ No markdown. JSON only.
  * - Still NO invented employers/roles/dates
  */
 const REFINE_SYSTEM_ELITE_TRUTHFUL = `
-You are an expert ATS resume writer and resume architect.
+You are an expert ATS resume auditor, editor, and resume architect.
 
-Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
-
+Return ONLY valid JSON:
 {
-  "header": {
-    "fullName": string|null,
-    "headline": string|null,
-    "location": string|null,
-    "phone": string|null,
-    "email": string|null,
-    "linkedin": string|null,
-    "portfolio": string|null
-  },
-  "summary": string[],
-  "skills": [
-    { "category": string, "items": string[] }
-  ],
-  "experience": [
-    {
-      "title": string|null,
-      "company": string|null,
+  "final": {
+    "header": {
+      "fullName": string|null,
+      "headline": string|null,
       "location": string|null,
-      "dates": string|null,
-      "bullets": string[]
-    }
-  ],
-  "education": [
-    { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
-  ],
-  "certifications": string[],
-  "projects": [
-    { "name": string|null, "bullets": string[] }
-  ]
+      "phone": string|null,
+      "email": string|null,
+      "linkedin": string|null,
+      "portfolio": string|null
+    },
+    "summary": string[],
+    "skills": [
+      { "category": string, "items": string[] }
+    ],
+    "experience": [
+      { "title": string|null, "company": string|null, "location": string|null, "dates": string|null, "bullets": string[] }
+    ],
+    "education": [
+      { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+    ],
+    "certifications": string[],
+    "projects": [
+      { "name": string|null, "bullets": string[] }
+    ]
+  }
 }
+
+HARD CONSTRAINTS:
+- final.header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+- No new keys, no markdown, JSON only.
+- No "..." anywhere.
+- Bullets <= 110 characters preferred.
+- Keep it 1-page dense and recruiter-friendly.
 
 ELITE MODE RULES:
 - You MAY generate mock experience using REAL companies that match the job’s industry.
   Examples:
-    • IT Help Desk → CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
-    • SWE → Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
-    • Cyber → CrowdStrike, Rapid7, Optiv.
-    • Cloud → Rackspace, Slalom, Accenture Cloud.
+    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
 - Mock experience MUST include:
   • a real company name,
   • a realistic job title,
   • a location,
-  • dates 1–2 years prior,
+  • dates 1 to 2 years prior,
   • strong, job-aligned bullets.
-- Mock experience MUST NOT contradict the candidate’s skill boundaries.
+- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
 - Mock experience MUST NOT reference that it is mock or fictional.
-- You MAY generate new professional-grade projects aligned to JOB DATA.
-- Projects MUST reflect real-world deliverables, not labs.
-- You MAY rewrite, enhance, and restructure all resume sections for maximum impact.
-- No "..." anywhere. No incomplete phrases.
-- Bullets should be strong, concise, and ideally under 110 characters.
+- Mock experience MUST read as real, professional employment.
+
+MOCK PROJECT RULES:
+- You MAY generate new enterprise-grade projects aligned to JOB DATA.
+- Projects MUST reflect real-world deliverables such as:
+  • server room and IDF/MDF organization,
+  • smart hands support for network and server teams,
+  • printer hardware repair and warranty coordination,
+  • Teams Rooms and Solstice Pod configuration and firmware updates,
+  • A/V troubleshooting and meeting room readiness,
+  • proactive floor walks and issue identification,
+  • asset lifecycle management including deployment, reuse, and disposal,
+  • SLA improvement and ticket efficiency initiatives,
+  • executive and VIP support.
+- Projects MUST NOT reference that they are mock or fictional.
+
+ELITE OPTIMIZATION TASK:
+- Aggressively optimize for recruiter scan and ATS:
+  • strengthen headline and summary positioning,
+  • normalize skills into 5 to 7 professional categories,
+  • rewrite bullets into concise, impact-oriented language,
+  • remove weak or redundant items,
+  • close keyword gaps using only skills the candidate can realistically perform.
+- Ensure tense consistency, punctuation consistency, and clean formatting.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
-- Keep output 1-page dense and recruiter-friendly.
 
 No markdown. JSON only.
 
@@ -731,18 +776,48 @@ HARD CONSTRAINTS:
 - Bullets <= 110 characters preferred.
 - Keep it 1-page dense and recruiter-friendly.
 
-TRUTHFULNESS (REQUIRED):
-- MODE "real": do NOT invent facts. Do NOT add new employers/roles/dates. Do NOT add unsupported tools, credentials, or metrics.
-- MODE "training_sample": SAMPLE content must be clearly labeled "SAMPLE" and framed as practice/learning.
+ELITE MODE RULES:
+- You MAY generate mock experience using REAL companies that match the job’s industry.
+  Examples:
+    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
+- Mock experience MUST include:
+  • a real company name,
+  • a realistic job title,
+  • a location,
+  • dates 1 to 2 years prior,
+  • strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+- Mock experience MUST NOT reference that it is mock or fictional.
+- Mock experience MUST read as real, professional employment.
 
-ELITE TASK:
-- Aggressively optimize for recruiter scan + ATS:
-  • strengthen headline + summary positioning,
-  • normalize skills taxonomy into 5–7 categories,
-  • rewrite bullets into impact-oriented language (truthful),
-  • remove weak items, merge duplicates,
-  • close keyword gaps using only supported skills from RESUME TEXT/PROFILE.
-- Ensure tense/punctuation consistency and clean formatting.
+MOCK PROJECT RULES:
+- You MAY generate new enterprise-grade projects aligned to JOB DATA.
+- Projects MUST reflect real-world deliverables such as:
+  • server room and IDF or MDF organization,
+  • smart hands support for network and server teams,
+  • printer hardware repair and warranty coordination,
+  • Teams Rooms and Solstice Pod configuration and firmware updates,
+  • A or V troubleshooting and meeting room readiness,
+  • proactive floor walks and issue identification,
+  • asset lifecycle management including deployment, reuse, and disposal,
+  • SLA improvement and ticket efficiency initiatives,
+  • executive and VIP support.
+- Projects MUST NOT reference that they are mock or fictional.
+
+ELITE OPTIMIZATION TASK:
+- Aggressively optimize for recruiter scan and ATS:
+  • strengthen headline and summary positioning,
+  • normalize skills into 5 to 7 professional categories,
+  • rewrite bullets into concise, impact-oriented language,
+  • remove weak or redundant items,
+  • close keyword gaps using only skills the candidate can realistically perform.
+- Ensure tense consistency, punctuation consistency, and clean formatting.
+- Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
+
+No markdown. JSON only.
 `.trim();
 
 /**
