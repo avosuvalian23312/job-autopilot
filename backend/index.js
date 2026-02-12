@@ -220,6 +220,7 @@ app.http("resumeOptimize", {
   handler: withOptions(require("./src/functions/resumeOptimize.js").resumeOptimize),
 });
 const { applyPrepare } = require("./src/functions/applyPrepare");
+const { coverLettersGet } = require("./src/functions/coverLettersGet");
 
 
 
@@ -230,12 +231,7 @@ app.http("applyPrepare", {
   authLevel: "anonymous",
   handler: applyPrepare,
 });
-app.http("applyPrepare", {
-  methods: ["POST", "OPTIONS"],
-  route: "apply/prepare",
-  authLevel: "anonymous",
-  handler: applyPrepare,
-});
+
 
 
 
