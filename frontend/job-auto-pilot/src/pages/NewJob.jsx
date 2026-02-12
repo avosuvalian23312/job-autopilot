@@ -126,6 +126,49 @@ export default function NewJob() {
     return id;
   };
 
+  // 🔒 IMPORTANT: Prevent caching/using direct blob URLs (private storage requires SAS URLs).
+  // We keep ids + metadata only, and strip any non-SAS blob URLs from cached objects.
+  const scrubDirectBlobUrls = (value) => {
+    if (!value) return value;
+
+    if (Array.isArray(value)) {
+      return value.map(scrubDirectBlobUrls);
+    }
+
+    if (typeof value === "object") {
+      const obj = { ...value };
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+
+        // Remove explicit blobUrl keys
+        if (k === "blobUrl" || k.toLowerCase() === "bloburl") {
+          delete obj[k];
+          continue;
+        }
+
+        // Remove any *Url fields that are direct blob links (no SAS query string)
+        if (
+          typeof v === "string" &&
+          v.includes(".blob.core.windows.net/") &&
+          !v.includes("?")
+        ) {
+          if (k === "url" || k.toLowerCase().endsWith("url")) {
+            delete obj[k];
+            continue;
+          }
+        }
+
+        // Recurse
+        if (v && typeof v === "object") {
+          obj[k] = scrubDirectBlobUrls(v);
+        }
+      }
+      return obj;
+    }
+
+    return value;
+  };
+
   // ✅ CLEAN junk skills/keywords (Indeed UI strings etc)
   const cleanSkillTokens = (arr, { max = 16 } = {}) => {
     const raw = Array.isArray(arr) ? arr : [];
@@ -146,14 +189,22 @@ export default function NewJob() {
       if (t === "(required)" || t === "required" || t === "preferred") return true;
       if (t.includes("show more")) return true;
       if (t.includes("job details")) return true;
-      if (t.includes("here's how") || t.includes("heres how") || t.includes("align with your profile")) return true;
-      if (t.includes("do you have experience") || t.includes("do you know")) return true;
+      if (
+        t.includes("here's how") ||
+        t.includes("heres how") ||
+        t.includes("align with your profile")
+      )
+        return true;
+      if (t.includes("do you have experience") || t.includes("do you know"))
+        return true;
       if (t.includes("languages")) return true;
 
       // remove pay-related tokens from skills (pay should show in Compensation)
-      if (t === "pay" || t.includes("salary") || t.includes("compensation")) return true;
+      if (t === "pay" || t.includes("salary") || t.includes("compensation"))
+        return true;
       if (s.includes("$") || /\b\d+\s*-\s*\d+\b/.test(t)) return true;
-      if (/\b(hour|hr|year|yr|mo|month|week|wk|day)\b/i.test(s) && /\d/.test(s)) return true;
+      if (/\b(hour|hr|year|yr|mo|month|week|wk|day)\b/i.test(s) && /\d/.test(s))
+        return true;
 
       // remove long sentences / questions
       if (s.includes("?")) return true;
@@ -188,7 +239,8 @@ export default function NewJob() {
     const toPeriod = (p) => {
       const x = String(p ?? "").toLowerCase();
       if (["hour", "hr", "hrs", "hourly"].includes(x)) return "hour";
-      if (["year", "yr", "yrs", "annual", "annually", "yearly"].includes(x)) return "year";
+      if (["year", "yr", "yrs", "annual", "annually", "yearly"].includes(x))
+        return "year";
       if (["month", "mo", "monthly"].includes(x)) return "month";
       if (["week", "wk", "weekly"].includes(x)) return "week";
       if (["day", "daily"].includes(x)) return "day";
@@ -250,7 +302,7 @@ export default function NewJob() {
       "individual",
       "individuals",
       "engineer", // too generic alone
-      "support",  // too generic alone
+      "support", // too generic alone
     ]);
     if (bad.has(s)) return true;
     if (s.length < 4) return true;
@@ -277,12 +329,12 @@ export default function NewJob() {
 
     for (const line of lines) {
       const l = line.toLowerCase();
-      if (l.includes("job details") || l.includes("full job description") || l.includes("profile insights")) continue;
+      if (l.includes("job details") || l.includes("full job description") || l.includes("profile insights"))
+        continue;
       if (l.includes("apply") && l.includes("company")) continue;
       if (line.length >= 6 && line.length <= 80 && /[a-zA-Z]/.test(line)) {
         // avoid lines that look like pay
         if (line.includes("$")) continue;
-        // avoid pure company line ending with Inc/LLC sometimes; still could be title but ok
         return line;
       }
     }
@@ -302,14 +354,21 @@ export default function NewJob() {
       const idx = lines.findIndex((l) => l === maybeTitle);
       if (idx !== -1) {
         const next = lines[idx + 1] || "";
-        if (next && next.length <= 70 && !next.includes("$") && /[a-zA-Z]/.test(next)) {
+        if (
+          next &&
+          next.length <= 70 &&
+          !next.includes("$") &&
+          /[a-zA-Z]/.test(next)
+        ) {
           return next.trim();
         }
       }
     }
 
     // "Company\nApplied Software Inc."
-    let m = text.match(/(?:company|employer|organization)\s*[:\n]+\s*([^\n]{2,80})/i);
+    let m = text.match(
+      /(?:company|employer|organization)\s*[:\n]+\s*([^\n]{2,80})/i
+    );
     if (m?.[1]) return m[1].trim();
 
     return null;
@@ -319,11 +378,15 @@ export default function NewJob() {
     const text = String(jd || "");
 
     // Prefer explicit Website: fields
-    let m = text.match(/(?:website)\s*:\s*(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
+    let m = text.match(
+      /(?:website)\s*:\s*(https?:\/\/[^\s)]+|www\.[^\s)]+)/i
+    );
     if (m?.[1]) return m[1].trim();
 
     // Pick first non-social, non-jobboard URL
-    const urls = Array.from(text.matchAll(/https?:\/\/[^\s)]+/gi)).map((x) => x[0]);
+    const urls = Array.from(text.matchAll(/https?:\/\/[^\s)]+/gi)).map(
+      (x) => x[0]
+    );
     const isBadDomain = (u) => {
       const s = String(u).toLowerCase();
       return (
@@ -380,12 +443,7 @@ export default function NewJob() {
     const website = String(extracted?.website || "").trim();
     const location = String(extracted?.location || "").trim();
 
-    const header = [
-      title ? `Job Title: ${title}` : null,
-      company ? `Company: ${company}` : null,
-      website ? `Website: ${website}` : null,
-      location ? `Location: ${location}` : null,
-    ].filter(Boolean);
+    const header = [title ? `Job Title: ${title}` : null, company ? `Company: ${company}` : null, website ? `Website: ${website}` : null, location ? `Location: ${location}` : null].filter(Boolean);
 
     if (!header.length) return String(jdRaw || "");
     return `${header.join("\n")}\n\n${String(jdRaw || "")}`;
@@ -429,7 +487,9 @@ export default function NewJob() {
       } catch (e) {
         if (cancelled) return;
         console.error(e);
-        toast.error("Could not load resumes from cloud. Falling back to local resumes.");
+        toast.error(
+          "Could not load resumes from cloud. Falling back to local resumes."
+        );
 
         const local = JSON.parse(localStorage.getItem("resumes") || "[]");
         setResumes(local);
@@ -552,7 +612,12 @@ export default function NewJob() {
   // ---------------------------
   // Previews
   // ---------------------------
-  const buildPreviewFallback = ({ jobTitle, company, keywords, studentMode: sm }) => {
+  const buildPreviewFallback = ({
+    jobTitle,
+    company,
+    keywords,
+    studentMode: sm,
+  }) => {
     const role = String(jobTitle || "this role").trim() || "this role";
     const org = String(company || "the company").trim() || "the company";
     const ks = Array.from(
@@ -560,7 +625,9 @@ export default function NewJob() {
     ).slice(0, 6);
 
     const skillHint = ks.length ? ` (${ks.join(", ")})` : "";
-    const studentHint = sm ? "projects, labs, and skills" : "experience, ownership, and measurable outcomes";
+    const studentHint = sm
+      ? "projects, labs, and skills"
+      : "experience, ownership, and measurable outcomes";
 
     return {
       estimatedSeconds: 15,
@@ -576,7 +643,9 @@ export default function NewJob() {
       checklistPreview: {
         items: [
           ks.length
-            ? `Ensure top keywords appear in Skills + Experience: ${ks.slice(0, 4).join(", ")}.`
+            ? `Ensure top keywords appear in Skills + Experience: ${ks
+                .slice(0, 4)
+                .join(", ")}.`
             : "Ensure top keywords appear in Skills + Experience sections.",
           sm
             ? "Add 1–2 quantified project outcomes (latency, uptime, automation, tickets)."
@@ -586,7 +655,14 @@ export default function NewJob() {
     };
   };
 
-  const fetchPreviews = async ({ jobTitle, company, keywords, jobDescription: jd, aiMode: mode, studentMode: sm }) => {
+  const fetchPreviews = async ({
+    jobTitle,
+    company,
+    keywords,
+    jobDescription: jd,
+    aiMode: mode,
+    studentMode: sm,
+  }) => {
     setPreviewLoading(true);
     try {
       const data = await apiFetch("/api/jobs/preview", {
@@ -613,7 +689,8 @@ export default function NewJob() {
         : [];
 
       const estimatedSeconds =
-        typeof data?.estimatedSeconds === "number" && Number.isFinite(data.estimatedSeconds)
+        typeof data?.estimatedSeconds === "number" &&
+        Number.isFinite(data.estimatedSeconds)
           ? data.estimatedSeconds
           : 15;
 
@@ -629,7 +706,9 @@ export default function NewJob() {
       });
     } catch (e) {
       console.error(e);
-      setPreviewData(buildPreviewFallback({ jobTitle, company, keywords, studentMode: sm }));
+      setPreviewData(
+        buildPreviewFallback({ jobTitle, company, keywords, studentMode: sm })
+      );
     } finally {
       setPreviewLoading(false);
     }
@@ -667,24 +746,34 @@ export default function NewJob() {
         keywords: Array.isArray(extracted?.keywords) ? extracted.keywords : [],
 
         payText: extracted?.payText || null,
-        payMin: typeof extracted?.payMin === "number" && Number.isFinite(extracted.payMin) ? extracted.payMin : null,
-        payMax: typeof extracted?.payMax === "number" && Number.isFinite(extracted.payMax) ? extracted.payMax : null,
+        payMin:
+          typeof extracted?.payMin === "number" && Number.isFinite(extracted.payMin)
+            ? extracted.payMin
+            : null,
+        payMax:
+          typeof extracted?.payMax === "number" && Number.isFinite(extracted.payMax)
+            ? extracted.payMax
+            : null,
         payCurrency: extracted?.payCurrency || "USD",
         payPeriod: extracted?.payPeriod || null,
         payConfidence:
-          typeof extracted?.payConfidence === "number" && Number.isFinite(extracted.payConfidence)
+          typeof extracted?.payConfidence === "number" &&
+          Number.isFinite(extracted.payConfidence)
             ? extracted.payConfidence
             : null,
         payAnnualizedMin:
-          typeof extracted?.payAnnualizedMin === "number" && Number.isFinite(extracted.payAnnualizedMin)
+          typeof extracted?.payAnnualizedMin === "number" &&
+          Number.isFinite(extracted.payAnnualizedMin)
             ? extracted.payAnnualizedMin
             : null,
         payAnnualizedMax:
-          typeof extracted?.payAnnualizedMax === "number" && Number.isFinite(extracted.payAnnualizedMax)
+          typeof extracted?.payAnnualizedMax === "number" &&
+          Number.isFinite(extracted.payAnnualizedMax)
             ? extracted.payAnnualizedMax
             : null,
         payPercentile:
-          typeof extracted?.payPercentile === "number" && Number.isFinite(extracted.payPercentile)
+          typeof extracted?.payPercentile === "number" &&
+          Number.isFinite(extracted.payPercentile)
             ? extracted.payPercentile
             : null,
         payPercentileSource: extracted?.payPercentileSource || null,
@@ -692,7 +781,9 @@ export default function NewJob() {
         employmentType: extracted?.employmentType || null,
         workModel: extracted?.workModel || null,
         experienceLevel: extracted?.experienceLevel || null,
-        complianceTags: Array.isArray(extracted?.complianceTags) ? extracted.complianceTags : [],
+        complianceTags: Array.isArray(extracted?.complianceTags)
+          ? extracted.complianceTags
+          : [],
 
         requirements:
           extracted?.requirements && typeof extracted.requirements === "object"
@@ -712,7 +803,9 @@ export default function NewJob() {
                   Number.isFinite(extracted.requirements.yearsExperienceMin)
                     ? extracted.requirements.yearsExperienceMin
                     : null,
-                certificationsPreferred: Array.isArray(extracted.requirements.certificationsPreferred)
+                certificationsPreferred: Array.isArray(
+                  extracted.requirements.certificationsPreferred
+                )
                   ? extracted.requirements.certificationsPreferred
                   : [],
                 workModelRequired:
@@ -723,16 +816,24 @@ export default function NewJob() {
             : null,
       };
 
-      if (nextExtracted.payMin === 0 && (nextExtracted.payMax ?? 0) > 0) nextExtracted.payMin = null;
-      if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0) > 0)
+      if (nextExtracted.payMin === 0 && (nextExtracted.payMax ?? 0) > 0)
+        nextExtracted.payMin = null;
+      if (
+        nextExtracted.payAnnualizedMin === 0 &&
+        (nextExtracted.payAnnualizedMax ?? 0) > 0
+      )
         nextExtracted.payAnnualizedMin = null;
 
       // ✅ If pay fields are missing, try to extract from JD + extracted lists (often polluted with pay string)
       const payTextBlob = [
         jobDescription,
         ...(Array.isArray(extracted?.keywords) ? extracted.keywords : []),
-        ...(Array.isArray(extracted?.requirements?.skillsRequired) ? extracted.requirements.skillsRequired : []),
-        ...(Array.isArray(extracted?.requirements?.skillsPreferred) ? extracted.requirements.skillsPreferred : []),
+        ...(Array.isArray(extracted?.requirements?.skillsRequired)
+          ? extracted.requirements.skillsRequired
+          : []),
+        ...(Array.isArray(extracted?.requirements?.skillsPreferred)
+          ? extracted.requirements.skillsPreferred
+          : []),
       ].join(" ");
       const payFallback = extractPayFromText(payTextBlob);
 
@@ -752,8 +853,12 @@ export default function NewJob() {
         requirements: nextExtracted.requirements
           ? {
               ...nextExtracted.requirements,
-              skillsRequired: cleanSkillTokens(nextExtracted.requirements.skillsRequired, { max: 16 }),
-              skillsPreferred: cleanSkillTokens(nextExtracted.requirements.skillsPreferred, { max: 12 }),
+              skillsRequired: cleanSkillTokens(nextExtracted.requirements.skillsRequired, {
+                max: 16,
+              }),
+              skillsPreferred: cleanSkillTokens(nextExtracted.requirements.skillsPreferred, {
+                max: 12,
+              }),
             }
           : null,
       };
@@ -842,35 +947,55 @@ export default function NewJob() {
           jobUrl: null,
         }),
       });
-localStorage.setItem("latestPrepareResult", JSON.stringify(prepared));
 
-      const jobData = prepared?.jobData || null;
-      const tailoredResume = prepared?.tailoredResume || null;
-      const coverLetter = prepared?.coverLetter || null;
+      // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
+      // Clear legacy keys so Packet (or any other screen) can't accidentally open a raw blob URL.
+      localStorage.removeItem("latestTailoredResumeBlobUrl");
+      localStorage.removeItem("latestTailoredResumePdfUrl");
+      localStorage.removeItem("latestTailoredResumeUrl");
+
+      const preparedSafe = scrubDirectBlobUrls(
+        JSON.parse(JSON.stringify(prepared || {}))
+      );
+
+      // Store prepare payload for Packet "prepare mode"
+      localStorage.setItem("latestPrepareResult", JSON.stringify(preparedSafe));
+
+      const jobData = preparedSafe?.jobData || null;
+      const tailoredResume = preparedSafe?.tailoredResume || null;
+      const coverLetter = preparedSafe?.coverLetter || null;
 
       // Cache IDs for Packet page / later screens (no UI change)
-      if (tailoredResume?.id) localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
-      if (tailoredResume?.blobUrl) localStorage.setItem("latestTailoredResumeBlobUrl", String(tailoredResume.blobUrl));
-      if (coverLetter?.id) localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
-      if (typeof coverLetter?.text === "string") localStorage.setItem("latestCoverLetterText", coverLetter.text);
+      if (tailoredResume?.id)
+        localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
+      // ❌ intentionally NOT storing blobUrl anymore
+      if (coverLetter?.id)
+        localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
+      if (typeof coverLetter?.text === "string")
+        localStorage.setItem("latestCoverLetterText", coverLetter.text);
       if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
       localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
 
       // Keep the confirm-screen edits as the display source
-      const packetTitle = String(extractedData?.jobTitle || jobData?.jobTitle || "Position");
-      const packetCompany = String(extractedData?.company || jobData?.company || "Company");
+      const packetTitle = String(
+        extractedData?.jobTitle || jobData?.jobTitle || "Position"
+      );
+      const packetCompany = String(
+        extractedData?.company || jobData?.company || "Company"
+      );
 
-      toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, { id: toastId });
+      toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, {
+        id: toastId,
+      });
       toastId = null;
 
-    // ✅ Packet should render from the cached prepare result (no /api/jobs polling)
-const qs = new URLSearchParams();
-qs.set("mode", "prepare");
-if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
-if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
+      // ✅ Packet should render from the cached prepare result (no /api/jobs polling)
+      const qs = new URLSearchParams();
+      qs.set("mode", "prepare");
+      if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
+      if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
 
-navigate(`/packet?${qs.toString()}`);
-
+      navigate(`/packet?${qs.toString()}`);
     } catch (e) {
       console.error(e);
       if (toastId) toast.dismiss(toastId);
@@ -885,12 +1010,15 @@ navigate(`/packet?${qs.toString()}`);
   // ---------------------------
   const pageBg =
     "bg-[radial-gradient(1100px_700px_at_10%_-10%,rgba(99,102,241,0.22),transparent_55%),radial-gradient(900px_600px_at_95%_0%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_650px_at_50%_110%,rgba(168,85,247,0.18),transparent_55%),linear-gradient(180deg,hsl(240,10%,6%),hsl(240,12%,5%))]";
-  const surface = "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
+  const surface =
+    "bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))]";
   const edge = "border border-white/10 ring-1 ring-white/5";
   const brandRing = "ring-1 ring-violet-400/20 border-violet-400/20";
   const cardShadow = "shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
-  const ambient = "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
-  const neonLine = "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
+  const ambient =
+    "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_55px_rgba(0,0,0,0.60)]";
+  const neonLine =
+    "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
   const hoverLift =
     "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
@@ -898,7 +1026,8 @@ navigate(`/packet?${qs.toString()}`);
   const glowHover =
     "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.22),0_18px_60px_rgba(0,0,0,0.55),0_0_40px_rgba(34,211,238,0.10)]";
 
-  const pill = "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
+  const pill =
+    "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
   const pillBrand =
     "px-4 py-2 rounded-full text-sm font-semibold bg-violet-500/15 text-violet-100 border border-violet-400/25";
   const pillGood =
@@ -911,7 +1040,8 @@ navigate(`/packet?${qs.toString()}`);
     if (!p) return null;
 
     if (["hour", "hourly", "hr", "/hr"].includes(p)) return "hour";
-    if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p)) return "year";
+    if (["year", "yearly", "yr", "annual", "annually", "/yr"].includes(p))
+      return "year";
     if (["month", "monthly", "mo", "/mo"].includes(p)) return "month";
     if (["week", "weekly", "wk", "/wk"].includes(p)) return "week";
     if (["day", "daily", "/day"].includes(p)) return "day";
@@ -920,7 +1050,9 @@ navigate(`/packet?${qs.toString()}`);
   };
 
   const fmtMoney = (n) =>
-    typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
+    typeof n === "number"
+      ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : null;
 
   const renderPayPrimary = (job) => {
     const cur = job?.payCurrency || "USD";
@@ -969,8 +1101,10 @@ navigate(`/packet?${qs.toString()}`);
   };
 
   const renderAnnual = (job) => {
-    const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
-    const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
+    const minA =
+      typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
+    const maxA =
+      typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
 
     const minAFixed = minA === 0 && (maxA ?? 0) > 0 ? null : minA;
     const maxAFixed = maxA === 0 && (minA ?? 0) > 0 ? null : maxA;
@@ -998,7 +1132,8 @@ navigate(`/packet?${qs.toString()}`);
     return `Top ${top}% pay`;
   };
 
-  const isDefaultResume = (r) => r?.isDefault === true || r?.default === true || r?.is_default === true;
+  const isDefaultResume = (r) =>
+    r?.isDefault === true || r?.default === true || r?.is_default === true;
 
   const req = extractedData?.requirements || null;
   const hasReq =
@@ -1016,7 +1151,8 @@ navigate(`/packet?${qs.toString()}`);
 
   const previewSafe = previewData || null;
   const estSeconds =
-    typeof previewSafe?.estimatedSeconds === "number" && Number.isFinite(previewSafe.estimatedSeconds)
+    typeof previewSafe?.estimatedSeconds === "number" &&
+    Number.isFinite(previewSafe.estimatedSeconds)
       ? Math.round(previewSafe.estimatedSeconds)
       : 15;
 
@@ -1053,8 +1189,12 @@ navigate(`/packet?${qs.toString()}`);
               </div>
 
               <div className="flex flex-col leading-tight">
-                <span className="font-bold tracking-tight text-white text-lg">Job Autopilot</span>
-                <span className="text-xs text-white/60">Premium packet generation • ATS-safe workflow</span>
+                <span className="font-bold tracking-tight text-white text-lg">
+                  Job Autopilot
+                </span>
+                <span className="text-xs text-white/60">
+                  Premium packet generation • ATS-safe workflow
+                </span>
               </div>
             </div>
 
@@ -1080,13 +1220,25 @@ navigate(`/packet?${qs.toString()}`);
         {/* Analyzing Modal */}
         {isAnalyzing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className={["rounded-2xl p-10 max-w-md w-full mx-4", surface, edge, brandRing, ambient].join(" ")}>
+            <div
+              className={[
+                "rounded-2xl p-10 max-w-md w-full mx-4",
+                surface,
+                edge,
+                brandRing,
+                ambient,
+              ].join(" ")}
+            >
               <div className="text-center">
                 <div className="w-20 h-20 rounded-2xl bg-white/[0.04] flex items-center justify-center mx-auto mb-6 border border-white/10 ring-1 ring-violet-400/15 shadow-[0_0_45px_rgba(167,139,250,0.12)]">
                   <Loader2 className="w-10 h-10 text-violet-200 animate-spin" />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">Scanning job post…</h2>
-                <p className="text-white/65 mb-7">Building your packet blueprint</p>
+                <h2 className="text-2xl font-bold text-white mb-2">
+                  Scanning job post…
+                </h2>
+                <p className="text-white/65 mb-7">
+                  Building your packet blueprint
+                </p>
 
                 <div className="space-y-3 text-left">
                   <div className="flex items-center gap-3 text-sm text-white/85">
@@ -1133,9 +1285,13 @@ navigate(`/packet?${qs.toString()}`);
                   <div className="mt-5 pt-5 border-t border-white/10 flex items-center justify-center gap-2 text-xs text-white/60">
                     <Stars className="w-4 h-4 text-violet-200" />
                     AI mode:{" "}
-                    <span className="font-semibold text-white/85">{aiMode === "elite" ? "Elite" : "Standard"}</span> •
-                    Student mode:{" "}
-                    <span className="font-semibold text-white/85">{studentMode ? "On" : "Off"}</span>
+                    <span className="font-semibold text-white/85">
+                      {aiMode === "elite" ? "Elite" : "Standard"}
+                    </span>{" "}
+                    • Student mode:{" "}
+                    <span className="font-semibold text-white/85">
+                      {studentMode ? "On" : "Off"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1147,41 +1303,70 @@ navigate(`/packet?${qs.toString()}`);
         {showConfirm && extractedData && (
           <div className="w-full">
             {/* ... UI unchanged ... */}
-            {/* (All your JSX below stays exactly the same as you provided) */}
             {/* --- START EXISTING UI --- */}
             <div className="mb-7 text-center">
-              <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">Confirm details</h1>
-              <p className="text-lg text-white/70">Review extracted info before generating</p>
+              <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">
+                Confirm details
+              </h1>
+              <p className="text-lg text-white/70">
+                Review extracted info before generating
+              </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left */}
-              <div className={["lg:col-span-2 rounded-2xl overflow-hidden", surface, edge, brandRing, cardShadow].join(" ")}>
+              <div
+                className={[
+                  "lg:col-span-2 rounded-2xl overflow-hidden",
+                  surface,
+                  edge,
+                  brandRing,
+                  cardShadow,
+                ].join(" ")}
+              >
                 <div className={`h-1.5 ${neonLine}`} />
                 <div className="p-8 md:p-10">
                   <div className="flex items-start justify-between gap-6">
                     <div className="min-w-0 flex-1">
-                      <label className="text-sm text-white/60 mb-2 block">Job Title</label>
+                      <label className="text-sm text-white/60 mb-2 block">
+                        Job Title
+                      </label>
                       {editMode ? (
                         <Input
                           value={extractedData.jobTitle}
-                          onChange={(e) => setExtractedData({ ...extractedData, jobTitle: e.target.value })}
+                          onChange={(e) =>
+                            setExtractedData({
+                              ...extractedData,
+                              jobTitle: e.target.value,
+                            })
+                          }
                           className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                         />
                       ) : (
-                        <p className="text-3xl font-semibold text-white tracking-tight">{extractedData.jobTitle}</p>
+                        <p className="text-3xl font-semibold text-white tracking-tight">
+                          {extractedData.jobTitle}
+                        </p>
                       )}
 
                       <div className="mt-6">
-                        <label className="text-sm text-white/60 mb-2 block">Company</label>
+                        <label className="text-sm text-white/60 mb-2 block">
+                          Company
+                        </label>
                         {editMode ? (
                           <Input
                             value={extractedData.company}
-                            onChange={(e) => setExtractedData({ ...extractedData, company: e.target.value })}
+                            onChange={(e) =>
+                              setExtractedData({
+                                ...extractedData,
+                                company: e.target.value,
+                              })
+                            }
                             className="bg-black/30 border-white/12 text-white h-12 text-lg rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                           />
                         ) : (
-                          <p className="text-xl text-white/90 font-medium">{extractedData.company}</p>
+                          <p className="text-xl text-white/90 font-medium">
+                            {extractedData.company}
+                          </p>
                         )}
                       </div>
 
@@ -1192,11 +1377,18 @@ navigate(`/packet?${qs.toString()}`);
                             {editMode ? (
                               <Input
                                 value={extractedData.website}
-                                onChange={(e) => setExtractedData({ ...extractedData, website: e.target.value })}
+                                onChange={(e) =>
+                                  setExtractedData({
+                                    ...extractedData,
+                                    website: e.target.value,
+                                  })
+                                }
                                 className="bg-black/30 border-white/12 text-white h-11 text-base flex-1 rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
                               />
                             ) : (
-                              <span className="truncate">{extractedData.website}</span>
+                              <span className="truncate">
+                                {extractedData.website}
+                              </span>
                             )}
                           </div>
                         )}
@@ -1241,12 +1433,17 @@ navigate(`/packet?${qs.toString()}`);
                             </span>
                           )}
                           {Array.isArray(extractedData.complianceTags) &&
-                            extractedData.complianceTags.slice(0, 6).map((tag, i) => (
-                              <span key={i} className={`${pillBrand} flex items-center gap-2`}>
-                                <ShieldCheck className="w-4 h-4 text-violet-100" />
-                                {tag}
-                              </span>
-                            ))}
+                            extractedData.complianceTags
+                              .slice(0, 6)
+                              .map((tag, i) => (
+                                <span
+                                  key={i}
+                                  className={`${pillBrand} flex items-center gap-2`}
+                                >
+                                  <ShieldCheck className="w-4 h-4 text-violet-100" />
+                                  {tag}
+                                </span>
+                              ))}
                         </div>
                       </div>
 
@@ -1263,25 +1460,35 @@ navigate(`/packet?${qs.toString()}`);
 
                           <div className="flex flex-wrap gap-3">
                             {renderPayPrimary(extractedData) && (
-                              <span className={pillGood}>{renderPayPrimary(extractedData)}</span>
+                              <span className={pillGood}>
+                                {renderPayPrimary(extractedData)}
+                              </span>
                             )}
-                            {renderConfidence() && <span className={pill}>{renderConfidence()}</span>}
+                            {renderConfidence() && (
+                              <span className={pill}>{renderConfidence()}</span>
+                            )}
                             {renderAnnual(extractedData) && (
-                              <span className={pillWarn}>{renderAnnual(extractedData)}</span>
+                              <span className={pillWarn}>
+                                {renderAnnual(extractedData)}
+                              </span>
                             )}
                             {renderTopPay() && (
-                              <span className={`${pillBrand} flex items-center gap-2`}>
+                              <span
+                                className={`${pillBrand} flex items-center gap-2`}
+                              >
                                 <Percent className="w-4 h-4" />
                                 {renderTopPay()}
                               </span>
                             )}
                           </div>
 
-                          {typeof extractedData.payPercentile === "number" && extractedData.payPercentileSource && (
-                            <p className="text-sm text-white/45 mt-3">
-                              Percentile is an estimate ({extractedData.payPercentileSource})
-                            </p>
-                          )}
+                          {typeof extractedData.payPercentile === "number" &&
+                            extractedData.payPercentileSource && (
+                              <p className="text-sm text-white/45 mt-3">
+                                Percentile is an estimate (
+                                {extractedData.payPercentileSource})
+                              </p>
+                            )}
                         </div>
                       )}
 
@@ -1293,22 +1500,30 @@ navigate(`/packet?${qs.toString()}`);
                           </label>
 
                           <div className="space-y-4">
-                            {(req?.educationRequired || req?.yearsExperienceMin != null || req?.workModelRequired) && (
+                            {(req?.educationRequired ||
+                              req?.yearsExperienceMin != null ||
+                              req?.workModelRequired) && (
                               <div className="flex flex-wrap gap-3">
                                 {req?.educationRequired && (
-                                  <span className={`${pill} flex items-center gap-2`}>
+                                  <span
+                                    className={`${pill} flex items-center gap-2`}
+                                  >
                                     <EduIcon className="w-4 h-4 text-white/60" />
                                     {req.educationRequired}
                                   </span>
                                 )}
                                 {req?.yearsExperienceMin != null && (
-                                  <span className={`${pill} flex items-center gap-2`}>
+                                  <span
+                                    className={`${pill} flex items-center gap-2`}
+                                  >
                                     <Clock className="w-4 h-4 text-white/60" />
                                     {req.yearsExperienceMin}+ yrs
                                   </span>
                                 )}
                                 {req?.workModelRequired && (
-                                  <span className={`${pillBrand} flex items-center gap-2`}>
+                                  <span
+                                    className={`${pillBrand} flex items-center gap-2`}
+                                  >
                                     <Building2 className="w-4 h-4" />
                                     {req.workModelRequired} required
                                   </span>
@@ -1316,49 +1531,59 @@ navigate(`/packet?${qs.toString()}`);
                               </div>
                             )}
 
-                            {Array.isArray(req?.skillsRequired) && req.skillsRequired.length > 0 && (
-                              <div>
-                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">Required skills</div>
-                                <div className="flex flex-wrap gap-3">
-                                  {req.skillsRequired.slice(0, 16).map((s, i) => (
-                                    <span key={i} className={pillBrand}>
-                                      {s}
-                                    </span>
-                                  ))}
+                            {Array.isArray(req?.skillsRequired) &&
+                              req.skillsRequired.length > 0 && (
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                    Required skills
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    {req.skillsRequired.slice(0, 16).map((s, i) => (
+                                      <span key={i} className={pillBrand}>
+                                        {s}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {Array.isArray(req?.skillsPreferred) && req.skillsPreferred.length > 0 && (
-                              <div>
-                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                  Preferred skills
+                            {Array.isArray(req?.skillsPreferred) &&
+                              req.skillsPreferred.length > 0 && (
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                    Preferred skills
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    {req.skillsPreferred.slice(0, 12).map((s, i) => (
+                                      <span key={i} className={pill}>
+                                        {s}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="flex flex-wrap gap-3">
-                                  {req.skillsPreferred.slice(0, 12).map((s, i) => (
-                                    <span key={i} className={pill}>
-                                      {s}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                              )}
 
-                            {Array.isArray(req?.certificationsPreferred) && req.certificationsPreferred.length > 0 && (
-                              <div>
-                                <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
-                                  Certifications (preferred)
+                            {Array.isArray(req?.certificationsPreferred) &&
+                              req.certificationsPreferred.length > 0 && (
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-white/55 mb-2">
+                                    Certifications (preferred)
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    {req.certificationsPreferred
+                                      .slice(0, 12)
+                                      .map((c, i) => (
+                                        <span
+                                          key={i}
+                                          className={`${pill} flex items-center gap-2`}
+                                        >
+                                          <Award className="w-4 h-4 text-white/60" />
+                                          {c}
+                                        </span>
+                                      ))}
+                                  </div>
                                 </div>
-                                <div className="flex flex-wrap gap-3">
-                                  {req.certificationsPreferred.slice(0, 12).map((c, i) => (
-                                    <span key={i} className={`${pill} flex items-center gap-2`}>
-                                      <Award className="w-4 h-4 text-white/60" />
-                                      {c}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                              )}
                           </div>
                         </div>
                       )}
@@ -1385,9 +1610,11 @@ navigate(`/packet?${qs.toString()}`);
                         variant="ghost"
                         size="sm"
                         onClick={() => setEditMode(true)}
-                        className={["text-white/65 hover:text-white hover:bg-white/5 rounded-xl", hoverLift, pressFx].join(
-                          " "
-                        )}
+                        className={[
+                          "text-white/65 hover:text-white hover:bg-white/5 rounded-xl",
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
                       >
                         <Edit2 className="w-5 h-5" />
                       </Button>
@@ -1415,11 +1642,23 @@ navigate(`/packet?${qs.toString()}`);
               </div>
 
               {/* Right */}
-              <div className={["rounded-2xl overflow-hidden", surface, edge, brandRing, cardShadow].join(" ")}>
+              <div
+                className={[
+                  "rounded-2xl overflow-hidden",
+                  surface,
+                  edge,
+                  brandRing,
+                  cardShadow,
+                ].join(" ")}
+              >
                 <div className={`h-1.5 ${neonLine}`} />
                 <div className="p-8">
-                  <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Packet preview</h3>
-                  <p className="text-sm text-white/60 mb-6">What you’ll generate from this job post.</p>
+                  <h3 className="text-xl font-bold text-white mb-2 tracking-tight">
+                    Packet preview
+                  </h3>
+                  <p className="text-sm text-white/60 mb-6">
+                    What you’ll generate from this job post.
+                  </p>
 
                   <div className="space-y-4">
                     <div
@@ -1434,7 +1673,9 @@ navigate(`/packet?${qs.toString()}`);
                       <FileText className="w-5 h-5 text-cyan-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Tailored Resume</p>
-                        <p className="text-sm text-white/60">Optimized bullets + keywords for ATS.</p>
+                        <p className="text-sm text-white/60">
+                          Optimized bullets + keywords for ATS.
+                        </p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
@@ -1445,10 +1686,14 @@ navigate(`/packet?${qs.toString()}`);
                           ) : (
                             <>
                               <div className={previewBlurLine}>
-                                • {resumePreviewBullets?.[0] || "Tailored bullet line preview…"}
+                                •{" "}
+                                {resumePreviewBullets?.[0] ||
+                                  "Tailored bullet line preview…"}
                               </div>
                               <div className={previewBlurLine}>
-                                • {resumePreviewBullets?.[1] || "Second bullet line preview…"}
+                                •{" "}
+                                {resumePreviewBullets?.[1] ||
+                                  "Second bullet line preview…"}
                               </div>
                             </>
                           )}
@@ -1468,13 +1713,17 @@ navigate(`/packet?${qs.toString()}`);
                       <Wand2 className="w-5 h-5 text-violet-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Cover Letter</p>
-                        <p className="text-sm text-white/60">Matching tone to role + company.</p>
+                        <p className="text-sm text-white/60">
+                          Matching tone to role + company.
+                        </p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
                             <div className="h-3 rounded bg-white/10 w-[88%]" />
                           ) : (
-                            <div className={previewBlurLine}>{coverPreviewSentence || "First sentence preview…"}</div>
+                            <div className={previewBlurLine}>
+                              {coverPreviewSentence || "First sentence preview…"}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1492,7 +1741,9 @@ navigate(`/packet?${qs.toString()}`);
                       <ClipboardCheck className="w-5 h-5 text-indigo-200 mt-0.5" />
                       <div className="w-full">
                         <p className="font-semibold text-white">Checklist</p>
-                        <p className="text-sm text-white/60">Next steps + quick apply notes.</p>
+                        <p className="text-sm text-white/60">
+                          Next steps + quick apply notes.
+                        </p>
 
                         <div className={previewBlurBlock}>
                           {previewLoading && !previewSafe ? (
@@ -1503,10 +1754,14 @@ navigate(`/packet?${qs.toString()}`);
                           ) : (
                             <>
                               <div className={previewBlurLine}>
-                                • {checklistPreviewItems?.[0] || "Checklist item preview…"}
+                                •{" "}
+                                {checklistPreviewItems?.[0] ||
+                                  "Checklist item preview…"}
                               </div>
                               <div className={previewBlurLine}>
-                                • {checklistPreviewItems?.[1] || "Second checklist item preview…"}
+                                •{" "}
+                                {checklistPreviewItems?.[1] ||
+                                  "Second checklist item preview…"}
                               </div>
                             </>
                           )}
@@ -1531,10 +1786,16 @@ navigate(`/packet?${qs.toString()}`);
                     ].join(" ")}
                   >
                     <p className="text-sm text-white/85">
-                      Mode: <span className="font-semibold text-white">{aiMode === "elite" ? "Elite" : "Standard"}</span>
+                      Mode:{" "}
+                      <span className="font-semibold text-white">
+                        {aiMode === "elite" ? "Elite" : "Standard"}
+                      </span>
                     </p>
                     <p className="text-sm text-white/60 mt-1">
-                      Student mode: <span className="font-semibold text-white/85">{studentMode ? "On" : "Off"}</span>
+                      Student mode:{" "}
+                      <span className="font-semibold text-white/85">
+                        {studentMode ? "On" : "Off"}
+                      </span>
                     </p>
                   </div>
                 </div>
@@ -1582,8 +1843,12 @@ navigate(`/packet?${qs.toString()}`);
           <div className="max-w-[1180px] mx-auto">
             {/* ... UI unchanged ... */}
             <div className="mb-5 text-center">
-              <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">Create a new job packet</h1>
-              <p className="text-lg text-white/70">Paste a job description — we’ll extract details automatically</p>
+              <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
+                Create a new job packet
+              </h1>
+              <p className="text-lg text-white/70">
+                Paste a job description — we’ll extract details automatically
+              </p>
             </div>
 
             <div className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(" ")}>
@@ -1640,7 +1905,9 @@ navigate(`/packet?${qs.toString()}`);
                               ].join(" ")}
                             >
                               <span className="flex items-center gap-2">
-                                {star && <Star className="w-4 h-4 text-amber-200 fill-amber-200" />}
+                                {star && (
+                                  <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
+                                )}
                                 <span className="truncate">{resume.name}</span>
                               </span>
                             </SelectItem>
@@ -1683,7 +1950,9 @@ navigate(`/packet?${qs.toString()}`);
                     className={[
                       "w-12 h-6 rounded-full transition-all relative",
                       "border border-white/10",
-                      studentMode ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50" : "bg-white/10",
+                      studentMode
+                        ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50"
+                        : "bg-white/10",
                     ].join(" ")}
                     aria-label="Toggle student mode"
                   >
@@ -1699,7 +1968,9 @@ navigate(`/packet?${qs.toString()}`);
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <GraduationCap className="w-5 h-5 text-white/75" />
-                      <span className="text-base font-medium text-white">No experience / Student mode</span>
+                      <span className="text-base font-medium text-white">
+                        No experience / Student mode
+                      </span>
                     </div>
                     <p className="text-sm text-white/60">
                       Emphasizes projects, coursework, and skills instead of work experience.
@@ -1718,7 +1989,9 @@ navigate(`/packet?${qs.toString()}`);
                 <label className="block text-lg font-semibold mb-1 text-white">
                   AI Mode <span className="text-rose-300">*</span>
                 </label>
-                <p className="text-sm mb-3 text-white/65">Choose how AI handles your resume content.</p>
+                <p className="text-sm mb-3 text-white/65">
+                  Choose how AI handles your resume content.
+                </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
@@ -1748,7 +2021,9 @@ navigate(`/packet?${qs.toString()}`);
                       <li>• Improves clarity and impact of your existing bullets</li>
                       <li>• Rewrites descriptions to match the job</li>
                       <li>• Optimizes wording and keywords</li>
-                      <li className="font-semibold text-emerald-100/90">• Does NOT create fake experience</li>
+                      <li className="font-semibold text-emerald-100/90">
+                        • Does NOT create fake experience
+                      </li>
                     </ul>
                   </button>
 
@@ -1779,14 +2054,19 @@ navigate(`/packet?${qs.toString()}`);
                       <li>• May create or enhance experience bullets</li>
                       <li>• Can infer responsibilities from context</li>
                       <li>• Designed to maximize callbacks</li>
-                      <li className="font-semibold text-amber-100/90">• Higher risk if verified by employer</li>
+                      <li className="font-semibold text-amber-100/90">
+                        • Higher risk if verified by employer
+                      </li>
                     </ul>
 
                     {aiMode === "elite" && (
                       <div className="mt-3 pt-3 border-t border-amber-400/15">
                         <p className="text-xs text-amber-100/90 flex items-start gap-2">
                           <span className="text-amber-100 font-bold">⚠</span>
-                          <span>Elite mode may generate inferred or mock experience. Use responsibly.</span>
+                          <span>
+                            Elite mode may generate inferred or mock experience.
+                            Use responsibly.
+                          </span>
                         </p>
                       </div>
                     )}
@@ -1833,7 +2113,9 @@ navigate(`/packet?${qs.toString()}`);
                 >
                   Generate Packet
                 </Button>
-                <p className="text-center text-sm mt-2 text-white/60">Uses 1 credit</p>
+                <p className="text-center text-sm mt-2 text-white/60">
+                  Uses 1 credit
+                </p>
               </div>
             </div>
           </div>
