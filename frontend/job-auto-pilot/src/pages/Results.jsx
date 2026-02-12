@@ -363,6 +363,9 @@ export default function Results() {
               </div>
             </div>
 
+
+
+
             <Link to={createPageUrl("Applications")}>
               <Button className="w-full py-5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl">
                 <BookmarkPlus className="w-4 h-4 mr-2" />
