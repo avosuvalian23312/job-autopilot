@@ -494,9 +494,6 @@ HARD CONSTRAINTS:
 
 MOCK EXPERIENCE POLICY (REAL COMPANIES):
 - You MAY generate mock experience using REAL companies that match the job’s industry.
-  Examples:
-    • IT Help Desk → CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix, Cognizant.
-    • SWE → Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot, Asana.
 - Mock experience MUST include:
   • a real company name,
   • a realistic job title,
@@ -507,20 +504,21 @@ MOCK EXPERIENCE POLICY (REAL COMPANIES):
 - Mock experience MUST NOT reference that it is mock or fictional.
 - Mock experience MUST read as real, professional employment.
 
-MOCK PROJECT POLICY (JOB-ALIGNED PROJECTS):
-- You MAY generate new projects that appear as professional, portfolio, or independent work.
-- Projects MUST be realistic, job-aligned, and written as real accomplishments.
-- Projects MUST reflect tasks from the JOB DATA, such as:
-  • server room organization,
-  • smart hands support,
-  • printer hardware repair,
-  • conference room A/V support,
-  • Teams Rooms configuration,
-  • Solstice Pod firmware updates,
-  • asset lifecycle management,
-  • proactive floor walks,
-  • SLA awareness and ticket efficiency.
+MOCK PROJECT POLICY (ENTERPRISE-GRADE PROJECTS):
+- You MAY generate new projects that appear as professional, enterprise-level accomplishments.
+- Projects MUST be realistic, job-aligned, and written as real deliverables.
+- Projects MUST reflect tasks from the JOB DATA, including:
+  • server room organization and smart hands support,
+  • IDF/MDF upkeep and vendor escorting,
+  • printer hardware repair and warranty coordination,
+  • Teams Rooms and Solstice Pod configuration and firmware updates,
+  • A/V troubleshooting and meeting room readiness,
+  • proactive floor walks and issue identification,
+  • asset lifecycle management (deployment, reuse, disposal),
+  • SLA improvement and ticket efficiency initiatives,
+  • executive/VIP support.
 - Projects MUST NOT reference that they are mock.
+- Projects MUST NOT be framed as “labs” unless the job domain requires it.
 
 JOB-TARGETING RULES:
 - Read JOB DATA and TARGET_KEYWORDS carefully.
@@ -1050,11 +1048,13 @@ Return ONLY JSON:
 { "text": "..." }
 
 Rules:
-- 250–400 words.
+- 250 to 400 words.
+- Use the candidate name: Avetis Gregory Suvalian.
 - Mention jobTitle and company if available.
 - Professional tone.
-- Pull skill themes from resume text; do NOT invent credentials.
+- Pull skill themes ONLY from the resume text provided. Do NOT invent credentials, tools, or experience.
 - No "..." anywhere.
+- No em dashes. Replace with commas or periods.
 - If TRAINING_SAMPLE is true, the first line must say: "TRAINING SAMPLE - NOT FOR SUBMISSION"
 - No markdown. JSON only.
 `.trim();
