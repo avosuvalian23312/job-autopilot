@@ -296,3 +296,11 @@ app.http("verifyEmailLogin", {
   authLevel: "anonymous",
   handler: lazy("./src/functions/verifyEmailLogin.js", "verifyEmailLogin"),
 });
+const { resumeSas } = require("./src/functions/resumeSas");
+
+app.http("resumeSas", {
+  methods: ["GET", "OPTIONS"],
+  route: "resume/sas",
+  authLevel: "anonymous",
+  handler: resumeSas,
+});

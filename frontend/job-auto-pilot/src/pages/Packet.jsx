@@ -273,16 +273,23 @@ export default function Packet() {
     };
   }, [navigate]);
 
-  // ---------------------------
-  // Download handlers (supports both modes)
-  // ---------------------------
-  const handleDownloadResume = () => {
-    // Prepare mode: download PDF from blobUrl
-    if (packetData?.__mode === "prepare") {
-      const url = packetData?.tailoredResume?.blobUrl;
-      const name = packetData?.tailoredResume?.name || "tailored_resume.pdf";
-      return downloadPdfFromUrl(url, name);
-    }
+  const getResumeSas = async (resumeId) => {
+  return await apiFetch(`/api/resume/sas?resumeId=${encodeURIComponent(resumeId)}`, {
+    method: "GET",
+  });
+};
+
+const handleDownloadResumePdf = async () => {
+  const resumeId =
+    new URLSearchParams(window.location.search).get("resumeId") ||
+    localStorage.getItem("latestTailoredResumeId");
+
+  if (!resumeId) return toast.error("Missing resumeId");
+
+  const { url } = await getResumeSas(resumeId);
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
 
     // Old job mode: text downloads
     const resume = packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
