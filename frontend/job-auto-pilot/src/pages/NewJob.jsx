@@ -916,109 +916,98 @@ export default function NewJob() {
       setIsAnalyzing(false);
     }
   };
-const AI_MODE_BACKEND = {
+
+  const AI_MODE_BACKEND = {
   standard: "STANDARD",
   elite: "ELITE",
 };
-  const handleGenerate = async () => {
-    let toastId = null;
 
-    try {
-      if (!extractedData?.jobTitle || !jobDescription.trim()) {
-        toast.error("Missing job title or job description.");
-        return;
-      }
+const handleGenerate = async () => {
+  let toastId = null;
 
-      // ensure logged in (no fallback)
-      const id = await getSwaUser();
-      if (!id) {
-        toast.error("You must be logged in.");
-        return;
-      }
-
-      // ✅ NEW LOGIC: call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
-      // We prepend a small structured header so the extractor never returns generic titles like "individuals".
-      const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
-
-      toastId = toast.loading("Generating tailored resume + cover letter…");
-const prepared = await apiFetch("/api/apply/prepare", {
-  method: "POST",
-  body: JSON.stringify({
-    resumeId: selectedResume,
-    jobDescription: jdForApi,
-    jobUrl: null,
-
-    aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
-    studentMode: !!studentMode,
-  }),
-});
-
-
-
-
-    // ✅ send mode to backend so it can pick the prompt
-    aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
-
-    // (optional) send student flag too if prompts differ
-    studentMode: !!studentMode,
-  }),
-});
-
-
-      // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
-      // Clear legacy keys so Packet (or any other screen) can't accidentally open a raw blob URL.
-      localStorage.removeItem("latestTailoredResumeBlobUrl");
-      localStorage.removeItem("latestTailoredResumePdfUrl");
-      localStorage.removeItem("latestTailoredResumeUrl");
-
-      const preparedSafe = scrubDirectBlobUrls(
-        JSON.parse(JSON.stringify(prepared || {}))
-      );
-
-      // Store prepare payload for Packet "prepare mode"
-      localStorage.setItem("latestPrepareResult", JSON.stringify(preparedSafe));
-
-      const jobData = preparedSafe?.jobData || null;
-      const tailoredResume = preparedSafe?.tailoredResume || null;
-      const coverLetter = preparedSafe?.coverLetter || null;
-
-      // Cache IDs for Packet page / later screens (no UI change)
-      if (tailoredResume?.id)
-        localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
-      // ❌ intentionally NOT storing blobUrl anymore
-      if (coverLetter?.id)
-        localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
-      if (typeof coverLetter?.text === "string")
-        localStorage.setItem("latestCoverLetterText", coverLetter.text);
-      if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
-      localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
-
-      // Keep the confirm-screen edits as the display source
-      const packetTitle = String(
-        extractedData?.jobTitle || jobData?.jobTitle || "Position"
-      );
-      const packetCompany = String(
-        extractedData?.company || jobData?.company || "Company"
-      );
-
-      toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, {
-        id: toastId,
-      });
-      toastId = null;
-
-      // ✅ Packet should render from the cached prepare result (no /api/jobs polling)
-      const qs = new URLSearchParams();
-      qs.set("mode", "prepare");
-      if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
-      if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
-
-      navigate(`/packet?${qs.toString()}`);
-    } catch (e) {
-      console.error(e);
-      if (toastId) toast.dismiss(toastId);
-      toast.error(e?.message || "Failed to generate packet.");
+  try {
+    if (!extractedData?.jobTitle || !jobDescription.trim()) {
+      toast.error("Missing job title or job description.");
+      return;
     }
-  };
+
+    // ensure logged in (no fallback)
+    const id = await getSwaUser();
+    if (!id) {
+      toast.error("You must be logged in.");
+      return;
+    }
+
+    // call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
+    const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
+
+    toastId = toast.loading("Generating tailored resume + cover letter…");
+
+    const prepared = await apiFetch("/api/apply/prepare", {
+      method: "POST",
+      body: JSON.stringify({
+        resumeId: selectedResume,
+        jobDescription: jdForApi,
+        jobUrl: null,
+
+        // ✅ backend expects "standard" / "elite" (or whatever your backend uses)
+        // if your backend expects STANDARD/ELITE, keep this mapping
+        aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
+
+        // ✅ must be inside the JSON body
+        studentMode: !!studentMode,
+      }),
+    });
+
+    // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
+    localStorage.removeItem("latestTailoredResumeBlobUrl");
+    localStorage.removeItem("latestTailoredResumePdfUrl");
+    localStorage.removeItem("latestTailoredResumeUrl");
+
+    const preparedSafe = scrubDirectBlobUrls(
+      JSON.parse(JSON.stringify(prepared || {}))
+    );
+
+    localStorage.setItem("latestPrepareResult", JSON.stringify(preparedSafe));
+
+    const jobData = preparedSafe?.jobData || null;
+    const tailoredResume = preparedSafe?.tailoredResume || null;
+    const coverLetter = preparedSafe?.coverLetter || null;
+
+    if (tailoredResume?.id)
+      localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
+    if (coverLetter?.id)
+      localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
+    if (typeof coverLetter?.text === "string")
+      localStorage.setItem("latestCoverLetterText", coverLetter.text);
+    if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
+    localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
+
+    const packetTitle = String(
+      extractedData?.jobTitle || jobData?.jobTitle || "Position"
+    );
+    const packetCompany = String(
+      extractedData?.company || jobData?.company || "Company"
+    );
+
+    toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, {
+      id: toastId,
+    });
+    toastId = null;
+
+    const qs = new URLSearchParams();
+    qs.set("mode", "prepare");
+    if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
+    if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
+
+    navigate(`/packet?${qs.toString()}`);
+  } catch (e) {
+    console.error(e);
+    if (toastId) toast.dismiss(toastId);
+    toast.error(e?.message || "Failed to generate packet.");
+  }
+};
+
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
