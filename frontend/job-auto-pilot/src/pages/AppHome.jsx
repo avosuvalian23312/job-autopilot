@@ -593,66 +593,67 @@ function MiniStat({ label, value, icon: Icon }) {
   );
 }
 
-function DashboardSkeleton() {
+const WeekDayPill = React.memo(function WeekDayPill({
+  weekday,
+  dayNum,
+  isToday,
+  isPast,
+  hasActivity,
+}) {
+  const label = `${weekday} ${dayNum}${isToday ? " (Today)" : ""}${hasActivity ? " (Done)" : ""}`;
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-7 space-y-6">
-        <Card className="p-6">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="mt-3 h-4 w-72" />
-          <div className="mt-4 grid grid-cols-7 gap-2">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-xl" />
-            ))}
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <Skeleton className="h-7 w-40" />
-          <Skeleton className="mt-3 h-4 w-96" />
-          <div className="mt-5 grid grid-cols-3 gap-3">
-            <Skeleton className="h-16 rounded-xl" />
-            <Skeleton className="h-16 rounded-xl" />
-            <Skeleton className="h-16 rounded-xl" />
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <Skeleton className="h-6 w-52" />
-          <div className="mt-4 space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl" />
-            ))}
-          </div>
-        </Card>
+    <div className="min-w-0">
+      <div
+        className={cx(
+          "text-center text-[12px] font-medium leading-none",
+          isPast ? "text-slate-600" : "text-slate-400"
+        )}
+      >
+        {weekday}
       </div>
 
-      <div className="lg:col-span-5 space-y-6">
-        <Card className="p-6">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="mt-4 h-24 rounded-2xl" />
-          <Skeleton className="mt-4 h-24 rounded-2xl" />
-        </Card>
-        <Card className="p-6">
-          <Skeleton className="h-5 w-28" />
-          <div className="mt-4 grid grid-cols-3 gap-4">
-            <Skeleton className="h-28 rounded-2xl" />
-            <Skeleton className="h-28 rounded-2xl" />
-            <Skeleton className="h-28 rounded-2xl" />
-          </div>
-        </Card>
-        <Card className="p-6">
-          <Skeleton className="h-5 w-36" />
-          <div className="mt-4 space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 rounded-xl" />
-            ))}
-          </div>
-        </Card>
+      <div
+        role="group"
+        aria-label={label}
+        title={label}
+        className={cx(
+          "relative mt-2 h-12 rounded-xl border border-white/10 bg-white/[0.035]",
+          "flex items-center px-4", // <-- left-align content
+          "transition-colors duration-150",
+          "hover:bg-white/[0.055] hover:border-white/15",
+          isPast ? "opacity-45" : "",
+          isToday ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10" : "",
+          focusRing,
+          "focus-visible:ring-purple-500/35"
+        )}
+      >
+        {/* LEFT-ALIGNED DAY NUMBER */}
+        <div
+          className={cx(
+            "text-[14px] font-semibold tabular-nums",
+            isPast ? "text-slate-500" : "text-slate-200"
+          )}
+          aria-hidden="true"
+        >
+          {dayNum}
+        </div>
+
+        {/* CHECKMARK ON THE RIGHT (no overlap) */}
+        {hasActivity ? (
+          <Check
+            className={cx(
+              "absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5",
+              isPast ? "text-slate-500" : "text-emerald-300"
+            )}
+            aria-hidden="true"
+          />
+        ) : null}
       </div>
     </div>
   );
-}
+});
+
 
 function ErrorState({ title = "Something went wrong", message, onRetry }) {
   return (
@@ -1299,62 +1300,49 @@ export default function AppHome() {
                     </AnimatePresence>
                   </Card>
 
-                  {/* New Job CTA — bigger vertically, bigger +, centered layout */}
-                  <Card
-                    as="button"
-                    type="button"
-                    aria-label="Create a new job"
-                    onClick={handleNewJob}
-                    className={cx(
-                      "w-full relative overflow-hidden",
-                      "border-purple-500/25 bg-gradient-to-b from-purple-500/12 to-white/[0.03]",
-                      "hover:from-purple-500/16 hover:bg-white/[0.05] transition-colors",
-                      "min-h-[220px]",
-                      focusRing
-                    )}
-                  >
-                    {/* glow */}
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/10 blur-2xl"
-                    />
-                    <CardContent className="p-10 sm:p-12">
-                      <div className="flex flex-col items-center text-center gap-8">
-                        <div className="flex flex-col items-center gap-4">
-                          <div
-                            className={cx(
-                              "h-24 w-24 sm:h-28 sm:w-28 rounded-3xl",
-                              "grid place-items-center",
-                              "border border-purple-500/25 bg-purple-500/15"
-                            )}
-                            aria-hidden="true"
-                          >
-                            <Plus className="h-12 w-12 sm:h-14 sm:w-14 text-purple-200" />
-                          </div>
+                {/* New Job CTA — BIG PURPLE + only, high-contrast border */}
+<Card
+  as="button"
+  type="button"
+  aria-label="Create a new job"
+  onClick={handleNewJob}
+  className={cx(
+    "w-full relative overflow-hidden min-h-[220px]",
+    // stronger, eye-catching border + glow
+    "border-2 border-purple-500/70 ring-1 ring-purple-500/35",
+    "bg-gradient-to-b from-purple-500/18 via-purple-500/[0.06] to-white/[0.03]",
+    "shadow-[0_0_0_1px_rgba(168,85,247,0.35),0_30px_90px_rgba(168,85,247,0.14)]",
+    "hover:border-purple-400/85 hover:ring-purple-400/45 hover:bg-white/[0.05]",
+    "transition-colors",
+    focusRing
+  )}
+>
+  {/* glow */}
+  <div
+    aria-hidden="true"
+    className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/18 blur-3xl"
+  />
+  <div
+    aria-hidden="true"
+    className="pointer-events-none absolute -bottom-28 -right-28 h-72 w-72 rounded-full bg-purple-500/14 blur-3xl"
+  />
 
-                          <div className="min-w-0">
-                            <div className="text-[12px] text-slate-400">Quick action</div>
-                            <div className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight text-slate-100">
-                              NEW JOB
-                            </div>
-                            <div className="mt-2 text-[length:var(--ds-body)] text-slate-400 max-w-xl mx-auto">
-                              Add a role to your pipeline and start tracking.
-                            </div>
-                          </div>
-                        </div>
+  <CardContent className="p-10 sm:p-12 grid place-items-center">
+    <motion.div
+      initial={{ scale: 1 }}
+      animate={{ scale: [1, 1.03, 1] }}
+      transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+      className="grid place-items-center"
+    >
+      <Plus
+        className="h-24 w-24 sm:h-28 sm:w-28 text-purple-300 drop-shadow-[0_18px_55px_rgba(168,85,247,0.35)]"
+        aria-hidden="true"
+      />
+      <span className="sr-only">New Job</span>
+    </motion.div>
+  </CardContent>
+</Card>
 
-                        <div className="w-full max-w-md">
-                          <div className="grid grid-cols-3 gap-3">
-                            <MiniStat label="This week" value={`${weekApps}`} icon={Clock} />
-                            <MiniStat label="Streak" value={`${streak}d`} icon={Zap} />
-                            <MiniStat label="Offers" value={`${weekOffers}`} icon={Target} />
-                          </div>
-
-                          <div className="mt-3 text-[12px] text-slate-500">Click anywhere on this card</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
 
                   {/* Insights */}
                   <Card aria-label="Insights">
