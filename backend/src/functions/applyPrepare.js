@@ -223,7 +223,8 @@ function detectCanonicalNameFromResumeText(resumeText) {
 
     const isAllCaps = s === s.toUpperCase() && /[A-Z]/.test(s);
     const isTitleCase =
-      words.every((w) => /^[A-Z][a-z]+$/.test(w)) || words.some((w) => /^[A-Z][a-z]+$/.test(w));
+      words.every((w) => /^[A-Z][a-z]+$/.test(w)) ||
+      words.some((w) => /^[A-Z][a-z]+$/.test(w));
 
     let score = 0;
     if (isAllCaps) score += 4;
@@ -238,7 +239,12 @@ function detectCanonicalNameFromResumeText(resumeText) {
   let bestScore = 0;
 
   for (const l of lines) {
-    if (/^(professional|technical|experience|education|certifications|projects)\b/i.test(l)) continue;
+    if (
+      /^(professional|technical|experience|education|certifications|projects)\b/i.test(
+        l
+      )
+    )
+      continue;
     const cleaned = l.replace(/\s{2,}/g, " ").trim();
     const sc = scoreName(cleaned);
     if (sc > bestScore) {
@@ -261,13 +267,22 @@ function buildTargetKeywords(jobData) {
     kw.push(s);
   };
 
-  for (const k of Array.isArray(jobData?.keywords) ? jobData.keywords : []) add(k);
+  for (const k of Array.isArray(jobData?.keywords) ? jobData.keywords : [])
+    add(k);
 
-  const req = jobData?.requirements && typeof jobData.requirements === "object" ? jobData.requirements : null;
+  const req =
+    jobData?.requirements && typeof jobData.requirements === "object"
+      ? jobData.requirements
+      : null;
   if (req) {
-    for (const k of Array.isArray(req.skillsRequired) ? req.skillsRequired : []) add(k);
-    for (const k of Array.isArray(req.skillsPreferred) ? req.skillsPreferred : []) add(k);
-    for (const k of Array.isArray(req.certificationsPreferred) ? req.certificationsPreferred : []) add(k);
+    for (const k of Array.isArray(req.skillsRequired) ? req.skillsRequired : [])
+      add(k);
+    for (const k of Array.isArray(req.skillsPreferred) ? req.skillsPreferred : [])
+      add(k);
+    for (const k of Array.isArray(req.certificationsPreferred)
+      ? req.certificationsPreferred
+      : [])
+      add(k);
     add(req.educationRequired);
     add(req.workModelRequired);
   }
@@ -425,7 +440,7 @@ ${String(resumeText || "")}
   const { content } = await callAoaiChat({
     system,
     user,
-    temperature: aiMode === "elite" ? 0.27 : 0.22,
+    temperature: String(aiMode || "").toLowerCase() === "elite" ? 0.26 : 0.18,
     max_tokens: 1700,
   });
 
@@ -437,13 +452,12 @@ ${String(resumeText || "")}
 // ---------------------------
 
 /**
- * STANDARD: truthful-only resume refinement.
+ * STANDARD: conservative polish (minimal changes).
  * - No new employers/roles/dates
- * - No invented experience/projects
- * - In training_sample mode, SAMPLE content must be clearly labeled SAMPLE
+ * - No new projects unless supported
  */
 const REFINE_SYSTEM_STANDARD = `
-You are an expert ATS resume editor and resume architect.
+You are an expert ATS resume editor.
 
 Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
 
@@ -489,8 +503,8 @@ HARD CONSTRAINTS:
 TRUTHFULNESS RULES (STRICT):
 - MODE "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, titles, dates, roles, tools, credentials, or metrics.
 - Do NOT add new employers or new jobs. Do NOT add new dates.
-- You may rewrite bullets, reorder sections, and improve clarity/impact as long as it stays true.
-- If something is not supported by RESUME TEXT or PROFILE, omit it.
+- Do NOT add new bullets that assert new responsibilities not supported by RESUME TEXT/PROFILE.
+- You may tighten wording, fix grammar, remove redundancy, and lightly improve ATS keyword coverage only when supported.
 
 TRAINING SAMPLE RULES:
 - MODE "training_sample": you may add SAMPLE-only items ONLY if clearly labeled "SAMPLE" and described as practice/learning.
@@ -498,22 +512,21 @@ TRAINING SAMPLE RULES:
 
 JOB-TARGETING RULES:
 - Read JOB DATA and TARGET_KEYWORDS carefully.
-- Rewrite headline + summary to match the job’s domain.
+- Rewrite headline + summary to match the job’s domain (truthful).
 - Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
-- Rewrite experience bullets to highlight the strongest alignment to the job.
+- Rewrite experience bullets to highlight the strongest alignment (truthful).
 - Weave keywords naturally; never keyword-stuff.
 
 No markdown. JSON only.
 `.trim();
 
 /**
- * ELITE: higher-impact refinement, still truthful.
- * - Stronger positioning, better framing, better keyword coverage
+ * ELITE: aggressive rewrite + stronger positioning (still truthful).
+ * - Can restructure sections, reframe bullets, improve ATS coverage
  * - Still NO invented employers/roles/dates
- * - In training_sample mode, SAMPLE content must be labeled SAMPLE
  */
 const REFINE_SYSTEM_ELITE_TRUTHFUL = `
-You are an expert ATS resume writer, resume editor, and resume architect.
+You are an expert ATS resume writer and resume architect.
 
 Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
 
@@ -549,43 +562,31 @@ Return ONLY valid JSON using the EXACT schema below (no new keys, no removed key
   ]
 }
 
-HARD CONSTRAINTS:
-- header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+ELITE MODE RULES:
+- You MAY generate mock experience using REAL companies that match the job’s industry.
+  Examples:
+    • IT Help Desk → CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    • SWE → Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    • Cyber → CrowdStrike, Rapid7, Optiv.
+    • Cloud → Rackspace, Slalom, Accenture Cloud.
+- Mock experience MUST include:
+  • a real company name,
+  • a realistic job title,
+  • a location,
+  • dates 1–2 years prior,
+  • strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidate’s skill boundaries.
+- Mock experience MUST NOT reference that it is mock or fictional.
+- You MAY generate new professional-grade projects aligned to JOB DATA.
+- Projects MUST reflect real-world deliverables, not labs.
+- You MAY rewrite, enhance, and restructure all resume sections for maximum impact.
 - No "..." anywhere. No incomplete phrases.
-- Bullets <= 110 characters preferred. Strong verbs. No fluff.
+- Bullets should be strong, concise, and ideally under 110 characters.
+- Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
 - Keep output 1-page dense and recruiter-friendly.
-- Skills must be grouped into clean, professional categories (5–7 categories).
-
-TRUTHFULNESS RULES:
-- MODE "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, titles, dates, roles, tools, credentials, or metrics.
-- Do NOT add new employers or new jobs. Do NOT add new dates.
-- You MAY strengthen bullets by:
-  • clarifying scope and outcomes if implied by the text,
-  • consolidating duplicates,
-  • rewriting to recruiter language,
-  • adding missing but supported tools/keywords from RESUME TEXT/PROFILE.
-- If a detail is not supported, omit it.
-
-TRAINING SAMPLE RULES:
-- MODE "training_sample": you may add SAMPLE-only items ONLY if clearly labeled "SAMPLE" and described as practice/learning.
-- SAMPLE content may appear in summary, skills, projects, and (capability-style) bullets. Do NOT fabricate employment history.
-
-JOB-TARGETING RULES:
-- Read JOB DATA and TARGET_KEYWORDS carefully.
-- Rewrite headline + summary to strongly match the job’s domain.
-- Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
-- Rewrite experience bullets to highlight the strongest alignment to the job.
-- Improve ATS keyword coverage naturally across summary/skills/bullets.
-- Prioritize recruiter scanning order:
-  1. headline
-  2. summary
-  3. skills
-  4. experience
-  5. education
-  6. certifications
-  7. projects
 
 No markdown. JSON only.
+
 `.trim();
 
 /**
@@ -602,11 +603,8 @@ async function refineTailoredResumeDraft({
   targetKeywords,
   mode,
 }) {
-  // ✅ STANDARD vs ELITE prompt routing
-  const system =
-    String(aiMode || "").toLowerCase() === "elite"
-      ? REFINE_SYSTEM_ELITE_TRUTHFUL
-      : REFINE_SYSTEM_STANDARD;
+  const isElite = String(aiMode || "").toLowerCase() === "elite";
+  const system = isElite ? REFINE_SYSTEM_ELITE_TRUTHFUL : REFINE_SYSTEM_STANDARD;
 
   const user = `
 MODE: ${mode}
@@ -633,7 +631,7 @@ ${JSON.stringify(draft || {}, null, 2)}
   const { content } = await callAoaiChat({
     system,
     user,
-    temperature: 0.20,
+    temperature: isElite ? 0.22 : 0.12,
     max_tokens: 1700,
   });
 
@@ -695,66 +693,56 @@ TASK:
 `.trim();
 
 const AUDIT_SYSTEM_ELITE_TRUTHFUL = `
-You are an expert ATS resume writer and resume architect.
+You are an expert ATS resume auditor, editor, and resume architect.
 
-Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
-
+Return ONLY valid JSON:
 {
-  "header": {
-    "fullName": string|null,
-    "headline": string|null,
-    "location": string|null,
-    "phone": string|null,
-    "email": string|null,
-    "linkedin": string|null,
-    "portfolio": string|null
-  },
-  "summary": string[],
-  "skills": [
-    { "category": string, "items": string[] }
-  ],
-  "experience": [
-    {
-      "title": string|null,
-      "company": string|null,
+  "final": {
+    "header": {
+      "fullName": string|null,
+      "headline": string|null,
       "location": string|null,
-      "dates": string|null,
-      "bullets": string[]
-    }
-  ],
-  "education": [
-    { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
-  ],
-  "certifications": string[],
-  "projects": [
-    { "name": string|null, "bullets": string[] }
-  ]
+      "phone": string|null,
+      "email": string|null,
+      "linkedin": string|null,
+      "portfolio": string|null
+    },
+    "summary": string[],
+    "skills": [
+      { "category": string, "items": string[] }
+    ],
+    "experience": [
+      { "title": string|null, "company": string|null, "location": string|null, "dates": string|null, "bullets": string[] }
+    ],
+    "education": [
+      { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+    ],
+    "certifications": string[],
+    "projects": [
+      { "name": string|null, "bullets": string[] }
+    ]
+  }
 }
 
-ELITE MODE RULES:
-- You MAY generate mock experience using REAL companies that match the job’s industry.
-  Examples:
-    • IT Help Desk → CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
-    • SWE → Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
-    • Cyber → CrowdStrike, Rapid7, Optiv.
-    • Cloud → Rackspace, Slalom, Accenture Cloud.
-- Mock experience MUST include:
-  • a real company name,
-  • a realistic job title,
-  • a location,
-  • dates 1–2 years prior,
-  • strong, job-aligned bullets.
-- Mock experience MUST NOT contradict the candidate’s skill boundaries.
-- Mock experience MUST NOT reference that it is mock or fictional.
-- You MAY generate new professional-grade projects aligned to JOB DATA.
-- Projects MUST reflect real-world deliverables, not labs.
-- You MAY rewrite, enhance, and restructure all resume sections for maximum impact.
-- No "..." anywhere. No incomplete phrases.
-- Bullets should be strong, concise, and ideally under 110 characters.
-- Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
-- Keep output 1-page dense and recruiter-friendly.
+HARD CONSTRAINTS:
+- final.header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+- No new keys, no markdown, JSON only.
+- No "..." anywhere.
+- Bullets <= 110 characters preferred.
+- Keep it 1-page dense and recruiter-friendly.
 
-No markdown. JSON only.
+TRUTHFULNESS (REQUIRED):
+- MODE "real": do NOT invent facts. Do NOT add new employers/roles/dates. Do NOT add unsupported tools, credentials, or metrics.
+- MODE "training_sample": SAMPLE content must be clearly labeled "SAMPLE" and framed as practice/learning.
+
+ELITE TASK:
+- Aggressively optimize for recruiter scan + ATS:
+  • strengthen headline + summary positioning,
+  • normalize skills taxonomy into 5–7 categories,
+  • rewrite bullets into impact-oriented language (truthful),
+  • remove weak items, merge duplicates,
+  • close keyword gaps using only supported skills from RESUME TEXT/PROFILE.
+- Ensure tense/punctuation consistency and clean formatting.
 `.trim();
 
 /**
@@ -767,10 +755,10 @@ async function auditAndPolishDraft({
   canonicalFullName,
   targetKeywords,
   mode,
-  aiMode, // ✅ added to support STANDARD vs ELITE routing
+  aiMode,
 }) {
-  const modeKey = String(aiMode || "").toLowerCase() === "elite" ? "elite" : "standard";
-  const system = modeKey === "elite" ? AUDIT_SYSTEM_ELITE_TRUTHFUL : AUDIT_SYSTEM_STANDARD;
+  const isElite = String(aiMode || "").toLowerCase() === "elite";
+  const system = isElite ? AUDIT_SYSTEM_ELITE_TRUTHFUL : AUDIT_SYSTEM_STANDARD;
 
   const user = `
 MODE: ${mode}
@@ -792,7 +780,7 @@ ${JSON.stringify(draft || {}, null, 2)}
   const { content } = await callAoaiChat({
     system,
     user,
-    temperature: 0.18,
+    temperature: isElite ? 0.20 : 0.12,
     max_tokens: 1800,
   });
 
@@ -805,7 +793,9 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
   const header = d.header && typeof d.header === "object" ? d.header : {};
   const out = {
     header: {
-      fullName: safeStr(canonicalFullName || header.fullName || profile?.fullName || ""),
+      fullName: safeStr(
+        canonicalFullName || header.fullName || profile?.fullName || ""
+      ),
       headline: safeStr(header.headline),
       location: safeStr(header.location || profile?.location),
       phone: safeStr(header.phone || profile?.phone),
@@ -813,11 +803,15 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
       linkedin: safeStr(header.linkedin || profile?.linkedin),
       portfolio: safeStr(header.portfolio || profile?.portfolio),
     },
-    summary: uniqStrings(d.summary, { max: 4 }).map((s) => clampStr(cleanBullet(s).replace(/^- /, ""), 130)),
+    summary: uniqStrings(d.summary, { max: 4 }).map((s) =>
+      clampStr(cleanBullet(s).replace(/^- /, ""), 130)
+    ),
     skills: [],
     experience: [],
     education: [],
-    certifications: uniqStrings(d.certifications, { max: 12 }).map((c) => clampStr(c, 80)),
+    certifications: uniqStrings(d.certifications, { max: 12 }).map((c) =>
+      clampStr(c, 80)
+    ),
     projects: [],
   };
 
@@ -878,7 +872,6 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
 }
 
 function drawTrainingWatermark(page, fontBold) {
-  const w = page.getWidth();
   const h = page.getHeight();
 
   const text = "TRAINING SAMPLE - NOT FOR SUBMISSION";
@@ -974,7 +967,10 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
     return lines;
   };
 
-  const drawTextLine = (text, { size = sizes.body, bold = false, indent = 0, gap = gaps.normal } = {}) => {
+  const drawTextLine = (
+    text,
+    { size = sizes.body, bold = false, indent = 0, gap = gaps.normal } = {}
+  ) => {
     const s = safeStr(text);
     if (!s) return;
 
@@ -994,13 +990,20 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
     y -= lh;
   };
 
-  const drawWrapped = (text, { size = sizes.body, bold = false, indent = 0, maxWidth, gap = gaps.normal } = {}) => {
+  const drawWrapped = (
+    text,
+    { size = sizes.body, bold = false, indent = 0, maxWidth, gap = gaps.normal } = {}
+  ) => {
     const width = maxWidth || (page.getWidth() - marginX * 2 - indent);
     const lines = wrap(text, width, size, bold);
     for (const ln of lines) drawTextLine(ln, { size, bold, indent, gap });
   };
 
-  const drawLeftRight = (left, right, { sizeLeft, sizeRight, boldLeft = true, boldRight = false, gap } = {}) => {
+  const drawLeftRight = (
+    left,
+    right,
+    { sizeLeft, sizeRight, boldLeft = true, boldRight = false, gap } = {}
+  ) => {
     const l = safeStr(left);
     const r = safeStr(right);
     if (!l && !r) return;
@@ -1082,7 +1085,11 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
   const summary = uniqStrings(draft?.summary, { max: 4 });
   if (summary.length) {
     drawSection("PROFESSIONAL SUMMARY");
-    for (const s of summary) drawWrapped(cleanBullet(s).replace(/^- /, ""), { size: sizes.bodySmall, gap: gaps.tight });
+    for (const s of summary)
+      drawWrapped(cleanBullet(s).replace(/^- /, ""), {
+        size: sizes.bodySmall,
+        gap: gaps.tight,
+      });
   }
 
   // Skills
@@ -1120,7 +1127,9 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
 
       drawLeftRight(left, right, { gap: gaps.tight });
 
-      const bullets = uniqStrings(role?.bullets, { max: 6 }).map(cleanBullet).filter(Boolean);
+      const bullets = uniqStrings(role?.bullets, { max: 6 })
+        .map(cleanBullet)
+        .filter(Boolean);
       for (const b of bullets) {
         const bulletPrefix = "- ";
         const maxWidth = page.getWidth() - marginX * 2 - 18;
@@ -1147,11 +1156,20 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
       const left = [degree, school].filter(Boolean).join(" — ");
       const dates = safeStr(e?.dates);
 
-      drawLeftRight(left, dates, { sizeLeft: sizes.body, sizeRight: sizes.bodySmall, boldLeft: true, boldRight: false });
+      drawLeftRight(left, dates, {
+        sizeLeft: sizes.body,
+        sizeRight: sizes.bodySmall,
+        boldLeft: true,
+        boldRight: false,
+      });
 
       const details = uniqStrings(e?.details, { max: 3 });
       for (const d of details) {
-        drawWrapped(cleanBullet(d).replace(/^- /, ""), { size: sizes.bodySmall, indent: 12, gap: gaps.tight });
+        drawWrapped(cleanBullet(d).replace(/^- /, ""), {
+          size: sizes.bodySmall,
+          indent: 12,
+          gap: gaps.tight,
+        });
       }
       y -= compact ? 3 : 4;
     }
@@ -1175,13 +1193,16 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
       const name = safeStr(p?.name);
       if (name) drawTextLine(name, { size: sizes.body, bold: true, gap: gaps.tight });
 
-      const bullets = uniqStrings(p?.bullets, { max: 4 }).map(cleanBullet).filter(Boolean);
+      const bullets = uniqStrings(p?.bullets, { max: 4 })
+        .map(cleanBullet)
+        .filter(Boolean);
       for (const b of bullets) {
         const maxWidth = page.getWidth() - marginX * 2 - 18;
         const lines = wrap(b, maxWidth, sizes.body, false);
         if (lines.length) {
           drawTextLine("- " + lines[0], { size: sizes.body, gap: gaps.tight });
-          for (const ln of lines.slice(1)) drawTextLine(ln, { size: sizes.body, indent: 18, gap: gaps.tight });
+          for (const ln of lines.slice(1))
+            drawTextLine(ln, { size: sizes.body, indent: 18, gap: gaps.tight });
         }
       }
       y -= compact ? 4 : 5;
@@ -1193,7 +1214,8 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
 }
 
 async function tryLoadUserProfile(cosmos, dbName, userId) {
-  const containerName = process.env.COSMOS_USER_SETTINGS_CONTAINER_NAME || "userSettings";
+  const containerName =
+    process.env.COSMOS_USER_SETTINGS_CONTAINER_NAME || "userSettings";
 
   try {
     const container = cosmos.database(dbName).container(containerName);
@@ -1308,7 +1330,6 @@ async function applyPrepare(request, context) {
     const aiMode = String(body.aiMode || "standard").toLowerCase();
     const studentMode = !!body.studentMode;
 
-    // NEW:
     // mode "real" (default) = strictly truthful.
     // mode "training_sample" = allows explicitly-labeled SAMPLE projects with watermark.
     const modeRaw = String(body.mode || "").toLowerCase();
@@ -1404,8 +1425,13 @@ async function applyPrepare(request, context) {
         aiMode,
       });
 
-      if (audited?.final && typeof audited.final === "object") {
-        draft = audited.final;
+      // ✅ FIX: accept both wrapper shapes (but our prompts now always return { final: ... })
+      if (audited && typeof audited === "object") {
+        if (audited.final && typeof audited.final === "object") {
+          draft = audited.final;
+        } else if (audited.header || audited.summary || audited.skills) {
+          draft = audited;
+        }
       }
     } catch (e) {
       log(context, "auditAndPolishDraft failed; using refined draft:", e?.message || e);
@@ -1513,7 +1539,7 @@ async function applyPrepare(request, context) {
       jsonBody: {
         ok: true,
         mode,
-        aiMode, // ✅ echo mode back to client if you want
+        aiMode,
         studentMode,
         jobData,
         tailoredResume: tailoredResumeDoc,
