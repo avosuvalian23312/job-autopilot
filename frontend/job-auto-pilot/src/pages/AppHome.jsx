@@ -11,6 +11,12 @@ import {
   Clock,
   Target,
   BarChart3,
+  Trophy,
+  Sparkles,
+  CheckCircle2,
+  Zap,
+  Lightbulb,
+  ListChecks,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -89,10 +95,22 @@ const GoalRing = ({ value = 0, goal = 100, label, color = "purple" }) => {
   const strokeDashoffset = circumference - (pct / 100) * circumference;
 
   const colorClasses = {
-    purple: { stroke: "stroke-purple-500", badge: "bg-purple-500/10 text-purple-300" },
-    cyan: { stroke: "stroke-cyan-500", badge: "bg-cyan-500/10 text-cyan-300" },
-    green: { stroke: "stroke-green-500", badge: "bg-green-500/10 text-green-300" },
-    amber: { stroke: "stroke-amber-500", badge: "bg-amber-500/10 text-amber-300" },
+    purple: {
+      stroke: "stroke-purple-500",
+      badge: "bg-purple-500/10 text-purple-300",
+    },
+    cyan: {
+      stroke: "stroke-cyan-500",
+      badge: "bg-cyan-500/10 text-cyan-300",
+    },
+    green: {
+      stroke: "stroke-green-500",
+      badge: "bg-green-500/10 text-green-300",
+    },
+    amber: {
+      stroke: "stroke-amber-500",
+      badge: "bg-amber-500/10 text-amber-300",
+    },
   };
 
   const c = colorClasses[color] || colorClasses.purple;
@@ -223,7 +241,8 @@ const timeAgo = (date) => {
   return `${yr} year${yr === 1 ? "" : "s"} ago`;
 };
 
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const startOfDay = (d) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 const normalizeStatus = (s) => String(s ?? "").trim().toLowerCase();
 
 const titleCase = (s) => {
@@ -238,10 +257,15 @@ const normalizeJobsList = (jobs) =>
 const pickJobTitle = (job) =>
   job?.job_title || job?.jobTitle || job?.title || job?.role || "Job";
 
-const pickCompany = (job) => job?.company || job?.companyName || job?.employer || "Company";
+const pickCompany = (job) =>
+  job?.company || job?.companyName || job?.employer || "Company";
 
 const pickCreated = (job) =>
-  job?.created_date || job?.createdAt || job?.created_at || job?.created || job?.timestamp;
+  job?.created_date ||
+  job?.createdAt ||
+  job?.created_at ||
+  job?.created ||
+  job?.timestamp;
 
 const pickUpdated = (job) =>
   job?.status_updated_at ||
@@ -320,7 +344,9 @@ const normalizeRecentActivityFromDashboard = (dash) => {
 
   const mapped = raw
     .map((x, i) => {
-      const dt = toDate(x?.ts || x?.time || x?.date || x?.createdAt || x?.created_date);
+      const dt = toDate(
+        x?.ts || x?.time || x?.date || x?.createdAt || x?.created_date
+      );
       return {
         id: x?.id ?? `${i}`,
         type: x?.type || x?.kind || x?.eventType || "job_added",
@@ -388,20 +414,25 @@ const buildLastNDaysSeries = (jobs, days = 7) => {
     }
   }
 
-  const out = Array.from(buckets.entries())
+  return Array.from(buckets.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([ts, count]) => {
       const d = new Date(ts);
       const label = d.toLocaleDateString(undefined, { weekday: "short" });
       return { ts, label, value: count };
     });
-
-  return out;
 };
 
 const countStatusesAllTime = (jobs) => {
   const list = normalizeJobsList(jobs);
-  const counts = { generated: 0, applied: 0, interview: 0, offer: 0, rejected: 0, other: 0 };
+  const counts = {
+    generated: 0,
+    applied: 0,
+    interview: 0,
+    offer: 0,
+    rejected: 0,
+    other: 0,
+  };
 
   for (const job of list) {
     const st = normalizeStatus(job?.status);
@@ -411,6 +442,18 @@ const countStatusesAllTime = (jobs) => {
   }
 
   return counts;
+};
+
+const computeStreak = (dailySeries) => {
+  // consecutive trailing days with value > 0 (based on the series order)
+  const arr = Array.isArray(dailySeries) ? dailySeries : [];
+  if (!arr.length) return 0;
+  let streak = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if ((arr[i]?.value || 0) > 0) streak += 1;
+    else break;
+  }
+  return streak;
 };
 
 export default function AppHome() {
@@ -524,7 +567,7 @@ export default function AppHome() {
   }, [weekApps, weekInterviews, weekOffers]);
 
   const dailyMax = useMemo(() => {
-    const m = Math.max(1, ...dailySeries.map((d) => d.value || 0));
+    const m = Math.max(1, ...(dailySeries || []).map((d) => d.value || 0));
     return m;
   }, [dailySeries]);
 
@@ -535,6 +578,62 @@ export default function AppHome() {
       .sort((a, b) => (b[1] || 0) - (a[1] || 0));
     return keep.slice(0, 5);
   }, [statusCounts]);
+
+  const streak = useMemo(() => computeStreak(dailySeries), [dailySeries]);
+
+  const achievements = useMemo(() => {
+    const hasApps = totalApps > 0;
+    const hasResume = resumeCount > 0;
+    const firstInterview = (statusCounts?.interview || 0) > 0;
+    const firstOffer = (statusCounts?.offer || 0) > 0;
+
+    const tiers = [
+      { label: "First job added", done: hasApps, hint: "Add a job to start your pipeline." },
+      { label: "First resume uploaded", done: hasResume, hint: "Upload a resume to generate docs faster." },
+      { label: "10 applications", done: totalApps >= 10, hint: "Momentum beats intensity — keep it consistent." },
+      { label: "25 applications", done: totalApps >= 25, hint: "Nice volume — keep your tracking clean." },
+      { label: "First interview", done: firstInterview, hint: "Interviews come from follow-ups + volume." },
+      { label: "First offer", done: firstOffer, hint: "Offers come from reps + tight targeting." },
+      { label: "3-day streak", done: streak >= 3, hint: "Try 1 job/day — consistency wins." },
+    ];
+
+    // show 5 rows max (prioritize not-done, then done)
+    const notDone = tiers.filter((t) => !t.done);
+    const done = tiers.filter((t) => t.done);
+    return [...notDone, ...done].slice(0, 5);
+  }, [resumeCount, statusCounts, streak, totalApps]);
+
+  const tips = useMemo(() => {
+    const t = [];
+
+    if (weekApps <= 2) t.push("Aim for 3–5 adds/week to keep your pipeline warm.");
+    else t.push("Great weekly pace — keep it consistent, not spiky.");
+
+    if ((statusCounts?.applied || 0) > 0 && (statusCounts?.interview || 0) === 0) {
+      t.push("Add a simple follow-up 48h after applying — it boosts replies.");
+    } else if ((statusCounts?.interview || 0) > 0) {
+      t.push("Track questions you missed + improve one answer per interview.");
+    }
+
+    if (resumeCount === 0) t.push("Upload 1 strong baseline resume. Then clone per role type.");
+    else if (resumeCount < 3) t.push("Create 2–3 resume variants by role (Help Desk, DevOps, SWE).");
+
+    t.push("Keep every job entry clean: title, company, link, and status date.");
+
+    return t.slice(0, 4);
+  }, [resumeCount, statusCounts, weekApps]);
+
+  const checklist = useMemo(() => {
+    const items = [
+      { label: "Add 1–3 jobs today", done: streak > 0 },
+      { label: "Generate docs for 1 job", done: (statusCounts?.generated || 0) > 0 },
+      { label: "Follow up on 2 applications", done: weekApps > 0 },
+      { label: "Upload / update a resume", done: resumeCount > 0 },
+    ];
+
+    // cap to 4 for UI
+    return items.slice(0, 4);
+  }, [resumeCount, statusCounts, streak, weekApps]);
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
@@ -552,8 +651,10 @@ export default function AppHome() {
           <div>
             <h1 className="text-3xl font-bold text-white">Dashboard</h1>
             <p className="text-white/35 mt-1 text-sm">
-              All-time: <span className="text-white/70 font-semibold">{totalApps}</span>{" "}
-              applications • <span className="text-white/70 font-semibold">{resumeCount}</span>{" "}
+              All-time:{" "}
+              <span className="text-white/70 font-semibold">{totalApps}</span>{" "}
+              applications •{" "}
+              <span className="text-white/70 font-semibold">{resumeCount}</span>{" "}
               resumes
             </p>
           </div>
@@ -577,11 +678,11 @@ export default function AppHome() {
           </div>
         </div>
 
-        {/* TOP GRID (fills the screen more) */}
+        {/* MAIN GRID (more filled + true left/right columns) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* LEFT: New Job + Momentum */}
+          {/* LEFT COLUMN */}
           <div className="lg:col-span-7 space-y-6">
-            {/* Main Hero Action (smaller, less empty space) */}
+            {/* Hero */}
             <button
               onClick={handleNewJob}
               className="relative w-full rounded-3xl bg-gradient-to-br from-purple-600/20 to-purple-600/5 border-2 border-purple-500/30 hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-500/20 hover:-translate-y-1 transition-all group overflow-hidden"
@@ -611,6 +712,10 @@ export default function AppHome() {
                     <div className="text-lg font-bold text-white">{weekApps} apps</div>
                   </div>
                   <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                    <div className="text-xs text-white/35">Streak</div>
+                    <div className="text-lg font-bold text-white">{streak}d</div>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
                     <div className="text-xs text-white/35">Offers</div>
                     <div className="text-lg font-bold text-white">{weekOffers}</div>
                   </div>
@@ -618,7 +723,7 @@ export default function AppHome() {
               </div>
             </button>
 
-            {/* Momentum / Last 7 days chart */}
+            {/* Activity Graph + Breakdown */}
             <div className="glass-card rounded-2xl p-6">
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
@@ -632,27 +737,30 @@ export default function AppHome() {
                 </span>
               </div>
 
-              {/* Bars */}
               <div className="grid grid-cols-7 gap-3 items-end h-28">
-                {(dailySeries.length ? dailySeries : Array.from({ length: 7 }).map((_, i) => ({ label: "", value: 0, ts: i }))).map(
-                  (d, i) => {
-                    const h = Math.round(((d.value || 0) / dailyMax) * 100);
-                    return (
-                      <div key={d.ts || i} className="flex flex-col items-center gap-2">
-                        <div className="w-full h-20 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-end">
-                          <div
-                            className="w-full bg-white/20"
-                            style={{ height: `${Math.max(6, h)}%` }}
-                          />
-                        </div>
-                        <div className="text-[11px] text-white/35">{d.label || "—"}</div>
+                {(dailySeries.length
+                  ? dailySeries
+                  : Array.from({ length: 7 }).map((_, i) => ({
+                      label: "—",
+                      value: 0,
+                      ts: i,
+                    }))
+                ).map((d, i) => {
+                  const h = Math.round(((d.value || 0) / dailyMax) * 100);
+                  return (
+                    <div key={d.ts || i} className="flex flex-col items-center gap-2">
+                      <div className="w-full h-20 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-end">
+                        <div
+                          className="w-full bg-white/20"
+                          style={{ height: `${Math.max(6, h)}%` }}
+                        />
                       </div>
-                    );
-                  }
-                )}
+                      <div className="text-[11px] text-white/35">{d.label || "—"}</div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Status quick breakdown */}
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -674,9 +782,7 @@ export default function AppHome() {
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <div className="w-10 text-right text-xs text-white/45">
-                            {v}
-                          </div>
+                          <div className="w-10 text-right text-xs text-white/45">{v}</div>
                         </div>
                       );
                     })}
@@ -685,7 +791,7 @@ export default function AppHome() {
 
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <TrendingUp className="w-4 h-4 text-green-400" />
+                    <Zap className="w-4 h-4 text-green-400" />
                     <div className="text-sm font-semibold text-white/75">Momentum</div>
                   </div>
                   <div className="text-xs text-white/40">
@@ -710,11 +816,65 @@ export default function AppHome() {
                 </div>
               </div>
             </div>
+
+            {/* Recent Activity (left side) */}
+            <div className="glass-card rounded-2xl p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">Recent Activity</h2>
+                <Clock className="w-5 h-5 text-white/40" />
+              </div>
+
+              {recentActivity.length > 0 ? (
+                <div className="space-y-4">
+                  {recentActivity.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className="flex items-start gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      <div
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                          activity.type === "job_added"
+                            ? "bg-purple-500/10"
+                            : activity.type === "doc_generated"
+                            ? "bg-cyan-500/10"
+                            : "bg-green-500/10"
+                        }`}
+                      >
+                        {activity.type === "job_added" && (
+                          <Plus className="w-5 h-5 text-purple-400" />
+                        )}
+                        {activity.type === "doc_generated" && (
+                          <FileText className="w-5 h-5 text-cyan-400" />
+                        )}
+                        {activity.type === "status_changed" && (
+                          <TrendingUp className="w-5 h-5 text-green-400" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-white/80">{activity.text}</p>
+                        <p className="text-xs text-white/40 mt-1">{activity.time}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-white/40 mb-4">No activity yet</p>
+                  <Button
+                    onClick={handleNewJob}
+                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Your First Job
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* RIGHT: Goals + This Week */}
+          {/* RIGHT COLUMN (fills the screen with “random” useful panels) */}
           <div className="lg:col-span-5 space-y-6">
-            {/* Goals card */}
+            {/* Goals */}
             <div className="glass-card rounded-2xl p-6">
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
@@ -725,10 +885,7 @@ export default function AppHome() {
               </div>
 
               <div className="space-y-4">
-                {/* Existing component (kept) */}
                 <GoalProgress applicationCount={totalApps} />
-
-                {/* New goal rings (fills UI) */}
                 <GoalRing
                   value={totalApps}
                   goal={APP_GOAL}
@@ -744,7 +901,7 @@ export default function AppHome() {
               </div>
             </div>
 
-            {/* This Week card */}
+            {/* This Week */}
             <div className="glass-card rounded-2xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
@@ -755,67 +912,126 @@ export default function AppHome() {
               </div>
 
               <div className="grid grid-cols-3 gap-6">
-                <CircularMetric value={weekApps} label="Applications" color="purple" max={weekMax} />
+                <CircularMetric value={weekApps} label="Apps" color="purple" max={weekMax} />
                 <CircularMetric value={weekInterviews} label="Interviews" color="cyan" max={weekMax} />
                 <CircularMetric value={weekOffers} label="Offers" color="green" max={weekMax} />
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Recent Activity (full width so the page looks “complete”) */}
-        <div className="mt-6">
-          <div className="glass-card rounded-2xl p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">Recent Activity</h2>
-              <Clock className="w-5 h-5 text-white/40" />
-            </div>
+            {/* Achievements */}
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-amber-300" />
+                  <h2 className="text-sm font-medium text-white/60">Achievements</h2>
+                </div>
+                <span className="text-xs text-white/30">progress</span>
+              </div>
 
-            {recentActivity.length > 0 ? (
-              <div className="space-y-4">
-                {recentActivity.map((activity) => (
+              <div className="space-y-3">
+                {achievements.map((a) => (
                   <div
-                    key={activity.id}
-                    className="flex items-start gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+                    key={a.label}
+                    className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10"
                   >
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        activity.type === "job_added"
-                          ? "bg-purple-500/10"
-                          : activity.type === "doc_generated"
-                          ? "bg-cyan-500/10"
-                          : "bg-green-500/10"
-                      }`}
-                    >
-                      {activity.type === "job_added" && (
-                        <Plus className="w-5 h-5 text-purple-400" />
-                      )}
-                      {activity.type === "doc_generated" && (
-                        <FileText className="w-5 h-5 text-cyan-400" />
-                      )}
-                      {activity.type === "status_changed" && (
-                        <TrendingUp className="w-5 h-5 text-green-400" />
+                    <div className="mt-0.5">
+                      {a.done ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <Sparkles className="w-4 h-4 text-purple-300" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-white/80">{activity.text}</p>
-                      <p className="text-xs text-white/40 mt-1">{activity.time}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-white/80">{a.label}</div>
+                      {!a.done && (
+                        <div className="text-xs text-white/35 mt-0.5">{a.hint}</div>
+                      )}
+                    </div>
+                    <div
+                      className={`text-[11px] px-2 py-1 rounded-lg ${
+                        a.done
+                          ? "bg-green-500/10 text-green-300"
+                          : "bg-white/5 text-white/45"
+                      }`}
+                    >
+                      {a.done ? "done" : "next"}
                     </div>
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="text-center py-12">
-                <p className="text-white/40 mb-4">No activity yet</p>
+            </div>
+
+            {/* Quick Tips */}
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-cyan-300" />
+                  <h2 className="text-sm font-medium text-white/60">Quick Tips</h2>
+                </div>
+                <span className="text-xs text-white/30">today</span>
+              </div>
+
+              <div className="space-y-3">
+                {tips.map((t, i) => (
+                  <div
+                    key={`${i}-${t}`}
+                    className="p-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white/75"
+                  >
+                    {t}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Next Actions / Checklist */}
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <ListChecks className="w-4 h-4 text-purple-300" />
+                  <h2 className="text-sm font-medium text-white/60">Next Actions</h2>
+                </div>
+                <span className="text-xs text-white/30">checklist</span>
+              </div>
+
+              <div className="space-y-2">
+                {checklist.map((c) => (
+                  <div
+                    key={c.label}
+                    className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                  >
+                    <div className="text-sm text-white/80">{c.label}</div>
+                    <span
+                      className={`text-[11px] px-2 py-1 rounded-lg ${
+                        c.done
+                          ? "bg-green-500/10 text-green-300"
+                          : "bg-white/5 text-white/45"
+                      }`}
+                    >
+                      {c.done ? "done" : "todo"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center gap-2">
                 <Button
-                  onClick={handleNewJob}
-                  className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl"
+                  onClick={() => navigate(createPageUrl("Applications"))}
+                  variant="outline"
+                  className="flex-1 rounded-xl border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Job
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  Applications
+                </Button>
+                <Button
+                  onClick={() => navigate(createPageUrl("Resumes"))}
+                  variant="outline"
+                  className="flex-1 rounded-xl border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Resumes
                 </Button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </motion.div>

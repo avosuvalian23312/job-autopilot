@@ -18,6 +18,7 @@ import {
   Star,
   Calendar,
   Plus,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ async function apiJson(url, options = {}) {
   });
 
   const data = await readJsonSafe(res);
+
   if (!res.ok) {
     const msg =
       data?.error ||
@@ -52,6 +54,7 @@ async function apiJson(url, options = {}) {
       `Request failed (${res.status})`;
     throw new Error(msg);
   }
+
   return data;
 }
 
@@ -59,7 +62,10 @@ function normalizeResume(doc) {
   const id = doc.id || doc._id || String(Date.now());
   const name = doc.name || "Resume";
   const updated =
-    doc.updated_date || doc.uploadedAt || doc.createdAt || new Date().toISOString();
+    doc.updated_date ||
+    doc.uploadedAt ||
+    doc.createdAt ||
+    new Date().toISOString();
 
   return {
     id,
@@ -68,6 +74,7 @@ function normalizeResume(doc) {
     updated_date: String(updated).includes("T")
       ? String(updated).split("T")[0]
       : String(updated),
+
     // preview fields will be filled by /api/resume/read-url on demand
     blobUrl: "",
     contentType: "",
@@ -83,7 +90,9 @@ export default function Resumes() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
   const [selectedResume, setSelectedResume] = useState(null);
+
   const [uploadMethod, setUploadMethod] = useState("file"); // "file" or "text"
   const [resumeText, setResumeText] = useState("");
   const [resumeName, setResumeName] = useState("");
@@ -94,12 +103,16 @@ export default function Resumes() {
   // ✅ NEW: prevents "button does nothing" issues + double clicks, and makes upload reliable
   const [uploading, setUploading] = useState(false);
 
+  // ✅ NEW: prevents empty-state flash while auth is happening / fetching resumes
+  const [isLoading, setIsLoading] = useState(true);
+
   // preview state (NO UI changes)
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewResume, setPreviewResume] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadResumes = async () => {
+    setIsLoading(true);
     try {
       const data = await apiJson("/api/resume/list", { method: "GET" });
       const items = data?.resumes || [];
@@ -109,6 +122,8 @@ export default function Resumes() {
       console.error(e);
       toast.error("Failed to load resumes");
       setResumes([]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -152,6 +167,7 @@ export default function Resumes() {
     }
 
     setUploading(true);
+
     try {
       if (uploadMethod === "text") {
         const payload = {
@@ -188,6 +204,7 @@ export default function Resumes() {
 
       const uploadUrl = uploadUrlResp?.uploadUrl;
       const blobName = uploadUrlResp?.blobName || uploadUrlResp?.blobPath;
+
       if (!uploadUrl || !blobName) {
         toast.error("Upload URL failed");
         return;
@@ -331,9 +348,7 @@ export default function Resumes() {
       });
 
       const url = data?.url;
-      if (!url) {
-        throw new Error("No preview URL returned");
-      }
+      if (!url) throw new Error("No preview URL returned");
 
       setPreviewResume({
         ...resume,
@@ -354,6 +369,7 @@ export default function Resumes() {
   const previewSrc = (() => {
     const r = previewResume;
     if (!r?.blobUrl) return "";
+
     const ct = (r.contentType || "").toLowerCase();
     const name = (r.originalName || "").toLowerCase();
 
@@ -382,6 +398,7 @@ export default function Resumes() {
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
       <AppNav currentPage="Resumes" />
+
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -396,6 +413,7 @@ export default function Resumes() {
             </h1>
             <p className="text-white/40 mt-1">Manage your resume library</p>
           </div>
+
           <Button
             type="button"
             onClick={() => setUploadOpen(true)}
@@ -406,7 +424,24 @@ export default function Resumes() {
           </Button>
         </div>
 
-        {resumes.length === 0 ? (
+        {/* ✅ Fix: show loading state first so auth/fetch doesn't flash "no resumes" */}
+        {isLoading ? (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card rounded-2xl p-16 text-center"
+          >
+            <div className="w-20 h-20 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-6">
+              <Loader2 className="w-10 h-10 text-purple-400 animate-spin" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">
+              Fetching resumes…
+            </h3>
+            <p className="text-white/40 max-w-md mx-auto">
+              This can take a moment while authentication finishes.
+            </p>
+          </motion.div>
+        ) : resumes.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -422,6 +457,7 @@ export default function Resumes() {
               Upload your resume to generate tailored cover letters and resume
               bullets for each job application
             </p>
+
             <Button
               type="button"
               onClick={() => setUploadOpen(true)}
@@ -454,6 +490,7 @@ export default function Resumes() {
                   <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
                     <FileText className="w-6 h-6 text-purple-400" />
                   </div>
+
                   {resume.isDefault && (
                     <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-medium">
                       <Star className="w-3 h-3 fill-current" />
@@ -465,9 +502,11 @@ export default function Resumes() {
                 <h3 className="text-lg font-semibold text-white mb-2 line-clamp-1">
                   {resume.name}
                 </h3>
+
                 <div className="flex items-center gap-2 text-xs text-white/30 mb-6">
                   <Calendar className="w-3 h-3" />
-                  Updated {format(new Date(resume.updated_date), "MMM d, yyyy")}
+                  Updated{" "}
+                  {format(new Date(resume.updated_date), "MMM d, yyyy")}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -485,6 +524,7 @@ export default function Resumes() {
                       Set Default
                     </Button>
                   )}
+
                   <Button
                     type="button"
                     onClick={(e) => {
@@ -499,6 +539,7 @@ export default function Resumes() {
                     <Edit2 className="w-3 h-3 mr-1" />
                     Rename
                   </Button>
+
                   <Button
                     type="button"
                     onClick={(e) => {
@@ -605,6 +646,7 @@ export default function Resumes() {
                 <Upload className="w-4 h-4 inline mr-2" />
                 Upload File
               </button>
+
               <button
                 type="button"
                 onClick={() => setUploadMethod("text")}
@@ -629,6 +671,7 @@ export default function Resumes() {
                   onChange={(e) => {
                     const f = e.target.files?.[0] || null;
                     setSelectedFile(f);
+
                     if (f) {
                       if (!resumeName.trim()) {
                         const base = f.name.replace(/\.[^/.]+$/, "");
@@ -638,12 +681,14 @@ export default function Resumes() {
                     }
                   }}
                 />
+
                 <div
                   onClick={() => fileInputRef.current?.click()}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
                     const f = e.dataTransfer.files?.[0] || null;
+
                     if (f) {
                       setSelectedFile(f);
                       if (!resumeName.trim()) {
@@ -708,6 +753,7 @@ export default function Resumes() {
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Rename Resume</DialogTitle>
           </DialogHeader>
+
           <div className="space-y-4 mt-4">
             <Input
               placeholder="Resume name"
@@ -715,6 +761,7 @@ export default function Resumes() {
               onChange={(e) => setResumeName(e.target.value)}
               className="bg-white/[0.03] border-white/8 text-white placeholder:text-white/25 py-5 rounded-xl"
             />
+
             <div className="flex gap-3">
               <Button
                 type="button"
@@ -724,6 +771,7 @@ export default function Resumes() {
               >
                 Cancel
               </Button>
+
               <Button
                 type="button"
                 onClick={handleEdit}
@@ -742,10 +790,11 @@ export default function Resumes() {
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Delete Resume</DialogTitle>
             <DialogDescription className="text-white/40">
-              Are you sure you want to delete "{selectedResume?.name}"? This
-              action cannot be undone.
+              Are you sure you want to delete "{selectedResume?.name}"? This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
+
           <div className="flex gap-3 mt-4">
             <Button
               type="button"
@@ -755,6 +804,7 @@ export default function Resumes() {
             >
               Cancel
             </Button>
+
             <Button
               type="button"
               onClick={handleDelete}
