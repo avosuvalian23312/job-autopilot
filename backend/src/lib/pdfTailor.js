@@ -6,6 +6,10 @@ const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 let _pdfjs = null;
 let _pdfjsPromise = null;
 
+/**
+ * pdfjs-dist v5 is ESM (pdf.mjs).
+ * This loader supports both older CJS builds and v5+ ESM builds.
+ */
 async function getPdfJs() {
   if (_pdfjs) return _pdfjs;
   if (_pdfjsPromise) return _pdfjsPromise;
@@ -28,12 +32,12 @@ async function getPdfJs() {
   };
 
   _pdfjsPromise = (async () => {
-    // 1) CommonJS builds (older pdfjs-dist)
+    // 1) Older CommonJS builds
     let mod =
       tryRequire("pdfjs-dist/legacy/build/pdf.js") ||
       tryRequire("pdfjs-dist/build/pdf.js");
 
-    // 2) ESM builds (pdfjs-dist v5+) -> pdf.mjs
+    // 2) pdfjs-dist v5+ (ESM .mjs)
     if (!mod) {
       mod =
         (await tryImport("pdfjs-dist/legacy/build/pdf.mjs")) ||
@@ -42,11 +46,11 @@ async function getPdfJs() {
 
     if (!mod) {
       throw new Error(
-        "pdfjs-dist is missing or incompatible. Tried legacy/build/pdf.js, build/pdf.js, legacy/build/pdf.mjs, build/pdf.mjs"
+        "pdfjs-dist is missing/incompatible. Tried: legacy/build/pdf.js, build/pdf.js, legacy/build/pdf.mjs, build/pdf.mjs"
       );
     }
 
-    // Handle default export + some versions nesting under pdfjsLib
+    // Handle default export, and some bundling variants
     let lib = mod.default || mod;
     if (lib && lib.pdfjsLib && lib.pdfjsLib.getDocument) lib = lib.pdfjsLib;
 
@@ -74,9 +78,15 @@ function chunkText(text, maxLen = 14000) {
 }
 
 /**
- * Extract lines with approximate bounding boxes using pdfjs text items.
+ * Extract positioned lines using pdfjs text items.
+ * Returns a "layout" object compatible with your applyPrepare.js:
+ * {
+ *   pages: [
+ *     { pageIndex, pageNumber, width, height, lines:[{text, x,y,width,height,fontSize}] }
+ *   ]
+ * }
  */
-async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
+async function extractPdfLayout(pdfBuffer, opts = {}) {
   const pdfjs = await getPdfJs();
 
   const maxPages = Number(opts.maxPages || 12);
@@ -84,14 +94,13 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
 
   const loadingTask = pdfjs.getDocument({
     data: pdfBuffer,
-    disableWorker: true
+    disableWorker: true, // important in Azure Functions
   });
 
   const pdf = await loadingTask.promise;
   const pageCount = Math.min(pdf.numPages, maxPages);
 
   const pages = [];
-  let resumeText = "";
 
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
     const page = await pdf.getPage(pageNumber);
@@ -101,15 +110,19 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
     const items = Array.isArray(textContent.items) ? textContent.items : [];
     const Util = pdfjs.Util;
 
+    // Collect "words" with positions
     const words = [];
     for (const it of items) {
       const str = String(it?.str || "");
       if (!str.trim()) continue;
 
+      // transform into viewport space
       const tx = Util.transform(viewport.transform, it.transform);
 
       const x = tx[4];
       const yTopOrigin = tx[5];
+
+      // convert to PDF-like bottom-left origin
       const y = viewport.height - yTopOrigin;
 
       const fontSize = Math.max(6, Math.hypot(tx[2], tx[3]) || 10);
@@ -119,19 +132,21 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
       words.push({ text: str, x, y, w, h, fontSize });
     }
 
+    // Sort top-to-bottom, then left-to-right
     words.sort((a, b) => {
       if (b.y !== a.y) return b.y - a.y;
       return a.x - b.x;
     });
 
-    const lines = [];
+    // Group into lines by y
+    const rawLines = [];
     for (const w of words) {
-      const existing = lines.find((ln) => Math.abs(ln.y - w.y) <= yTolerance);
-      if (!existing) lines.push({ y: w.y, items: [w] });
+      const existing = rawLines.find((ln) => Math.abs(ln.y - w.y) <= yTolerance);
+      if (!existing) rawLines.push({ y: w.y, items: [w] });
       else existing.items.push(w);
     }
 
-    const finalLines = lines
+    const lines = rawLines
       .map((ln) => {
         ln.items.sort((a, b) => a.x - b.x);
 
@@ -169,102 +184,264 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
 
         return {
           text,
-          norm: text,
           x: Number.isFinite(minX) ? minX : 0,
           y: ln.y,
           width: Number.isFinite(maxX - minX) ? maxX - minX : 500,
           height: maxH || fs * 1.2,
-          fontSize: fs || 10
+          fontSize: fs || 10,
         };
       })
       .filter(Boolean);
 
     pages.push({
+      pageIndex: pageNumber - 1,
       pageNumber,
       width: viewport.width,
       height: viewport.height,
-      lines: finalLines
+      lines,
     });
-
-    resumeText += `\n\n[PAGE ${pageNumber}]\n` + finalLines.map((l) => l.text).join("\n");
   }
 
-  return { pages, resumeText: resumeText.trim() };
+  return { pages };
 }
 
 /**
- * Overlay replacements on top of existing PDF.
+ * Extract bullet blocks from a layout.
+ * Each bullet block includes line slots so applyBulletEdits can rewrite within same boxes.
+ *
+ * Output shape (used by your applyPrepare):
+ * [{ id, pageIndex, rawText, lineCount, lines:[{x,y,width,height,fontSize}], prefix }]
  */
-async function applyPdfReplacements(originalPdfBuffer, pages, replacements = []) {
+function extractBulletBlocks(layout, opts = {}) {
+  const maxBullets = Number(opts.maxBullets || 60);
+
+  const bulletRe = /^([•∙●▪■\-–—])\s+(.*)$/;
+
+  const blocks = [];
+  let bIndex = 0;
+
+  for (const pg of layout?.pages || []) {
+    const pageIndex = pg.pageIndex;
+    const lines = Array.isArray(pg.lines) ? pg.lines.slice() : [];
+
+    // sort top -> bottom (higher y first)
+    lines.sort((a, b) => (b.y !== a.y ? b.y - a.y : a.x - b.x));
+
+    let current = null;
+
+    for (const ln of lines) {
+      const t = String(ln.text || "").trim();
+      if (!t) continue;
+
+      const m = bulletRe.exec(t);
+
+      if (m) {
+        // new bullet starts
+        if (current) {
+          blocks.push(current);
+          if (blocks.length >= maxBullets) return blocks;
+        }
+
+        const prefix = `${m[1]} `;
+        const body = String(m[2] || "").trim();
+
+        current = {
+          id: `b${bIndex++}`,
+          pageIndex,
+          prefix,
+          rawText: body,
+          lineCount: 1,
+          lines: [
+            {
+              x: ln.x,
+              y: ln.y,
+              width: ln.width,
+              height: ln.height,
+              fontSize: ln.fontSize,
+            },
+          ],
+        };
+        continue;
+      }
+
+      // Continuation line heuristics:
+      // - must have an active bullet
+      // - typically indented compared to bullet line
+      // - and close-ish vertically (pdfjs already grouped by y)
+      if (current) {
+        const firstX = current.lines[0]?.x ?? 0;
+        const isIndented = ln.x > firstX + 6;
+
+        if (isIndented) {
+          current.rawText = norm(`${current.rawText} ${t}`);
+          current.lineCount += 1;
+          current.lines.push({
+            x: ln.x,
+            y: ln.y,
+            width: ln.width,
+            height: ln.height,
+            fontSize: ln.fontSize,
+          });
+          continue;
+        }
+
+        // if not indented, end current bullet
+        blocks.push(current);
+        if (blocks.length >= maxBullets) return blocks;
+        current = null;
+      }
+    }
+
+    if (current) {
+      blocks.push(current);
+      if (blocks.length >= maxBullets) return blocks;
+    }
+  }
+
+  return blocks.slice(0, maxBullets);
+}
+
+/**
+ * Apply bullet edits by overwriting the bullet lines' rectangles and writing new text
+ * wrapped across the same number of lines.
+ *
+ * edits shape: [{ bulletId, text }]
+ * returns: Buffer (PDF bytes)
+ */
+async function applyBulletEdits(originalPdfBuffer, bulletBlocks, edits, opts = {}) {
+  const defaultFontSize = Number(opts.defaultFontSize || 10);
+  const lineGap = Number(opts.lineGap || 1.15);
+
   const pdfDoc = await PDFDocument.load(originalPdfBuffer);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const overlaysApplied = [];
-  const misses = [];
+  const blockById = new Map((bulletBlocks || []).map((b) => [String(b.id), b]));
 
-  const allLines = [];
-  for (let i = 0; i < (pages || []).length; i++) {
-    const p = pages[i];
-    for (const ln of p.lines || []) allLines.push({ pageIndex: i, ...ln });
-  }
+  const measure = (s, size) => font.widthOfTextAtSize(String(s || ""), size);
 
-  const used = new Set();
+  const wrapToSlots = (fullText, slots, fontSize) => {
+    const words = String(fullText || "").split(/\s+/).filter(Boolean);
+    const linesOut = [];
+    let wi = 0;
 
-  for (const rep of replacements || []) {
-    const from = norm(rep?.from);
-    const to = String(rep?.to || "").trim();
-    if (!from || !to) continue;
+    for (let si = 0; si < slots.length; si++) {
+      const maxW = Math.max(40, Number(slots[si]?.width || 240));
+      let line = "";
 
-    const hit = allLines.find((ln, idx) => ln.norm === from && !used.has(idx));
-    if (!hit) {
-      misses.push({ from, reason: "not_found" });
-      continue;
+      while (wi < words.length) {
+        const next = line ? `${line} ${words[wi]}` : words[wi];
+        if (measure(next, fontSize) <= maxW) {
+          line = next;
+          wi += 1;
+          continue;
+        }
+        break;
+      }
+
+      linesOut.push(line);
+      if (wi >= words.length) break;
     }
 
-    const idx = allLines.indexOf(hit);
-    used.add(idx);
+    // If overflow, add ellipsis on last line
+    if (wi < words.length && linesOut.length) {
+      const lastIdx = linesOut.length - 1;
+      let base = linesOut[lastIdx] || "";
+      const maxW = Math.max(40, Number(slots[lastIdx]?.width || 240));
 
-    const page = pdfDoc.getPage(hit.pageIndex);
+      // try to fit "…" at end
+      const ell = "…";
+      while (base && measure(`${base}${ell}`, fontSize) > maxW) {
+        base = base.split(" ").slice(0, -1).join(" ");
+      }
+      linesOut[lastIdx] = base ? `${base}${ell}` : ell;
+    }
 
-    const padX = 1;
-    const padY = 1;
+    return linesOut;
+  };
 
-    page.drawRectangle({
-      x: hit.x - padX,
-      y: hit.y - padY,
-      width: hit.width + padX * 2,
-      height: hit.height + padY * 2,
-      color: rgb(1, 1, 1),
-      opacity: 1
-    });
+  for (const e of edits || []) {
+    const bulletId = String(e?.bulletId || "").trim();
+    const newText = String(e?.text || "").trim();
+    if (!bulletId || !newText) continue;
 
-    let size = Math.max(7, hit.fontSize || 10);
-    const maxW = Math.max(50, hit.width || 300);
+    const block = blockById.get(bulletId);
+    if (!block) continue;
 
-    const wAt = (s, sz) => font.widthOfTextAtSize(String(s || ""), sz);
-    const measured = wAt(to, size);
+    const page = pdfDoc.getPage(block.pageIndex);
+    const slots = Array.isArray(block.lines) ? block.lines : [];
+    if (!slots.length) continue;
 
-    if (measured > maxW) {
+    // Choose a font size close to original
+    const avgFs =
+      slots.reduce((acc, s) => acc + (Number(s.fontSize) || defaultFontSize), 0) /
+      slots.length;
+    let fontSize = Math.max(7, Math.min(12, avgFs || defaultFontSize));
+
+    // White-out each slot rectangle
+    for (const s of slots) {
+      const padX = 1;
+      const padY = 1;
+      const x = Number(s.x || 0) - padX;
+      const y = Number(s.y || 0) - padY;
+      const w = Number(s.width || 240) + padX * 2;
+      const h = Number(s.height || fontSize * 1.2) + padY * 2;
+
+      page.drawRectangle({
+        x,
+        y,
+        width: w,
+        height: h,
+        color: rgb(1, 1, 1),
+        opacity: 1,
+      });
+    }
+
+    const full = `${String(block.prefix || "• ")}${newText}`;
+
+    // Wrap to available slots
+    let wrapped = wrapToSlots(full, slots, fontSize);
+
+    // If first line is too wide even alone, scale font down a bit
+    if (wrapped[0] && measure(wrapped[0], fontSize) > Math.max(40, slots[0].width || 240)) {
+      const maxW = Math.max(40, slots[0].width || 240);
+      const measured = measure(wrapped[0], fontSize);
       const scale = maxW / measured;
-      size = Math.max(7, size * scale * 0.98);
+      fontSize = Math.max(7, fontSize * scale * 0.98);
+      wrapped = wrapToSlots(full, slots, fontSize);
     }
 
-    page.drawText(to, { x: hit.x, y: hit.y, size, font, color: rgb(0, 0, 0) });
+    // Draw wrapped lines into their original slots
+    for (let i = 0; i < wrapped.length; i++) {
+      const lineText = wrapped[i];
+      if (!lineText) continue;
 
-    overlaysApplied.push({ page: hit.pageIndex + 1, from, to });
+      const s = slots[i];
+      page.drawText(lineText, {
+        x: Number(s.x || 0),
+        y: Number(s.y || 0),
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+        lineHeight: fontSize * lineGap,
+      });
+    }
   }
 
-  const pdfBytes = await pdfDoc.save();
-  return { pdfBytes, overlaysApplied, misses };
+  const bytes = await pdfDoc.save();
+  return Buffer.from(bytes);
 }
 
 module.exports = {
+  // pdfjs
   getPdfJs,
-  extractPdfLinesWithBoxes,
 
-  // ✅ Backwards-compatible alias so old code doesn’t crash:
-  extractPdfLayout: extractPdfLinesWithBoxes,
+  // Layout (your applyPrepare imports THIS name)
+  extractPdfLayout,
 
-  applyPdfReplacements,
-  chunkText
+  // Bullet tooling (your applyPrepare imports THESE names)
+  extractBulletBlocks,
+  applyBulletEdits,
+
+  // Utilities
+  chunkText,
 };
