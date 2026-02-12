@@ -492,32 +492,39 @@ HARD CONSTRAINTS:
 - Keep output 1-page dense and recruiter-friendly.
 - Skills must be grouped into clean, professional categories (5–7 categories).
 
-MOCK EXPERIENCE POLICY (PROFESSIONAL MODE):
-- You MAY generate mock experience using REAL companies that match the industry of the job.
+MOCK EXPERIENCE POLICY (REAL COMPANIES):
+- You MAY generate mock experience using REAL companies that match the job’s industry.
   Examples:
-    • SWE roles → tech companies, SaaS companies, software consultancies.
-    • IT Help Desk → MSPs, IT service providers, support centers.
-    • Cybersecurity → SOC providers, MSSPs, security consultancies.
-    • Cloud → cloud integrators, DevOps consultancies.
+    • IT Help Desk → CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix, Cognizant.
+    • SWE → Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot, Asana.
 - Mock experience MUST include:
   • a real company name,
   • a realistic job title,
   • a location,
-  • dates,
+  • dates 1–2 years prior,
   • and strong, job-relevant bullets.
-- Dates MUST be realistic and placed 1–2 years prior to the current year.
 - Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
 - Mock experience MUST NOT reference that it is mock or fictional.
 - Mock experience MUST read as real, professional employment.
 
-MOCK PROJECT POLICY:
-- You MAY generate new projects that appear as professional, academic, or independent work.
+MOCK PROJECT POLICY (JOB-ALIGNED PROJECTS):
+- You MAY generate new projects that appear as professional, portfolio, or independent work.
 - Projects MUST be realistic, job-aligned, and written as real accomplishments.
+- Projects MUST reflect tasks from the JOB DATA, such as:
+  • server room organization,
+  • smart hands support,
+  • printer hardware repair,
+  • conference room A/V support,
+  • Teams Rooms configuration,
+  • Solstice Pod firmware updates,
+  • asset lifecycle management,
+  • proactive floor walks,
+  • SLA awareness and ticket efficiency.
 - Projects MUST NOT reference that they are mock.
 
 JOB-TARGETING RULES:
 - Read JOB DATA and TARGET_KEYWORDS carefully.
-- Rewrite summary to strongly match the job’s domain (SWE, IT, support, cloud, data, security, etc.).
+- Rewrite summary to strongly match the job’s domain.
 - Rewrite skills to emphasize the tools, technologies, and competencies the job values most.
 - Rewrite experience bullets to highlight the strongest alignment to the job.
 - Add mock experience and projects that directly reflect the job’s needs.
