@@ -543,79 +543,6 @@ const WeekDayPill = React.memo(function WeekDayPill({
       <div
         role="group"
         aria-label={label}
-        className={cx(
-          "relative mt-2 h-12 rounded-xl border border-white/10 bg-white/[0.035]",
-          "grid place-items-center select-none",
-          "transition-colors duration-150",
-          "hover:bg-white/[0.055] hover:border-white/15",
-          isPast ? "opacity-45" : "",
-          isToday ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10" : "",
-          focusRing,
-          "focus-visible:ring-purple-500/35"
-        )}
-        title={label}
-      >
-        {/* CENTERED DAY NUMBER */}
-        <div
-          className={cx(
-            "text-[14px] font-semibold tabular-nums",
-            isPast ? "text-slate-500" : "text-slate-200"
-          )}
-          aria-hidden="true"
-        >
-          {dayNum}
-        </div>
-
-        {/* CENTERED CHECKMARK (overlaps number on purpose) */}
-        {hasActivity ? (
-          <Check
-            className={cx(
-              "absolute inset-0 m-auto h-5 w-5",
-              isPast ? "text-slate-500" : "text-emerald-300"
-            )}
-            aria-hidden="true"
-          />
-        ) : null}
-      </div>
-    </div>
-  );
-});
-
-function MiniStat({ label, value, icon: Icon }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[12px] font-medium text-slate-400">{label}</div>
-        {Icon ? <Icon className="h-4 w-4 text-slate-400" aria-hidden="true" /> : null}
-      </div>
-      <div className="mt-1 text-lg font-semibold text-slate-100 tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-const WeekDayPill = React.memo(function WeekDayPill({
-  weekday,
-  dayNum,
-  isToday,
-  isPast,
-  hasActivity,
-}) {
-  const label = `${weekday} ${dayNum}${isToday ? " (Today)" : ""}${hasActivity ? " (Done)" : ""}`;
-
-  return (
-    <div className="min-w-0">
-      <div
-        className={cx(
-          "text-center text-[12px] font-medium leading-none",
-          isPast ? "text-slate-600" : "text-slate-400"
-        )}
-      >
-        {weekday}
-      </div>
-
-      <div
-        role="group"
-        aria-label={label}
         title={label}
         className={cx(
           "relative mt-2 h-12 rounded-xl border border-white/10 bg-white/[0.035]",
@@ -654,6 +581,79 @@ const WeekDayPill = React.memo(function WeekDayPill({
   );
 });
 
+
+function MiniStat({ label, value, icon: Icon }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[12px] font-medium text-slate-400">{label}</div>
+        {Icon ? <Icon className="h-4 w-4 text-slate-400" aria-hidden="true" /> : null}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-slate-100 tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="lg:col-span-7 space-y-6">
+        <Card className="p-6">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="mt-3 h-4 w-72" />
+          <div className="mt-4 grid grid-cols-7 gap-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-xl" />
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="mt-3 h-4 w-96" />
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <Skeleton className="h-6 w-52" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="lg:col-span-5 space-y-6">
+        <Card className="p-6">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="mt-4 h-24 rounded-2xl" />
+          <Skeleton className="mt-4 h-24 rounded-2xl" />
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-5 w-28" />
+          <div className="mt-4 grid grid-cols-3 gap-4">
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+          </div>
+        </Card>
+        <Card className="p-6">
+          <Skeleton className="h-5 w-36" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-xl" />
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function ErrorState({ title = "Something went wrong", message, onRetry }) {
   return (
