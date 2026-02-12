@@ -18,7 +18,7 @@ export default function Packet() {
   const [isGenerating, setIsGenerating] = useState(true);
 
   // ---------------------------
-  // API helper (SWA cookies + safe JSON)
+  // API helper (SWA cookies + safe JSON + status)
   // ---------------------------
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(path, {
@@ -76,97 +76,64 @@ export default function Packet() {
     toast.success("Downloaded");
   };
 
+  const openUrlDownload = (url) => {
+    // best cross-origin behavior for SAS links
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const getResumeSas = async (resumeId) => {
+    // expects: { ok: true, url, fileName, expiresInSeconds }
     return await apiFetch(
       `/api/resume/sas?resumeId=${encodeURIComponent(resumeId)}`,
       { method: "GET" }
     );
   };
 
-  const downloadResumeViaSas = async () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const resumeId =
-      urlParams.get("resumeId") || localStorage.getItem("latestTailoredResumeId");
-
-    if (!resumeId) {
-      toast.error("Missing resumeId.");
-      return;
-    }
-
-    const sas = await getResumeSas(resumeId);
-    const url = sas?.url;
-
-    if (!url) {
-      toast.error("Could not generate download link.");
-      return;
-    }
-
-    // SAS + content-disposition handles download correctly for private blobs
-    window.open(url, "_blank", "noopener,noreferrer");
-    toast.success("Opened resume download");
-  };
-
   // ---------------------------
-  // Main logic
+  // Main load logic:
+  // - mode=prepare => show cached prepare result (no polling)
+  // - else => old polling /api/jobs/:jobId
   // ---------------------------
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const mode = String(urlParams.get("mode") || "").toLowerCase();
 
-    // Explicit mode param (optional)
-    const modeParam = String(urlParams.get("mode") || "").toLowerCase();
+    const idParam = urlParams.get("id") || "";
+    const jobId = idParam || localStorage.getItem("latestJobId") || "";
 
-    // These exist in your NEW /api/apply/prepare flow
-    const qpResumeId = urlParams.get("resumeId");
-    const qpCoverLetterId = urlParams.get("coverLetterId");
-    const qpId = urlParams.get("id"); // may be cl:... or resume:...
+    // prepare cache
+    let prepareCache = null;
+    try {
+      prepareCache = JSON.parse(localStorage.getItem("latestPrepareResult") || "null");
+    } catch {
+      prepareCache = null;
+    }
 
-    const looksLikePrepare =
-      modeParam === "prepare" ||
-      !!qpResumeId ||
-      !!qpCoverLetterId ||
-      (typeof qpId === "string" &&
-        (qpId.startsWith("cl:") || qpId.startsWith("resume:")));
+    // Detect prepare-mode automatically if the "id" is actually a doc id
+    const looksLikeDocId =
+      typeof jobId === "string" &&
+      (jobId.startsWith("cl:") || jobId.startsWith("resume:"));
 
-    // Old job pipeline id (jobs table)
-    const jobId = qpId || localStorage.getItem("latestJobId");
+    const shouldUsePrepare = mode === "prepare" || looksLikeDocId;
 
-    // -------- PREPARE MODE (no polling) --------
-    if (looksLikePrepare) {
-      let jobData = null;
-      try {
-        jobData = JSON.parse(localStorage.getItem("latestJobData") || "null");
-      } catch {
-        jobData = null;
-      }
-
-      const coverLetterText =
-        localStorage.getItem("latestCoverLetterText") || "";
-
-      const preparedPacket = {
-        __mode: "prepare",
-        jobData,
-        tailoredResumeId:
-          qpResumeId || localStorage.getItem("latestTailoredResumeId") || "",
-        coverLetterId:
-          qpCoverLetterId ||
-          localStorage.getItem("latestCoverLetterId") ||
-          "",
-        coverLetterText,
-      };
-
-      // At least one output should exist
-      if (!preparedPacket.tailoredResumeId && !preparedPacket.coverLetterText) {
-        toast.error("No prepared packet found. Generate again.");
-        navigate(createPageUrl("AppHome"));
+    if (shouldUsePrepare) {
+      if (prepareCache?.ok && (prepareCache?.tailoredResume || prepareCache?.coverLetter)) {
+        setPacketData({ ...prepareCache, __mode: "prepare" });
+        setIsGenerating(false);
         return;
       }
 
-      setPacketData(preparedPacket);
-      setIsGenerating(false);
+      toast.error("No prepared packet found. Generate again.");
+      navigate(createPageUrl("AppHome"));
       return;
     }
 
-    // -------- OLD JOB MODE (poll /api/jobs/:id) --------
     if (!jobId) {
       navigate(createPageUrl("AppHome"));
       return;
@@ -225,12 +192,11 @@ export default function Packet() {
       try {
         setIsGenerating(true);
 
-        // First try to read job — avoid re-generating if already completed
+        // First try to read job
         try {
-          const payload = await apiFetch(
-            `/api/jobs/${encodeURIComponent(jobId)}`,
-            { method: "GET" }
-          );
+          const payload = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+            method: "GET",
+          });
           const job = payload?.job || payload;
 
           if (job?.status === "completed") {
@@ -251,10 +217,10 @@ export default function Packet() {
             navigate(createPageUrl("AppHome"));
             return;
           }
-          // Otherwise proceed to kickoff
+          // otherwise proceed
         }
 
-        // Kick off generation (idempotent-friendly)
+        // Kick off generation
         try {
           await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}/generate`, {
             method: "POST",
@@ -262,7 +228,7 @@ export default function Packet() {
           });
         } catch (e) {
           if (e?.status === 401) return goLogin();
-          if (e?.status !== 409 && e?.status !== 423) throw e;
+          if (e?.status !== 409 && e?.status !== 423) throw e; // already running is ok
         }
 
         poll();
@@ -286,30 +252,48 @@ export default function Packet() {
   // Button handlers
   // ---------------------------
   const handleDownloadResume = async () => {
-    // Prepare mode: resume is a private PDF -> SAS download
-    if (packetData?.__mode === "prepare") {
-      try {
-        await downloadResumeViaSas();
-      } catch (e) {
-        console.error(e);
-        toast.error(e?.message || "Resume download failed.");
-      }
-      return;
-    }
+    try {
+      // PREPARE MODE => download PDF via SAS
+      if (packetData?.__mode === "prepare") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const resumeIdFromQs = urlParams.get("resumeId");
 
-    // Old job mode: text downloads (existing behavior)
-    const resume =
-      packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
-    downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
+        const resumeId =
+          resumeIdFromQs ||
+          packetData?.tailoredResume?.id ||
+          localStorage.getItem("latestTailoredResumeId") ||
+          "";
+
+        if (!resumeId) return toast.error("Missing resumeId");
+
+        const sas = await getResumeSas(resumeId);
+        if (!sas?.url) return toast.error("SAS URL missing");
+
+        openUrlDownload(sas.url);
+        toast.success("Opened resume PDF");
+        return;
+      }
+
+      // OLD JOB MODE => text download
+      const resume = packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
+      downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Resume download failed.");
+    }
   };
 
   const handleDownloadCoverLetter = () => {
-    // Prepare mode: cover letter text is cached
+    // PREPARE MODE => cover letter text
     if (packetData?.__mode === "prepare") {
-      const text = packetData?.coverLetterText || "";
+      const text =
+        packetData?.coverLetter?.text ||
+        localStorage.getItem("latestCoverLetterText") ||
+        "";
       return downloadTextFile("cover-letter.txt", text);
     }
 
+    // OLD JOB MODE => cover letter text
     const cover = packetData?.outputs?.coverLetter;
     downloadTextFile(cover?.fileName || "cover-letter.txt", cover?.text || "");
   };
@@ -324,7 +308,7 @@ export default function Packet() {
   };
 
   // ---------------------------
-  // UI
+  // UI (unchanged)
   // ---------------------------
   if (isGenerating && !packetData) {
     return (
@@ -345,9 +329,7 @@ export default function Packet() {
             <div className="w-24 h-24 rounded-full bg-purple-600/10 flex items-center justify-center mx-auto mb-8">
               <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-3">
-              Generating your packet…
-            </h1>
+            <h1 className="text-4xl font-bold text-white mb-3">Generating your packet…</h1>
             <p className="text-lg text-white/40">This can take a few seconds</p>
           </div>
         </div>
@@ -359,7 +341,6 @@ export default function Packet() {
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
-      {/* Header */}
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -372,20 +353,14 @@ export default function Packet() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-16 flex flex-col justify-center min-h-[calc(100vh-4rem)]">
-        {/* Success State */}
         <div className="text-center mb-12">
           <div className="w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-8">
             <CheckCircle2 className="w-12 h-12 text-green-400" />
           </div>
-          <h1 className="text-5xl font-bold text-white mb-4">
-            Your packet is ready
-          </h1>
-          <p className="text-xl text-white/40">
-            Download your tailored documents below
-          </p>
+          <h1 className="text-5xl font-bold text-white mb-4">Your packet is ready</h1>
+          <p className="text-xl text-white/40">Download your tailored documents below</p>
         </div>
 
-        {/* Download Buttons */}
         <div className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Button
