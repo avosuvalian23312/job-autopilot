@@ -116,7 +116,10 @@ export default function NewJob() {
     return userId;
   };
 
+  // ✅ Use cached user id when possible (avoid repeated /.auth/me calls)
   const ensureUserId = async () => {
+    if (swaUserId) return swaUserId;
+
     const id = await getSwaUser(); // reads /.auth/me
     if (!id) {
       toast.error("You must be logged in.");
@@ -186,7 +189,8 @@ export default function NewJob() {
 
       // remove obvious UI / junk strings
       if (t.startsWith("+")) return true;
-      if (t === "(required)" || t === "required" || t === "preferred") return true;
+      if (t === "(required)" || t === "required" || t === "preferred")
+        return true;
       if (t.includes("show more")) return true;
       if (t.includes("job details")) return true;
       if (
@@ -329,7 +333,11 @@ export default function NewJob() {
 
     for (const line of lines) {
       const l = line.toLowerCase();
-      if (l.includes("job details") || l.includes("full job description") || l.includes("profile insights"))
+      if (
+        l.includes("job details") ||
+        l.includes("full job description") ||
+        l.includes("profile insights")
+      )
         continue;
       if (l.includes("apply") && l.includes("company")) continue;
       if (line.length >= 6 && line.length <= 80 && /[a-zA-Z]/.test(line)) {
@@ -409,7 +417,8 @@ export default function NewJob() {
   const refineExtracted = (data, jd) => {
     const next = { ...(data || {}) };
     const inferredTitle = inferTitleFromJD(jd);
-    if (isGenericTitle(next.jobTitle) && inferredTitle) next.jobTitle = inferredTitle;
+    if (isGenericTitle(next.jobTitle) && inferredTitle)
+      next.jobTitle = inferredTitle;
 
     const inferredCompany = inferCompanyFromJD(jd, inferredTitle || next.jobTitle);
     const companyStr = String(next.company || "").trim();
@@ -443,74 +452,123 @@ export default function NewJob() {
     const website = String(extracted?.website || "").trim();
     const location = String(extracted?.location || "").trim();
 
-    const header = [title ? `Job Title: ${title}` : null, company ? `Company: ${company}` : null, website ? `Website: ${website}` : null, location ? `Location: ${location}` : null].filter(Boolean);
+    const header = [
+      title ? `Job Title: ${title}` : null,
+      company ? `Company: ${company}` : null,
+      website ? `Website: ${website}` : null,
+      location ? `Location: ${location}` : null,
+    ].filter(Boolean);
 
     if (!header.length) return String(jdRaw || "");
     return `${header.join("\n")}\n\n${String(jdRaw || "")}`;
   };
 
-  useEffect(() => {
-    // warm SWA user id (non-blocking)
-    (async () => {
-      try {
-        const id = await getSwaUser();
-        if (id) setSwaUserId(id);
-      } catch {
-        // ignore
-      }
-    })();
-  }, []);
+  // ✅ Build a payload that works whether backend expects fields at top-level OR inside jobData
+  const buildJobCreatePayload = ({
+    extracted,
+    preparedJobData,
+    jdRaw,
+    sourceResumeId,
+    tailoredResumeId,
+    coverLetterId,
+  }) => {
+    const ex = extracted && typeof extracted === "object" ? extracted : {};
+    const jd = preparedJobData && typeof preparedJobData === "object" ? preparedJobData : {};
 
-  // ---------------------------
-  // Load resumes
-  // ---------------------------
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        setResumesLoading(true);
-        const data = await apiFetch("/api/resume/list", { method: "GET" });
-        const list = Array.isArray(data) ? data : data?.resumes || [];
-
-        if (cancelled) return;
-        setResumes(list);
-
-        const defaultResume =
-          list.find((r) => r?.isDefault === true) ||
-          list.find((r) => r?.default === true) ||
-          list.find((r) => r?.is_default === true) ||
-          null;
-
-        const pick = defaultResume || list[0] || null;
-        if (pick?.id != null) setSelectedResume(String(pick.id));
-      } catch (e) {
-        if (cancelled) return;
-        console.error(e);
-        toast.error(
-          "Could not load resumes from cloud. Falling back to local resumes."
-        );
-
-        const local = JSON.parse(localStorage.getItem("resumes") || "[]");
-        setResumes(local);
-
-        const localDefault =
-          local.find((r) => r?.isDefault === true) ||
-          local.find((r) => r?.default === true) ||
-          local[0] ||
-          null;
-
-        if (localDefault?.id != null) setSelectedResume(String(localDefault.id));
-      } finally {
-        if (!cancelled) setResumesLoading(false);
-      }
+    const pick = (a, b, fallback = null) => {
+      const va = a !== undefined && a !== null && String(a).trim() !== "" ? a : null;
+      if (va !== null) return va;
+      const vb = b !== undefined && b !== null && String(b).trim() !== "" ? b : null;
+      if (vb !== null) return vb;
+      return fallback;
     };
 
-    load();
-    return () => {
-      cancelled = true;
+    const jobFields = {
+      jobTitle: pick(ex.jobTitle, jd.jobTitle, "Position"),
+      company: pick(ex.company, jd.company, "Company"),
+      website: pick(ex.website, jd.website, null),
+      location: pick(ex.location, jd.location, null),
+      seniority: pick(ex.seniority, jd.seniority, null),
+
+      keywords: Array.isArray(ex.keywords) && ex.keywords.length ? ex.keywords : Array.isArray(jd.keywords) ? jd.keywords : [],
+
+      requirements:
+        ex.requirements && typeof ex.requirements === "object"
+          ? ex.requirements
+          : jd.requirements && typeof jd.requirements === "object"
+            ? jd.requirements
+            : null,
+
+      payText: pick(ex.payText, jd.payText, null),
+      payMin:
+        typeof ex.payMin === "number" && Number.isFinite(ex.payMin)
+          ? ex.payMin
+          : typeof jd.payMin === "number" && Number.isFinite(jd.payMin)
+            ? jd.payMin
+            : null,
+      payMax:
+        typeof ex.payMax === "number" && Number.isFinite(ex.payMax)
+          ? ex.payMax
+          : typeof jd.payMax === "number" && Number.isFinite(jd.payMax)
+            ? jd.payMax
+            : null,
+      payPeriod: pick(ex.payPeriod, jd.payPeriod, null),
+      payCurrency: pick(ex.payCurrency, jd.payCurrency, "USD"),
+
+      payConfidence:
+        typeof ex.payConfidence === "number" && Number.isFinite(ex.payConfidence)
+          ? ex.payConfidence
+          : typeof jd.payConfidence === "number" && Number.isFinite(jd.payConfidence)
+            ? jd.payConfidence
+            : null,
+      payAnnualizedMin:
+        typeof ex.payAnnualizedMin === "number" && Number.isFinite(ex.payAnnualizedMin)
+          ? ex.payAnnualizedMin
+          : typeof jd.payAnnualizedMin === "number" && Number.isFinite(jd.payAnnualizedMin)
+            ? jd.payAnnualizedMin
+            : null,
+      payAnnualizedMax:
+        typeof ex.payAnnualizedMax === "number" && Number.isFinite(ex.payAnnualizedMax)
+          ? ex.payAnnualizedMax
+          : typeof jd.payAnnualizedMax === "number" && Number.isFinite(jd.payAnnualizedMax)
+            ? jd.payAnnualizedMax
+            : null,
+      payPercentile:
+        typeof ex.payPercentile === "number" && Number.isFinite(ex.payPercentile)
+          ? ex.payPercentile
+          : typeof jd.payPercentile === "number" && Number.isFinite(jd.payPercentile)
+            ? jd.payPercentile
+            : null,
+      payPercentileSource: pick(ex.payPercentileSource, jd.payPercentileSource, null),
+
+      employmentType: pick(ex.employmentType, jd.employmentType, null),
+      workModel: pick(ex.workModel, jd.workModel, null),
+      experienceLevel: pick(ex.experienceLevel, jd.experienceLevel, null),
+      complianceTags: Array.isArray(ex.complianceTags) && ex.complianceTags.length
+        ? ex.complianceTags
+        : Array.isArray(jd.complianceTags)
+          ? jd.complianceTags
+          : [],
     };
-  }, []);
+
+    // Provide both formats for backend compatibility
+    return {
+      ...jobFields,
+      jobData: jobFields,
+      jobDescription: String(jdRaw || ""),
+      jobUrl: null,
+
+      // links to generated artifacts
+      sourceResumeId: sourceResumeId || null,
+      resumeId: sourceResumeId || null, // some backends call it resumeId
+      tailoredResumeId: tailoredResumeId || null,
+      coverLetterId: coverLetterId || null,
+
+      // status hint (safe if backend ignores it)
+      status: "generated",
+      createdFrom: "NewJob",
+    };
+  };
 
   // ---------------------------
   // Fallback extraction
@@ -714,6 +772,69 @@ export default function NewJob() {
     }
   };
 
+  useEffect(() => {
+    // warm SWA user id (non-blocking)
+    (async () => {
+      try {
+        const id = await getSwaUser();
+        if (id) setSwaUserId(id);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  // ---------------------------
+  // Load resumes
+  // ---------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setResumesLoading(true);
+        const data = await apiFetch("/api/resume/list", { method: "GET" });
+        const list = Array.isArray(data) ? data : data?.resumes || [];
+
+        if (cancelled) return;
+        setResumes(list);
+
+        const defaultResume =
+          list.find((r) => r?.isDefault === true) ||
+          list.find((r) => r?.default === true) ||
+          list.find((r) => r?.is_default === true) ||
+          null;
+
+        const pick = defaultResume || list[0] || null;
+        if (pick?.id != null) setSelectedResume(String(pick.id));
+      } catch (e) {
+        if (cancelled) return;
+        console.error(e);
+        toast.error(
+          "Could not load resumes from cloud. Falling back to local resumes."
+        );
+
+        const local = JSON.parse(localStorage.getItem("resumes") || "[]");
+        setResumes(local);
+
+        const localDefault =
+          local.find((r) => r?.isDefault === true) ||
+          local.find((r) => r?.default === true) ||
+          local[0] ||
+          null;
+
+        if (localDefault?.id != null) setSelectedResume(String(localDefault.id));
+      } finally {
+        if (!cancelled) setResumesLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ---------------------------
   // Analyze + Generate
   // ---------------------------
@@ -747,11 +868,13 @@ export default function NewJob() {
 
         payText: extracted?.payText || null,
         payMin:
-          typeof extracted?.payMin === "number" && Number.isFinite(extracted.payMin)
+          typeof extracted?.payMin === "number" &&
+          Number.isFinite(extracted.payMin)
             ? extracted.payMin
             : null,
         payMax:
-          typeof extracted?.payMax === "number" && Number.isFinite(extracted.payMax)
+          typeof extracted?.payMax === "number" &&
+          Number.isFinite(extracted.payMax)
             ? extracted.payMax
             : null,
         payCurrency: extracted?.payCurrency || "USD",
@@ -824,7 +947,7 @@ export default function NewJob() {
       )
         nextExtracted.payAnnualizedMin = null;
 
-      // ✅ If pay fields are missing, try to extract from JD + extracted lists (often polluted with pay string)
+      // ✅ If pay fields are missing, try to extract from JD + extracted lists
       const payTextBlob = [
         jobDescription,
         ...(Array.isArray(extracted?.keywords) ? extracted.keywords : []),
@@ -846,19 +969,21 @@ export default function NewJob() {
         nextExtracted = { ...nextExtracted, ...payFallback };
       }
 
-      // ✅ Clean keywords + requirement skills to remove Indeed UI junk
+      // ✅ Clean keywords + requirement skills to remove UI junk
       nextExtracted = {
         ...nextExtracted,
         keywords: cleanSkillTokens(nextExtracted.keywords, { max: 16 }),
         requirements: nextExtracted.requirements
           ? {
               ...nextExtracted.requirements,
-              skillsRequired: cleanSkillTokens(nextExtracted.requirements.skillsRequired, {
-                max: 16,
-              }),
-              skillsPreferred: cleanSkillTokens(nextExtracted.requirements.skillsPreferred, {
-                max: 12,
-              }),
+              skillsRequired: cleanSkillTokens(
+                nextExtracted.requirements.skillsRequired,
+                { max: 16 }
+              ),
+              skillsPreferred: cleanSkillTokens(
+                nextExtracted.requirements.skillsPreferred,
+                { max: 12 }
+              ),
             }
           : null,
       };
@@ -918,96 +1043,125 @@ export default function NewJob() {
   };
 
   const AI_MODE_BACKEND = {
-  standard: "STANDARD",
-  elite: "ELITE",
-};
+    standard: "STANDARD",
+    elite: "ELITE",
+  };
 
-const handleGenerate = async () => {
-  let toastId = null;
+  const handleGenerate = async () => {
+    let toastId = null;
 
-  try {
-    if (!extractedData?.jobTitle || !jobDescription.trim()) {
-      toast.error("Missing job title or job description.");
-      return;
+    try {
+      if (!extractedData?.jobTitle || !jobDescription.trim()) {
+        toast.error("Missing job title or job description.");
+        return;
+      }
+
+      // ensure logged in (no fallback)
+      await ensureUserId();
+
+      // call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
+      const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
+
+      toastId = toast.loading("Generating tailored resume + cover letter…");
+
+      const prepared = await apiFetch("/api/apply/prepare", {
+        method: "POST",
+        body: JSON.stringify({
+          resumeId: selectedResume,
+          jobDescription: jdForApi,
+          jobUrl: null,
+
+          // backend accepts STANDARD/ELITE but lowercases it anyway
+          aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
+
+          // ✅ must be inside the JSON body
+          studentMode: !!studentMode,
+        }),
+      });
+
+      // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
+      localStorage.removeItem("latestTailoredResumeBlobUrl");
+      localStorage.removeItem("latestTailoredResumePdfUrl");
+      localStorage.removeItem("latestTailoredResumeUrl");
+
+      const preparedSafe = scrubDirectBlobUrls(
+        JSON.parse(JSON.stringify(prepared || {}))
+      );
+
+      localStorage.setItem("latestPrepareResult", JSON.stringify(preparedSafe));
+
+      const jobData = preparedSafe?.jobData || null;
+      const tailoredResume = preparedSafe?.tailoredResume || null;
+      const coverLetter = preparedSafe?.coverLetter || null;
+
+      if (tailoredResume?.id)
+        localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
+      if (coverLetter?.id)
+        localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
+      if (typeof coverLetter?.text === "string")
+        localStorage.setItem("latestCoverLetterText", coverLetter.text);
+      if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
+      localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
+
+      // ✅ NEW: Save the job to DB via Jobs API (this was missing)
+      // This is the fix for: "newjob isnt sending the jobs api to save it in the db"
+      let savedJob = null;
+      try {
+        const payload = buildJobCreatePayload({
+          extracted: extractedData,
+          preparedJobData: jobData,
+          jdRaw: jobDescription,
+          sourceResumeId: selectedResume,
+          tailoredResumeId: tailoredResume?.id || null,
+          coverLetterId: coverLetter?.id || null,
+        });
+
+        // keep a local copy so you can inspect/retry if backend rejects
+        const payloadSafe = scrubDirectBlobUrls(
+          JSON.parse(JSON.stringify(payload || {}))
+        );
+        localStorage.setItem("latestJobCreatePayload", JSON.stringify(payloadSafe));
+
+        // Primary create endpoint
+        savedJob = await apiFetch("/api/jobs", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (savedJob?.id != null) {
+          localStorage.setItem("latestJobId", String(savedJob.id));
+        }
+      } catch (saveErr) {
+        console.error("Job save failed:", saveErr);
+        // Do NOT block packet navigation; just notify.
+        toast.error("Packet generated, but saving the job failed (see console).");
+      }
+
+      const packetTitle = String(
+        extractedData?.jobTitle || jobData?.jobTitle || "Position"
+      );
+      const packetCompany = String(
+        extractedData?.company || jobData?.company || "Company"
+      );
+
+      toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, {
+        id: toastId,
+      });
+      toastId = null;
+
+      const qs = new URLSearchParams();
+      qs.set("mode", "prepare");
+      if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
+      if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
+      if (savedJob?.id != null) qs.set("jobId", String(savedJob.id)); // safe extra param
+
+      navigate(`/packet?${qs.toString()}`);
+    } catch (e) {
+      console.error(e);
+      if (toastId) toast.dismiss(toastId);
+      toast.error(e?.message || "Failed to generate packet.");
     }
-
-    // ensure logged in (no fallback)
-    const id = await getSwaUser();
-    if (!id) {
-      toast.error("You must be logged in.");
-      return;
-    }
-
-    // call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
-    const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
-
-    toastId = toast.loading("Generating tailored resume + cover letter…");
-
-    const prepared = await apiFetch("/api/apply/prepare", {
-      method: "POST",
-      body: JSON.stringify({
-        resumeId: selectedResume,
-        jobDescription: jdForApi,
-        jobUrl: null,
-
-        // ✅ backend expects "standard" / "elite" (or whatever your backend uses)
-        // if your backend expects STANDARD/ELITE, keep this mapping
-        aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
-
-        // ✅ must be inside the JSON body
-        studentMode: !!studentMode,
-      }),
-    });
-
-    // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
-    localStorage.removeItem("latestTailoredResumeBlobUrl");
-    localStorage.removeItem("latestTailoredResumePdfUrl");
-    localStorage.removeItem("latestTailoredResumeUrl");
-
-    const preparedSafe = scrubDirectBlobUrls(
-      JSON.parse(JSON.stringify(prepared || {}))
-    );
-
-    localStorage.setItem("latestPrepareResult", JSON.stringify(preparedSafe));
-
-    const jobData = preparedSafe?.jobData || null;
-    const tailoredResume = preparedSafe?.tailoredResume || null;
-    const coverLetter = preparedSafe?.coverLetter || null;
-
-    if (tailoredResume?.id)
-      localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
-    if (coverLetter?.id)
-      localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
-    if (typeof coverLetter?.text === "string")
-      localStorage.setItem("latestCoverLetterText", coverLetter.text);
-    if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
-    localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
-
-    const packetTitle = String(
-      extractedData?.jobTitle || jobData?.jobTitle || "Position"
-    );
-    const packetCompany = String(
-      extractedData?.company || jobData?.company || "Company"
-    );
-
-    toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, {
-      id: toastId,
-    });
-    toastId = null;
-
-    const qs = new URLSearchParams();
-    qs.set("mode", "prepare");
-    if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
-    if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
-
-    navigate(`/packet?${qs.toString()}`);
-  } catch (e) {
-    console.error(e);
-    if (toastId) toast.dismiss(toastId);
-    toast.error(e?.message || "Failed to generate packet.");
-  }
-};
-
+  };
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
 
@@ -1151,7 +1305,8 @@ const handleGenerate = async () => {
       req.certificationsPreferred?.length ||
       req.workModelRequired);
 
-  const previewBlurLine = "text-xs text-white/65 leading-relaxed blur-sm select-none";
+  const previewBlurLine =
+    "text-xs text-white/65 leading-relaxed blur-sm select-none";
   const previewBlurBlock =
     "mt-2 space-y-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]";
 
@@ -1169,7 +1324,9 @@ const handleGenerate = async () => {
     typeof previewSafe?.coverLetterPreview?.firstSentence === "string"
       ? previewSafe.coverLetterPreview.firstSentence
       : "";
-  const checklistPreviewItems = Array.isArray(previewSafe?.checklistPreview?.items)
+  const checklistPreviewItems = Array.isArray(
+    previewSafe?.checklistPreview?.items
+  )
     ? previewSafe.checklistPreview.items.slice(0, 2)
     : [];
 
@@ -1308,8 +1465,6 @@ const handleGenerate = async () => {
         {/* Confirmation Screen */}
         {showConfirm && extractedData && (
           <div className="w-full">
-            {/* ... UI unchanged ... */}
-            {/* --- START EXISTING UI --- */}
             <div className="mb-7 text-center">
               <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">
                 Confirm details
@@ -1544,11 +1699,13 @@ const handleGenerate = async () => {
                                     Required skills
                                   </div>
                                   <div className="flex flex-wrap gap-3">
-                                    {req.skillsRequired.slice(0, 16).map((s, i) => (
-                                      <span key={i} className={pillBrand}>
-                                        {s}
-                                      </span>
-                                    ))}
+                                    {req.skillsRequired
+                                      .slice(0, 16)
+                                      .map((s, i) => (
+                                        <span key={i} className={pillBrand}>
+                                          {s}
+                                        </span>
+                                      ))}
                                   </div>
                                 </div>
                               )}
@@ -1560,11 +1717,13 @@ const handleGenerate = async () => {
                                     Preferred skills
                                   </div>
                                   <div className="flex flex-wrap gap-3">
-                                    {req.skillsPreferred.slice(0, 12).map((s, i) => (
-                                      <span key={i} className={pill}>
-                                        {s}
-                                      </span>
-                                    ))}
+                                    {req.skillsPreferred
+                                      .slice(0, 12)
+                                      .map((s, i) => (
+                                        <span key={i} className={pill}>
+                                          {s}
+                                        </span>
+                                      ))}
                                   </div>
                                 </div>
                               )}
@@ -1601,11 +1760,13 @@ const handleGenerate = async () => {
                             Key Skills Detected
                           </label>
                           <div className="flex flex-wrap gap-3">
-                            {extractedData.keywords.slice(0, 16).map((keyword, i) => (
-                              <span key={i} className={pill}>
-                                {keyword}
-                              </span>
-                            ))}
+                            {extractedData.keywords
+                              .slice(0, 16)
+                              .map((keyword, i) => (
+                                <span key={i} className={pill}>
+                                  {keyword}
+                                </span>
+                              ))}
                           </div>
                         </div>
                       )}
@@ -1847,7 +2008,6 @@ const handleGenerate = async () => {
         {/* Main Form */}
         {!showConfirm && (
           <div className="max-w-[1180px] mx-auto">
-            {/* ... UI unchanged ... */}
             <div className="mb-5 text-center">
               <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
                 Create a new job packet
@@ -1857,7 +2017,11 @@ const handleGenerate = async () => {
               </p>
             </div>
 
-            <div className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(" ")}>
+            <div
+              className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(
+                " "
+              )}
+            >
               {/* Top row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {/* Resume selector */}
@@ -1881,7 +2045,10 @@ const handleGenerate = async () => {
                       <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
                     </div>
                   ) : hasResumes ? (
-                    <Select value={selectedResume} onValueChange={setSelectedResume}>
+                    <Select
+                      value={selectedResume}
+                      onValueChange={setSelectedResume}
+                    >
                       <SelectTrigger
                         className={[
                           "h-14 text-lg rounded-2xl",
@@ -1979,7 +2146,8 @@ const handleGenerate = async () => {
                       </span>
                     </div>
                     <p className="text-sm text-white/60">
-                      Emphasizes projects, coursework, and skills instead of work experience.
+                      Emphasizes projects, coursework, and skills instead of work
+                      experience.
                     </p>
 
                     <div className="mt-3 text-xs text-white/60 flex items-center gap-2">
@@ -2018,7 +2186,9 @@ const handleGenerate = async () => {
                       <div className="w-10 h-10 rounded-xl bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
                         <Check className="w-5 h-5 text-emerald-100" />
                       </div>
-                      <span className="font-bold text-xl text-white">Standard</span>
+                      <span className="font-bold text-xl text-white">
+                        Standard
+                      </span>
                     </div>
                     <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-100 mb-3 font-semibold border border-emerald-400/20">
                       Recommended • Safe & ATS-friendly
@@ -2098,7 +2268,8 @@ const handleGenerate = async () => {
                   ].join(" ")}
                 />
                 <p className="text-sm mt-2 text-white/60">
-                  Paste the full job description. We’ll extract title, company, pay, and requirements.
+                  Paste the full job description. We’ll extract title, company,
+                  pay, and requirements.
                 </p>
               </div>
 
