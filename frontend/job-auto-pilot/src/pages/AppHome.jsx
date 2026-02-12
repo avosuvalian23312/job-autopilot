@@ -6,7 +6,7 @@ import AppNav from "@/components/app/AppNav";
 import GoalProgress from "@/components/app/GoalProgress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
   FileText,
@@ -23,6 +23,8 @@ import {
   ListChecks,
   CalendarDays,
   Building2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 /* ---------------------------------------
@@ -111,6 +113,17 @@ const timeAgo = (date) => {
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const addMonths = (date, delta) => {
+  const d = new Date(date);
+  return new Date(d.getFullYear(), d.getMonth() + delta, 1);
+};
+
+const isSameMonth = (a, b) => {
+  const da = new Date(a);
+  const db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth();
+};
 
 const normalizeStatus = (s) => String(s ?? "").trim().toLowerCase();
 const titleCase = (s) => {
@@ -518,7 +531,12 @@ const WeekDayPill = React.memo(function WeekDayPill({
 
   return (
     <div className="min-w-0">
-      <div className={cx("text-center text-[12px] font-medium leading-none", isPast ? "text-slate-600" : "text-slate-400")}>
+      <div
+        className={cx(
+          "text-center text-[12px] font-medium leading-none",
+          isPast ? "text-slate-600" : "text-slate-400"
+        )}
+      >
         {weekday}
       </div>
 
@@ -537,7 +555,6 @@ const WeekDayPill = React.memo(function WeekDayPill({
         )}
         title={label}
       >
-        {/* date number (kept subtle); checkmark is the main “done” signal */}
         <div
           className={cx(
             "absolute left-2 top-2 text-[12px] font-semibold tabular-nums",
@@ -549,7 +566,10 @@ const WeekDayPill = React.memo(function WeekDayPill({
         </div>
 
         {hasActivity ? (
-          <Check className={cx("h-5 w-5", isPast ? "text-slate-500" : "text-emerald-300")} aria-hidden="true" />
+          <Check
+            className={cx("h-5 w-5", isPast ? "text-slate-500" : "text-emerald-300")}
+            aria-hidden="true"
+          />
         ) : null}
       </div>
     </div>
@@ -653,7 +673,6 @@ class ErrorBoundary extends React.Component {
     return { hasError: true };
   }
   componentDidCatch(error, info) {
-    // Replace with your logging hook (Sentry/AppInsights/etc.)
     // eslint-disable-next-line no-console
     console.error("AppHome ErrorBoundary:", error, info);
   }
@@ -691,6 +710,10 @@ export default function AppHome() {
   });
 
   const [jobsList, setJobsList] = useState([]);
+
+  // Monthly calendar preview (hover)
+  const [monthPreviewOpen, setMonthPreviewOpen] = useState(false);
+  const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   const handleNewJob = useCallback(() => {
     navigate(createPageUrl("NewJob"));
@@ -833,7 +856,11 @@ export default function AppHome() {
         done: hasResume,
         hint: "Upload a resume to generate docs faster.",
       },
-      { label: "10 applications", done: totalApps >= 10, hint: "Momentum beats intensity — stay consistent." },
+      {
+        label: "10 applications",
+        done: totalApps >= 10,
+        hint: "Momentum beats intensity — stay consistent.",
+      },
       { label: "25 applications", done: totalApps >= 25, hint: "Nice volume — keep tracking clean." },
       { label: "First interview", done: firstInterview, hint: "Follow-ups + targeting are your levers." },
       { label: "First offer", done: firstOffer, hint: "Offers come from reps + iteration." },
@@ -912,6 +939,44 @@ export default function AppHome() {
     return { days, activeDays, jobsThisWeek };
   }, [jobAddsByDay]);
 
+  // Month preview grid (for hover popover)
+  const monthPreview = useMemo(() => {
+    const today = new Date();
+    const todayKey = startOfDay(today);
+
+    const cursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+
+    const first = new Date(y, m, 1);
+    const firstDow = first.getDay(); // 0 Sun
+    const gridStart = new Date(y, m, 1 - firstDow);
+
+    const days = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+      const key = startOfDay(d);
+      const inMonth = d.getMonth() === m;
+      const count = jobAddsByDay.get(key) || 0;
+      days.push({
+        key,
+        date: d,
+        dayNum: d.getDate(),
+        inMonth,
+        hasActivity: count > 0,
+        count,
+        isToday: key === todayKey,
+        isPast: key < todayKey,
+      });
+    }
+
+    const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    const canGoNext = !isSameMonth(cursor, new Date(today.getFullYear(), today.getMonth(), 1));
+    return { monthLabel, weekLabels, days, canGoNext };
+  }, [jobAddsByDay, monthCursor]);
+
   const conversion = useMemo(() => {
     const applied = Number(statusCounts?.applied || 0);
     const interviews = Number(statusCounts?.interview || 0);
@@ -939,6 +1004,32 @@ export default function AppHome() {
     const max = Math.max(1, ...rows.map((x) => x.count || 0));
     return { rows, max };
   }, [jobsList]);
+
+  const openMonthPreview = useCallback(() => setMonthPreviewOpen(true), []);
+  const closeMonthPreview = useCallback(() => setMonthPreviewOpen(false), []);
+  const toggleMonthPreview = useCallback(() => setMonthPreviewOpen((v) => !v), []);
+
+  const goPrevMonth = useCallback(() => setMonthCursor((d) => addMonths(d, -1)), []);
+  const goNextMonth = useCallback(() => {
+    setMonthCursor((d) => {
+      const today = new Date();
+      const cur = new Date(d.getFullYear(), d.getMonth(), 1);
+      const next = addMonths(cur, 1);
+      const max = new Date(today.getFullYear(), today.getMonth(), 1);
+      if (next.getTime() > max.getTime()) return cur;
+      return next;
+    });
+  }, []);
+
+  // Keep cursor from drifting into the future if user refreshes/loads later
+  useEffect(() => {
+    const today = new Date();
+    const max = new Date(today.getFullYear(), today.getMonth(), 1);
+    setMonthCursor((d) => {
+      const cur = new Date(d.getFullYear(), d.getMonth(), 1);
+      return cur.getTime() > max.getTime() ? max : cur;
+    });
+  }, []);
 
   return (
     <div
@@ -1032,8 +1123,13 @@ export default function AppHome() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* LEFT */}
                 <div className="lg:col-span-7 space-y-6">
-                  {/* Small Calendar (7 days) */}
-                  <Card aria-label="Weekly activity calendar">
+                  {/* Small Calendar (7 days) + hover month preview */}
+                  <Card
+                    aria-label="Weekly activity calendar"
+                    className="relative"
+                    onMouseEnter={openMonthPreview}
+                    onMouseLeave={closeMonthPreview}
+                  >
                     <CardHeader
                       className="items-center pb-4"
                       title="This week"
@@ -1045,8 +1141,23 @@ export default function AppHome() {
                           jobs added
                         </span>
                       }
-                      action={<CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" />}
+                      action={
+                        <button
+                          type="button"
+                          onClick={toggleMonthPreview}
+                          aria-label="Toggle month preview"
+                          aria-expanded={monthPreviewOpen}
+                          className={cx(
+                            "rounded-xl border border-white/10 bg-white/[0.04] p-2",
+                            "hover:bg-white/[0.07] active:bg-white/[0.09]",
+                            focusRing
+                          )}
+                        >
+                          <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden="true" />
+                        </button>
+                      }
                     />
+
                     <CardContent className="pt-0">
                       <div className="grid grid-cols-7 gap-2">
                         {weekMeta.days.map((d) => (
@@ -1061,32 +1172,183 @@ export default function AppHome() {
                         ))}
                       </div>
                     </CardContent>
+
+                    {/* Hover preview: full month calendar with month picker */}
+                    <AnimatePresence>
+                      {monthPreviewOpen ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          transition={{ duration: 0.16 }}
+                          className={cx(
+                            "absolute left-0 top-full mt-3 z-50",
+                            "w-full sm:w-[560px]"
+                          )}
+                        >
+                          <div className="rounded-2xl border border-white/10 bg-[hsl(var(--ds-bg))] shadow-[0_20px_60px_rgba(0,0,0,.6)] overflow-hidden">
+                            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-white/10 bg-white/[0.03]">
+                              <div className="min-w-0">
+                                <div className="text-[12px] text-slate-400">Monthly preview</div>
+                                <div className="text-base font-semibold text-slate-100 truncate">
+                                  {monthPreview.monthLabel}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={goPrevMonth}
+                                  className={cx(
+                                    "h-9 w-9 grid place-items-center rounded-xl border border-white/10 bg-white/[0.04]",
+                                    "hover:bg-white/[0.07] active:bg-white/[0.09]",
+                                    focusRing
+                                  )}
+                                  aria-label="Previous month"
+                                >
+                                  <ChevronLeft className="h-4 w-4 text-slate-200" aria-hidden="true" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={goNextMonth}
+                                  disabled={!monthPreview.canGoNext}
+                                  className={cx(
+                                    "h-9 w-9 grid place-items-center rounded-xl border border-white/10 bg-white/[0.04]",
+                                    "hover:bg-white/[0.07] active:bg-white/[0.09]",
+                                    !monthPreview.canGoNext ? "opacity-40 cursor-not-allowed" : "",
+                                    focusRing
+                                  )}
+                                  aria-label="Next month"
+                                >
+                                  <ChevronRight className="h-4 w-4 text-slate-200" aria-hidden="true" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="p-5">
+                              {/* Weekday headers */}
+                              <div className="grid grid-cols-7 gap-2">
+                                {monthPreview.weekLabels.map((w) => (
+                                  <div
+                                    key={w}
+                                    className="text-center text-[12px] font-medium text-slate-500"
+                                  >
+                                    {w}
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Month grid */}
+                              <div className="mt-2 grid grid-cols-7 gap-2">
+                                {monthPreview.days.map((d) => {
+                                  const label = `${d.date.toLocaleDateString(undefined, {
+                                    weekday: "long",
+                                    month: "long",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })}${d.hasActivity ? ` — ${d.count} job(s) added` : ""}`;
+
+                                  return (
+                                    <div
+                                      key={d.key}
+                                      title={label}
+                                      aria-label={label}
+                                      className={cx(
+                                        "relative h-12 rounded-xl border border-white/10 bg-white/[0.03]",
+                                        "grid place-items-center select-none transition-colors",
+                                        d.inMonth ? "hover:bg-white/[0.06] hover:border-white/15" : "opacity-30",
+                                        d.isToday ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10" : ""
+                                      )}
+                                    >
+                                      <div
+                                        className={cx(
+                                          "absolute left-2 top-2 text-[12px] font-semibold tabular-nums",
+                                          d.inMonth ? "text-slate-200" : "text-slate-500"
+                                        )}
+                                        aria-hidden="true"
+                                      >
+                                        {d.dayNum}
+                                      </div>
+
+                                      {d.hasActivity ? (
+                                        <div className="grid place-items-center">
+                                          <Check className="h-5 w-5 text-emerald-300" aria-hidden="true" />
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="mt-4 flex items-center justify-between gap-3 text-[12px] text-slate-500">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400/80" />
+                                  Days you added jobs
+                                </div>
+                                <div className="text-slate-600">Tip: use ◀ ▶ to browse past months</div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
                   </Card>
 
-                  {/* New Job CTA (ONLY + on left, stats on right) */}
+                  {/* New Job CTA — BIGGER card + “NEW JOB” text + huge + */}
                   <Card
-                    aria-label="New Job call to action"
-                    className="border-purple-500/20 bg-gradient-to-b from-purple-500/10 to-white/[0.03]"
+                    as="button"
+                    type="button"
+                    aria-label="Create a new job"
+                    onClick={handleNewJob}
+                    className={cx(
+                      "text-left w-full relative overflow-hidden",
+                      "border-purple-500/25 bg-gradient-to-b from-purple-500/12 to-white/[0.03]",
+                      "hover:from-purple-500/16 hover:bg-white/[0.05] transition-colors",
+                      focusRing
+                    )}
                   >
-                    <CardContent className="p-6 sm:p-8">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        {/* Left: just + */}
-                        <div className="flex items-center justify-center sm:justify-start">
-                          <PrimaryButton
-                            onClick={handleNewJob}
-                            aria-label="Add a new job"
-                            className="h-14 w-14 p-0 rounded-2xl"
+                    {/* glow */}
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-purple-500/10 blur-2xl"
+                    />
+                    <CardContent className="p-8 sm:p-10">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+                        {/* Left: huge + + NEW JOB */}
+                        <div className="flex items-center gap-6">
+                          <div
+                            className={cx(
+                              "h-20 w-20 sm:h-24 sm:w-24 rounded-3xl",
+                              "grid place-items-center",
+                              "border border-purple-500/25 bg-purple-500/15"
+                            )}
+                            aria-hidden="true"
                           >
-                            <Plus className="h-6 w-6" aria-hidden="true" />
-                          </PrimaryButton>
+                            <Plus className="h-10 w-10 sm:h-12 sm:w-12 text-purple-200" />
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="text-[12px] text-slate-400">Quick action</div>
+                            <div className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-100">
+                              NEW JOB
+                            </div>
+                            <div className="mt-1 text-[length:var(--ds-body)] text-slate-400">
+                              Add a role to your pipeline and start tracking.
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Right: stats (still inside card) */}
-                        <div className="w-full sm:w-auto">
+                        {/* Right: stats */}
+                        <div className="w-full lg:w-auto">
                           <div className="grid grid-cols-3 gap-3">
                             <MiniStat label="This week" value={`${weekApps}`} icon={Clock} />
                             <MiniStat label="Streak" value={`${streak}d`} icon={Zap} />
                             <MiniStat label="Offers" value={`${weekOffers}`} icon={Target} />
+                          </div>
+
+                          <div className="mt-3 text-[12px] text-slate-500">
+                            Click anywhere on this card
                           </div>
                         </div>
                       </div>

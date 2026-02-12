@@ -4,6 +4,7 @@ import AppNav from "@/components/app/AppNav";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   User,
@@ -18,6 +19,8 @@ import {
   ExternalLink,
   Save,
   ArrowRight,
+  Send,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -106,6 +109,12 @@ export default function Settings() {
   const [linkedin, setLinkedin] = useState("");
   const [portfolio, setPortfolio] = useState("");
 
+  // Support
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportSending, setSupportSending] = useState(false);
+
   // Snapshot for dirty-checking
   const [initialLoaded, setInitialLoaded] = useState(null);
 
@@ -126,7 +135,7 @@ export default function Settings() {
     }
   };
 
-  // Load settings from Cosmos via /api/settings (fallback to local cache if needed)
+  // ✅ Load from Cosmos via GET /api/settings (fallback to local cache)
   useEffect(() => {
     let cancelled = false;
 
@@ -135,21 +144,16 @@ export default function Settings() {
       try {
         const resp = await apiFetch("/api/settings", { method: "GET" });
 
-        // If authorized + ok response
         if (resp.ok && resp.data?.ok) {
           const s = resp.data?.settings || null;
-          const profile = s?.profile || {};
-          const links = s?.links || {};
-          const prefs = s?.prefs || null;
 
           const snapshot = {
-            fullName: String(profile.fullName || ""),
-            email: String(profile.email || ""),
-            phone: String(profile.phone || ""),
-            location: String(profile.location || ""),
-            linkedin: String(links.linkedin || ""),
-            portfolio: String(links.portfolio || ""),
-            prefs,
+            fullName: String(s?.fullName || ""),
+            email: String(s?.email || ""),
+            phone: String(s?.phone || ""),
+            location: String(s?.location || ""),
+            linkedin: String(s?.linkedin || ""),
+            portfolio: String(s?.portfolio || ""),
           };
 
           if (cancelled) return;
@@ -164,12 +168,7 @@ export default function Settings() {
 
           // keep local cache warm (UX + offline)
           writeLocalCache({
-            fullName: snapshot.fullName,
-            email: snapshot.email,
-            phone: snapshot.phone,
-            location: snapshot.location,
-            linkedin: snapshot.linkedin,
-            portfolio: snapshot.portfolio,
+            ...snapshot,
             updatedAt: new Date().toISOString(),
           });
 
@@ -183,66 +182,65 @@ export default function Settings() {
           if (resp.status === 401) {
             toast.error("Please sign in again to load settings.");
           }
-          if (cached) {
-            setFullName(cached.fullName || "");
-            setEmail(cached.email || "");
-            setPhone(cached.phone || "");
-            setLocation(cached.location || "");
-            setLinkedin(cached.linkedin || "");
-            setPortfolio(cached.portfolio || "");
-            setInitialLoaded({
-              fullName: cached.fullName || "",
-              email: cached.email || "",
-              phone: cached.phone || "",
-              location: cached.location || "",
-              linkedin: cached.linkedin || "",
-              portfolio: cached.portfolio || "",
-              prefs: null,
-            });
-          } else {
-            setInitialLoaded({
-              fullName: "",
-              email: "",
-              phone: "",
-              location: "",
-              linkedin: "",
-              portfolio: "",
-              prefs: null,
-            });
-          }
+
+          const fallback = cached
+            ? {
+                fullName: cached.fullName || "",
+                email: cached.email || "",
+                phone: cached.phone || "",
+                location: cached.location || "",
+                linkedin: cached.linkedin || "",
+                portfolio: cached.portfolio || "",
+              }
+            : {
+                fullName: "",
+                email: "",
+                phone: "",
+                location: "",
+                linkedin: "",
+                portfolio: "",
+              };
+
+          setFullName(fallback.fullName);
+          setEmail(fallback.email);
+          setPhone(fallback.phone);
+          setLocation(fallback.location);
+          setLinkedin(fallback.linkedin);
+          setPortfolio(fallback.portfolio);
+          setInitialLoaded(fallback);
+
           setLoading(false);
         }
       } catch (err) {
         console.error(err);
         const cached = loadFromLocalCache();
         if (!cancelled) {
-          if (cached) {
-            setFullName(cached.fullName || "");
-            setEmail(cached.email || "");
-            setPhone(cached.phone || "");
-            setLocation(cached.location || "");
-            setLinkedin(cached.linkedin || "");
-            setPortfolio(cached.portfolio || "");
-            setInitialLoaded({
-              fullName: cached.fullName || "",
-              email: cached.email || "",
-              phone: cached.phone || "",
-              location: cached.location || "",
-              linkedin: cached.linkedin || "",
-              portfolio: cached.portfolio || "",
-              prefs: null,
-            });
-          } else {
-            setInitialLoaded({
-              fullName: "",
-              email: "",
-              phone: "",
-              location: "",
-              linkedin: "",
-              portfolio: "",
-              prefs: null,
-            });
-          }
+          const fallback = cached
+            ? {
+                fullName: cached.fullName || "",
+                email: cached.email || "",
+                phone: cached.phone || "",
+                location: cached.location || "",
+                linkedin: cached.linkedin || "",
+                portfolio: cached.portfolio || "",
+              }
+            : {
+                fullName: "",
+                email: "",
+                phone: "",
+                location: "",
+                linkedin: "",
+                portfolio: "",
+              };
+
+          setFullName(fallback.fullName);
+          setEmail(fallback.email);
+          setPhone(fallback.phone);
+          setLocation(fallback.location);
+          setLinkedin(fallback.linkedin);
+          setPortfolio(fallback.portfolio);
+          setInitialLoaded(fallback);
+
           toast.error("Could not load settings from server. Using local cache.");
           setLoading(false);
         }
@@ -266,42 +264,9 @@ export default function Settings() {
     );
   }, [initialLoaded, fullName, email, phone, location, linkedin, portfolio]);
 
-  const getPrefsForSave = () => {
-    // Prefer server-loaded prefs (so we don't overwrite with empty)
-    const fromServer = initialLoaded?.prefs;
-    if (fromServer && typeof fromServer === "object") return fromServer;
-
-    // Otherwise, try localStorage("preferences") used by your Setup flow
-    try {
-      const raw = localStorage.getItem("preferences");
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (parsed && typeof parsed === "object") {
-        return {
-          targetRoles: Array.isArray(parsed.targetRoles) ? parsed.targetRoles : [],
-          seniority: String(parsed.seniority || ""),
-          locationPreference: String(parsed.locationPreference || ""),
-          preferredCity: String(parsed.preferredCity || ""),
-          tone: String(parsed.tone || "Professional"),
-        };
-      }
-    } catch {
-      // ignore
-    }
-
-    // Default safe shape
-    return {
-      targetRoles: [],
-      seniority: "",
-      locationPreference: "",
-      preferredCity: "",
-      tone: "Professional",
-    };
-  };
-
   const saveProfile = async () => {
     if (saving) return;
 
-    // light validation
     const e = (email || "").trim();
     if (e && !/^\S+@\S+\.\S+$/.test(e)) {
       toast.error("Please enter a valid email address.");
@@ -310,24 +275,19 @@ export default function Settings() {
 
     setSaving(true);
     try {
-      const profile = {
+      // ✅ This matches your backend settingsSave.js (flat fields)
+      const payload = {
         fullName: fullName.trim(),
         email: e,
         phone: phone.trim(),
         location: location.trim(),
-      };
-
-      const links = {
         linkedin: linkedin.trim(),
         portfolio: portfolio.trim(),
       };
 
-      const prefs = getPrefsForSave();
-
-      // ✅ Save to Cosmos via Settings API
       const resp = await apiFetch("/api/settings", {
         method: "POST",
-        body: { profile, links, prefs },
+        body: payload,
       });
 
       if (!resp.ok || !resp.data?.ok) {
@@ -341,27 +301,19 @@ export default function Settings() {
         return;
       }
 
-      // Update local cache + dirty snapshot
+      const saved = resp.data?.settings || payload;
+
       const snapshot = {
-        fullName: profile.fullName,
-        email: profile.email,
-        phone: profile.phone,
-        location: profile.location,
-        linkedin: links.linkedin,
-        portfolio: links.portfolio,
-        prefs,
+        fullName: String(saved.fullName || payload.fullName || ""),
+        email: String(saved.email || payload.email || ""),
+        phone: String(saved.phone || payload.phone || ""),
+        location: String(saved.location || payload.location || ""),
+        linkedin: String(saved.linkedin || payload.linkedin || ""),
+        portfolio: String(saved.portfolio || payload.portfolio || ""),
       };
 
       setInitialLoaded(snapshot);
-      writeLocalCache({
-        fullName: snapshot.fullName,
-        email: snapshot.email,
-        phone: snapshot.phone,
-        location: snapshot.location,
-        linkedin: snapshot.linkedin,
-        portfolio: snapshot.portfolio,
-        updatedAt: new Date().toISOString(),
-      });
+      writeLocalCache({ ...snapshot, updatedAt: new Date().toISOString() });
 
       toast.success("Settings saved.");
     } catch (err) {
@@ -372,10 +324,47 @@ export default function Settings() {
     }
   };
 
-  const openSupport = () => {
-    // Keep mailto until /api/support + email is configured
-    window.location.href =
-      "mailto:support@yourdomain.com?subject=Job%20Autopilot%20Support";
+  const sendSupport = async () => {
+    if (supportSending) return;
+
+    const msg = (supportMessage || "").trim();
+    if (!msg) {
+      toast.error("Please enter a message.");
+      return;
+    }
+
+    setSupportSending(true);
+    try {
+      // ✅ Matches your backend supportCreate.js
+      const resp = await apiFetch("/api/support", {
+        method: "POST",
+        body: {
+          subject: (supportSubject || "").trim(),
+          message: msg,
+        },
+      });
+
+      if (!resp.ok || !resp.data?.ok) {
+        if (resp.status === 401) {
+          toast.error("You're not logged in. Please sign in again.");
+          return;
+        }
+        const errMsg =
+          resp.data?.error || `Failed to send support request (HTTP ${resp.status})`;
+        toast.error(errMsg);
+        return;
+      }
+
+      toast.success("Support request sent.");
+      setSupportSubject("");
+      setSupportMessage("");
+      setSupportOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to send support request.");
+    } finally {
+      setSupportSending(false);
+    }
   };
 
   return (
@@ -551,22 +540,109 @@ export default function Settings() {
 
               <Section
                 title="Support"
-                subtitle="Having issues? Reach out and we’ll help."
+                subtitle="Send a message and we’ll get back to you."
                 icon={LifeBuoy}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="text-sm text-white/50">
-                    Contact support for account, resume upload, or billing help.
+                    Account, resume uploads, bugs, or billing questions.
                   </div>
-                  <Button
-                    type="button"
-                    onClick={openSupport}
-                    className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl py-5 px-5"
-                  >
-                    <Mail className="w-4 h-4 mr-2" />
-                    Contact Support
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {!supportOpen ? (
+                      <Button
+                        type="button"
+                        onClick={() => setSupportOpen(true)}
+                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl py-5 px-5"
+                      >
+                        <Mail className="w-4 h-4 mr-2" />
+                        Contact Support
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setSupportOpen(false)}
+                        className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-4"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Close
+                      </Button>
+                    )}
+                  </div>
                 </div>
+
+                {supportOpen && (
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <div className="text-xs sm:text-sm text-white/60 font-medium">
+                          Subject <span className="text-white/30">(optional)</span>
+                        </div>
+                        <Input
+                          value={supportSubject}
+                          onChange={(e) => setSupportSubject(e.target.value)}
+                          placeholder="e.g., Resume upload issue"
+                          className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-xl py-5"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-xs sm:text-sm text-white/60 font-medium">
+                          Reply email <span className="text-white/30">(auto)</span>
+                        </div>
+                        <Input
+                          value={(email || "").trim() || "Loaded from account via SWA"}
+                          readOnly
+                          className="bg-white/[0.02] border-white/10 text-white/60 rounded-xl py-5"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs sm:text-sm text-white/60 font-medium">
+                          Message
+                        </div>
+                        <div className="text-xs text-white/30">
+                          {(supportMessage || "").length}/4000
+                        </div>
+                      </div>
+                      <Textarea
+                        value={supportMessage}
+                        onChange={(e) => setSupportMessage(e.target.value)}
+                        placeholder="Describe your issue (steps to reproduce, what you expected, screenshots info, etc.)"
+                        className="min-h-[140px] bg-white/[0.03] border-white/10 text-white placeholder:text-white/25 rounded-2xl"
+                        maxLength={4000}
+                      />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setSupportSubject("");
+                          setSupportMessage("");
+                          setSupportOpen(false);
+                        }}
+                        className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
+                        disabled={supportSending}
+                      >
+                        Cancel
+                      </Button>
+
+                      <Button
+                        type="button"
+                        onClick={sendSupport}
+                        className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={supportSending}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {supportSending ? "Sending..." : "Send message"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </Section>
 
               {/* mobile save */}
@@ -632,8 +708,7 @@ export default function Settings() {
                       Credits-based
                     </div>
                     <div className="text-sm text-white/40 mt-2">
-                      Credits are used when generating cover letters and bullet
-                      points.
+                      Credits are used when generating cover letters and bullet points.
                     </div>
                   </div>
 
@@ -669,7 +744,11 @@ export default function Settings() {
               >
                 <Button
                   type="button"
-                  onClick={openSupport}
+                  onClick={() => {
+                    setTab("profile");
+                    setSupportOpen(true);
+                    toast.message("Open the Support box in the Profile tab.");
+                  }}
                   className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl py-5 px-5"
                 >
                   <Mail className="w-4 h-4 mr-2" />
