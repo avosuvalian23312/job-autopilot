@@ -6,59 +6,54 @@ const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 let _pdfjs = null;
 let _pdfjsPromise = null;
 
-/**
- * pdfjs-dist v5+ ships ESM (.mjs). In CommonJS (your backend),
- * we must load it via dynamic import().
- *
- * We try legacy first (most Node-friendly), then modern build,
- * then fall back to old CommonJS paths for v2/v3 if someone pins later.
- */
 async function getPdfJs() {
   if (_pdfjs) return _pdfjs;
   if (_pdfjsPromise) return _pdfjsPromise;
 
-  const load = async () => {
-    // --- v5+ (ESM) ---
+  const tryRequire = (p) => {
     try {
-      const mod = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      _pdfjs = mod?.default || mod;
-      return _pdfjs;
-    } catch (e1) {
-      try {
-        const mod = await import("pdfjs-dist/build/pdf.mjs");
-        _pdfjs = mod?.default || mod;
-        return _pdfjs;
-      } catch (e2) {
-        // --- v2/v3 (CommonJS) fallback ---
-        try {
-          // eslint-disable-next-line global-require
-          _pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-          return _pdfjs;
-        } catch (e3) {
-          try {
-            // eslint-disable-next-line global-require
-            _pdfjs = require("pdfjs-dist/build/pdf.js");
-            return _pdfjs;
-          } catch (e4) {
-            const msg =
-              "pdfjs-dist is missing or incompatible. " +
-              "For pdfjs-dist@5.x (your current version), CommonJS MUST use dynamic import of .mjs. " +
-              "Tried: legacy/build/pdf.mjs, build/pdf.mjs, legacy/build/pdf.js, build/pdf.js";
-            const err = new Error(msg);
-            err.cause = {
-              e1: e1?.message,
-              e2: e2?.message,
-              e3: e3?.message,
-              e4: e4?.message,
-            };
-            throw err;
-          }
-        }
-      }
+      // eslint-disable-next-line global-require
+      return require(p);
+    } catch {
+      return null;
     }
   };
 
-  _pdfjsPromise = load();
+  const tryImport = async (p) => {
+    try {
+      return await import(p);
+    } catch {
+      return null;
+    }
+  };
+
+  _pdfjsPromise = (async () => {
+    // 1) CommonJS builds (older pdfjs-dist)
+    let mod =
+      tryRequire("pdfjs-dist/legacy/build/pdf.js") ||
+      tryRequire("pdfjs-dist/build/pdf.js");
+
+    // 2) ESM builds (pdfjs-dist v5+) -> pdf.mjs
+    if (!mod) {
+      mod =
+        (await tryImport("pdfjs-dist/legacy/build/pdf.mjs")) ||
+        (await tryImport("pdfjs-dist/build/pdf.mjs"));
+    }
+
+    if (!mod) {
+      throw new Error(
+        "pdfjs-dist is missing or incompatible. Tried legacy/build/pdf.js, build/pdf.js, legacy/build/pdf.mjs, build/pdf.mjs"
+      );
+    }
+
+    // Handle default export + some versions nesting under pdfjsLib
+    let lib = mod.default || mod;
+    if (lib && lib.pdfjsLib && lib.pdfjsLib.getDocument) lib = lib.pdfjsLib;
+
+    _pdfjs = lib;
+    return _pdfjs;
+  })();
+
   return _pdfjsPromise;
 }
 
@@ -80,9 +75,6 @@ function chunkText(text, maxLen = 14000) {
 
 /**
  * Extract lines with approximate bounding boxes using pdfjs text items.
- * Returns:
- *  - pages: [{ pageNumber, width, height, lines:[{ text, norm, x, y, width, height, fontSize }] }]
- *  - resumeText: page-marked text (good for AOAI prompts)
  */
 async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
   const pdfjs = await getPdfJs();
@@ -91,8 +83,8 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
   const yTolerance = Number(opts.yTolerance || 2.5);
 
   const loadingTask = pdfjs.getDocument({
-    data: pdfBuffer, // Buffer is Uint8Array in Node -> ok
-    disableWorker: true, // ✅ important in Functions/Node
+    data: pdfBuffer,
+    disableWorker: true
   });
 
   const pdf = await loadingTask.promise;
@@ -107,39 +99,27 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
     const textContent = await page.getTextContent();
 
     const items = Array.isArray(textContent.items) ? textContent.items : [];
+    const Util = pdfjs.Util;
 
-    // Convert items -> positioned words
     const words = [];
     for (const it of items) {
       const str = String(it?.str || "");
       if (!str.trim()) continue;
 
-      // Combine transforms into viewport space
-      const tx = pdfjs.Util.transform(viewport.transform, it.transform);
+      const tx = Util.transform(viewport.transform, it.transform);
 
       const x = tx[4];
       const yTopOrigin = tx[5];
-
-      // Convert viewport(top-left origin) -> PDF(bottom-left origin)
       const y = viewport.height - yTopOrigin;
 
       const fontSize = Math.max(6, Math.hypot(tx[2], tx[3]) || 10);
       const w = Number(it.width || 0);
       const h = Number(it.height || fontSize);
 
-      words.push({
-        text: str,
-        x,
-        y,
-        w,
-        h,
-        fontSize,
-      });
+      words.push({ text: str, x, y, w, h, fontSize });
     }
 
-    // Group into lines by y
     words.sort((a, b) => {
-      // top-to-bottom
       if (b.y !== a.y) return b.y - a.y;
       return a.x - b.x;
     });
@@ -147,21 +127,14 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
     const lines = [];
     for (const w of words) {
       const existing = lines.find((ln) => Math.abs(ln.y - w.y) <= yTolerance);
-      if (!existing) {
-        lines.push({
-          y: w.y,
-          items: [w],
-        });
-      } else {
-        existing.items.push(w);
-      }
+      if (!existing) lines.push({ y: w.y, items: [w] });
+      else existing.items.push(w);
     }
 
     const finalLines = lines
       .map((ln) => {
         ln.items.sort((a, b) => a.x - b.x);
 
-        // Join with spaces when needed
         let text = "";
         let lastX = null;
 
@@ -185,7 +158,6 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
             continue;
           }
 
-          // if there's a gap, insert a space
           const gap = it.x - lastX;
           if (gap > 1.5) text += " ";
           text += t;
@@ -202,7 +174,7 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
           y: ln.y,
           width: Number.isFinite(maxX - minX) ? maxX - minX : 500,
           height: maxH || fs * 1.2,
-          fontSize: fs || 10,
+          fontSize: fs || 10
         };
       })
       .filter(Boolean);
@@ -211,10 +183,9 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
       pageNumber,
       width: viewport.width,
       height: viewport.height,
-      lines: finalLines,
+      lines: finalLines
     });
 
-    // page-marked resumeText
     resumeText += `\n\n[PAGE ${pageNumber}]\n` + finalLines.map((l) => l.text).join("\n");
   }
 
@@ -222,8 +193,7 @@ async function extractPdfLinesWithBoxes(pdfBuffer, opts = {}) {
 }
 
 /**
- * Overlay replacements on top of existing PDF (layout-preserving-ish).
- * Returns { pdfBytes, overlaysApplied, misses }
+ * Overlay replacements on top of existing PDF.
  */
 async function applyPdfReplacements(originalPdfBuffer, pages, replacements = []) {
   const pdfDoc = await PDFDocument.load(originalPdfBuffer);
@@ -235,9 +205,7 @@ async function applyPdfReplacements(originalPdfBuffer, pages, replacements = [])
   const allLines = [];
   for (let i = 0; i < (pages || []).length; i++) {
     const p = pages[i];
-    for (const ln of p.lines || []) {
-      allLines.push({ pageIndex: i, ...ln });
-    }
+    for (const ln of p.lines || []) allLines.push({ pageIndex: i, ...ln });
   }
 
   const used = new Set();
@@ -245,41 +213,31 @@ async function applyPdfReplacements(originalPdfBuffer, pages, replacements = [])
   for (const rep of replacements || []) {
     const from = norm(rep?.from);
     const to = String(rep?.to || "").trim();
-
     if (!from || !to) continue;
 
-    // Find first unused exact line match
     const hit = allLines.find((ln, idx) => ln.norm === from && !used.has(idx));
     if (!hit) {
       misses.push({ from, reason: "not_found" });
       continue;
     }
 
-    // mark used
     const idx = allLines.indexOf(hit);
     used.add(idx);
 
     const page = pdfDoc.getPage(hit.pageIndex);
 
-    // white-out area (small padding)
     const padX = 1;
     const padY = 1;
 
-    const rectX = hit.x - padX;
-    const rectY = hit.y - padY;
-    const rectW = hit.width + padX * 2;
-    const rectH = hit.height + padY * 2;
-
     page.drawRectangle({
-      x: rectX,
-      y: rectY,
-      width: rectW,
-      height: rectH,
+      x: hit.x - padX,
+      y: hit.y - padY,
+      width: hit.width + padX * 2,
+      height: hit.height + padY * 2,
       color: rgb(1, 1, 1),
-      opacity: 1,
+      opacity: 1
     });
 
-    // fit text roughly into original width
     let size = Math.max(7, hit.fontSize || 10);
     const maxW = Math.max(50, hit.width || 300);
 
@@ -291,19 +249,9 @@ async function applyPdfReplacements(originalPdfBuffer, pages, replacements = [])
       size = Math.max(7, size * scale * 0.98);
     }
 
-    page.drawText(to, {
-      x: hit.x,
-      y: hit.y,
-      size,
-      font,
-      color: rgb(0, 0, 0),
-    });
+    page.drawText(to, { x: hit.x, y: hit.y, size, font, color: rgb(0, 0, 0) });
 
-    overlaysApplied.push({
-      page: hit.pageIndex + 1,
-      from,
-      to,
-    });
+    overlaysApplied.push({ page: hit.pageIndex + 1, from, to });
   }
 
   const pdfBytes = await pdfDoc.save();
@@ -313,6 +261,10 @@ async function applyPdfReplacements(originalPdfBuffer, pages, replacements = [])
 module.exports = {
   getPdfJs,
   extractPdfLinesWithBoxes,
+
+  // ✅ Backwards-compatible alias so old code doesn’t crash:
+  extractPdfLayout: extractPdfLinesWithBoxes,
+
   applyPdfReplacements,
-  chunkText,
+  chunkText
 };
