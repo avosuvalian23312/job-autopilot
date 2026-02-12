@@ -84,3 +84,4 @@ module.exports = async function settingsHandler(request, context) {
 
   return json(405, { ok: false, error: "Method not allowed" });
 };
+module.exports = { settingsGet };

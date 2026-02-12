@@ -17,6 +17,7 @@ import {
   Trophy,
   Sparkles,
   CheckCircle2,
+  Check,
   Zap,
   Lightbulb,
   ListChecks,
@@ -109,6 +110,8 @@ const timeAgo = (date) => {
 };
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const normalizeStatus = (s) => String(s ?? "").trim().toLowerCase();
 const titleCase = (s) => {
   const t = String(s ?? "").trim();
@@ -226,7 +229,7 @@ const normalizeRecentActivityFromDashboard = (dash) => {
 const computeThisWeekMetricsFromJobs = (jobs) => {
   const list = normalizeJobsList(jobs);
   const now = new Date();
-  const cutoff = startOfDay(now) - 6 * 24 * 60 * 60 * 1000;
+  const cutoff = startOfDay(now) - 6 * DAY_MS;
 
   let apps = 0;
   let interviews = 0;
@@ -251,11 +254,11 @@ const computeThisWeekMetricsFromJobs = (jobs) => {
 
 const buildLastNDaysSeries = (jobs, days = 7) => {
   const now = new Date();
-  const start = startOfDay(now) - (days - 1) * 24 * 60 * 60 * 1000;
+  const start = startOfDay(now) - (days - 1) * DAY_MS;
 
   const buckets = new Map();
   for (let i = 0; i < days; i++) {
-    const t = start + i * 24 * 60 * 60 * 1000;
+    const t = start + i * DAY_MS;
     buckets.set(t, 0);
   }
 
@@ -305,25 +308,6 @@ const computeStreak = (dailySeries) => {
     else break;
   }
   return streak;
-};
-
-const buildMonthGrid = (year, monthIndex) => {
-  const first = new Date(year, monthIndex, 1);
-  const last = new Date(year, monthIndex + 1, 0);
-  const start = new Date(year, monthIndex, 1 - first.getDay());
-  const end = new Date(year, monthIndex, last.getDate() + (6 - last.getDay()));
-
-  const cells = [];
-  const cur = new Date(start);
-  while (cur <= end) {
-    cells.push({
-      date: new Date(cur),
-      inMonth: cur.getMonth() === monthIndex,
-      key: `${cur.getFullYear()}-${cur.getMonth()}-${cur.getDate()}`,
-    });
-    cur.setDate(cur.getDate() + 1);
-  }
-  return cells;
 };
 
 /* ---------------------------------------
@@ -523,101 +507,66 @@ function StatCard({ label, value, icon: Icon, hint, className }) {
   );
 }
 
-const CalendarDay = React.memo(function CalendarDay({ date, inMonth, count = 0, isToday, isFuture }) {
-  const day = date.getDate();
-  const done = inMonth && !isFuture && count > 0;
-  const interactive = inMonth && !isFuture;
-
-  const label = inMonth
-    ? `${date.toLocaleDateString(undefined, {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })}: ${
-        done ? `${count} job${count === 1 ? "" : "s"} added` : "No jobs added"
-      }${isToday ? " (Today)" : ""}${isFuture ? " (Future)" : ""}`
-    : "";
+const WeekDayPill = React.memo(function WeekDayPill({
+  weekday,
+  dayNum,
+  isToday,
+  isPast,
+  hasActivity,
+}) {
+  const label = `${weekday} ${dayNum}${isToday ? " (Today)" : ""}${hasActivity ? " (Done)" : ""}`;
 
   return (
-    <div
-      role="gridcell"
-      aria-label={label}
-      aria-disabled={!interactive}
-      tabIndex={interactive ? 0 : -1}
-      className={cx(
-        // Layout: strict 8px spacing (gap-2 / p-2) and square cells.
-        "w-full aspect-square min-w-0 overflow-hidden select-none",
-        "rounded-xl border border-white/10 bg-white/[0.035] p-2",
-        "flex flex-col justify-between",
-        // States
-        inMonth ? "opacity-100" : "opacity-35",
-        isFuture ? "opacity-60" : "",
-        isToday ? "ring-1 ring-purple-500/30" : "",
-        // Interaction polish (no layout shift)
-        interactive
-          ? "transition-colors duration-150 hover:bg-white/[0.055] hover:border-white/15"
-          : "transition-colors duration-150",
-        // Accessibility
-        focusRing,
-        "focus-visible:ring-purple-500/35"
-      )}
-      title={label}
-    >
-      {/* Top row */}
-      <div className="flex items-center justify-between gap-2 min-h-5">
-        <div className="min-w-0 text-[12px] leading-none font-medium text-slate-200 tabular-nums">
-          {day}
-        </div>
-
-        <div className="shrink-0 h-5 flex items-center justify-end">
-          {inMonth ? (
-            done ? (
-              <Badge
-                variant="success"
-                className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Done</span>
-              </Badge>
-            ) : (
-              <Badge
-                variant="muted"
-                className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
-                aria-hidden="true"
-              >
-                <span className="hidden sm:inline">—</span>
-                <span className="sm:hidden">•</span>
-              </Badge>
-            )
-          ) : (
-            <span className="h-5" aria-hidden="true" />
-          )}
-        </div>
+    <div className="min-w-0">
+      <div className={cx("text-center text-[12px] font-medium leading-none", isPast ? "text-slate-600" : "text-slate-400")}>
+        {weekday}
       </div>
 
-      {/* Bottom row */}
-      <div className="flex items-center justify-between gap-2 min-h-5">
-        <div className="min-w-0 text-[11px] leading-none text-slate-400 truncate">
-          {done ? `${count} job${count === 1 ? "" : "s"}` : ""}
+      <div
+        role="group"
+        aria-label={label}
+        className={cx(
+          "relative mt-2 h-12 rounded-xl border border-white/10 bg-white/[0.035]",
+          "grid place-items-center select-none",
+          "transition-colors duration-150",
+          "hover:bg-white/[0.055] hover:border-white/15",
+          isPast ? "opacity-45" : "",
+          isToday ? "ring-1 ring-purple-500/35 border-purple-500/25 bg-purple-500/10" : "",
+          focusRing,
+          "focus-visible:ring-purple-500/35"
+        )}
+        title={label}
+      >
+        {/* date number (kept subtle); checkmark is the main “done” signal */}
+        <div
+          className={cx(
+            "absolute left-2 top-2 text-[12px] font-semibold tabular-nums",
+            isPast ? "text-slate-500" : "text-slate-200"
+          )}
+          aria-hidden="true"
+        >
+          {dayNum}
         </div>
 
-        <div className="shrink-0 h-5 flex items-center justify-end">
-          {isToday ? (
-            <Badge
-              variant="purple"
-              className="h-5 px-2 py-0 text-[11px] leading-none whitespace-nowrap"
-            >
-              <span className="sm:hidden">•</span>
-              <span className="hidden sm:inline">today</span>
-            </Badge>
-          ) : (
-            <span className="h-5" aria-hidden="true" />
-          )}
-        </div>
+        {hasActivity ? (
+          <Check className={cx("h-5 w-5", isPast ? "text-slate-500" : "text-emerald-300")} aria-hidden="true" />
+        ) : null}
       </div>
     </div>
   );
 });
+
+function MiniStat({ label, value, icon: Icon }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[12px] font-medium text-slate-400">{label}</div>
+        {Icon ? <Icon className="h-4 w-4 text-slate-400" aria-hidden="true" /> : null}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-slate-100 tabular-nums">{value}</div>
+    </div>
+  );
+}
 
 function DashboardSkeleton() {
   return (
@@ -627,11 +576,12 @@ function DashboardSkeleton() {
           <Skeleton className="h-5 w-48" />
           <Skeleton className="mt-3 h-4 w-72" />
           <div className="mt-4 grid grid-cols-7 gap-2">
-            {Array.from({ length: 28 }).map((_, i) => (
-              <Skeleton key={i} className="aspect-square w-full rounded-xl" />
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-xl" />
             ))}
           </div>
         </Card>
+
         <Card className="p-6">
           <Skeleton className="h-7 w-40" />
           <Skeleton className="mt-3 h-4 w-96" />
@@ -641,6 +591,7 @@ function DashboardSkeleton() {
             <Skeleton className="h-16 rounded-xl" />
           </div>
         </Card>
+
         <Card className="p-6">
           <Skeleton className="h-6 w-52" />
           <div className="mt-4 space-y-3">
@@ -932,28 +883,33 @@ export default function AppHome() {
     return m;
   }, [jobsList]);
 
-  const monthMeta = useMemo(() => {
+  // Small calendar: current week (Sun-Sat), with checkmark inside pill; past days greyed out.
+  const weekMeta = useMemo(() => {
     const now = new Date();
-    const year = now.getFullYear();
-    const monthIndex = now.getMonth();
-    const monthName = now.toLocaleDateString(undefined, { month: "long" });
-    const cells = buildMonthGrid(year, monthIndex);
-
     const todayKey = startOfDay(now);
-    let activeDays = 0;
-    let jobsThisMonth = 0;
 
-    for (const cell of cells) {
-      if (!cell.inMonth) continue;
-      const k = startOfDay(cell.date);
-      const c = jobAddsByDay.get(k) || 0;
-      if (c > 0) {
-        activeDays += 1;
-        jobsThisMonth += c;
-      }
-    }
+    // Sunday-start week (matches labels below)
+    const startKey = todayKey - now.getDay() * DAY_MS;
 
-    return { monthName, cells, todayKey, activeDays, jobsThisMonth };
+    const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const days = labels.map((weekday, i) => {
+      const key = startKey + i * DAY_MS;
+      const d = new Date(key);
+      const count = jobAddsByDay.get(key) || 0;
+      return {
+        key,
+        weekday,
+        dayNum: d.getDate(),
+        hasActivity: count > 0,
+        isToday: key === todayKey,
+        isPast: key < todayKey,
+      };
+    });
+
+    const activeDays = days.reduce((acc, x) => acc + (x.hasActivity ? 1 : 0), 0);
+    const jobsThisWeek = days.reduce((acc, x) => acc + (jobAddsByDay.get(x.key) || 0), 0);
+
+    return { days, activeDays, jobsThisWeek };
   }, [jobAddsByDay]);
 
   const conversion = useMemo(() => {
@@ -1076,97 +1032,62 @@ export default function AppHome() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* LEFT */}
                 <div className="lg:col-span-7 space-y-6">
-                  {/* Calendar */}
-                  <Card aria-label="Activity calendar">
+                  {/* Small Calendar (7 days) */}
+                  <Card aria-label="Weekly activity calendar">
                     <CardHeader
                       className="items-center pb-4"
-                      title={`${monthMeta.monthName} activity`}
+                      title="This week"
                       description={
                         <span className="text-slate-400">
-                          <span className="text-slate-200 font-semibold">{monthMeta.activeDays}</span>{" "}
+                          <span className="text-slate-200 font-semibold">{weekMeta.activeDays}</span>{" "}
                           active days •{" "}
-                          <span className="text-slate-200 font-semibold">{monthMeta.jobsThisMonth}</span>{" "}
+                          <span className="text-slate-200 font-semibold">{weekMeta.jobsThisWeek}</span>{" "}
                           jobs added
                         </span>
                       }
                       action={<CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" />}
                     />
                     <CardContent className="pt-0">
-                      <div className="grid grid-cols-7 gap-2 mb-2 text-[12px] font-medium leading-none text-slate-400">
-                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                          <div key={d} className="text-center">
-                            {d}
-                          </div>
+                      <div className="grid grid-cols-7 gap-2">
+                        {weekMeta.days.map((d) => (
+                          <WeekDayPill
+                            key={d.key}
+                            weekday={d.weekday}
+                            dayNum={d.dayNum}
+                            isToday={d.isToday}
+                            isPast={d.isPast}
+                            hasActivity={d.hasActivity}
+                          />
                         ))}
                       </div>
-
-                      <div role="grid" aria-label="Monthly activity grid" className="grid grid-cols-7 gap-2">
-                        {monthMeta.cells.map((cell) => {
-                          const k = startOfDay(cell.date);
-                          const count = jobAddsByDay.get(k) || 0;
-                          const isFuture = k > monthMeta.todayKey;
-                          const isToday = k === monthMeta.todayKey;
-
-                          return (
-                            <CalendarDay
-                              key={cell.key}
-                              date={cell.date}
-                              inMonth={cell.inMonth}
-                              count={count}
-                              isFuture={isFuture}
-                              isToday={isToday}
-                            />
-                          );
-                        })}
-                      </div>
-
-                      <p className="mt-4 text-[length:var(--ds-caption)] text-slate-500">
-                        Tip: keep momentum by adding{" "}
-                        <span className="text-slate-200 font-medium">1 job/day</span>.
-                      </p>
                     </CardContent>
                   </Card>
 
-                  {/* New Job CTA (polished, subtle) */}
+                  {/* New Job CTA (ONLY + on left, stats on right) */}
                   <Card
                     aria-label="New Job call to action"
                     className="border-purple-500/20 bg-gradient-to-b from-purple-500/10 to-white/[0.03]"
                   >
                     <CardContent className="p-6 sm:p-8">
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-                        <div className="min-w-0">
-                          <h2 className="text-xl sm:text-2xl font-semibold text-slate-100">
-                            Add a job to your pipeline
-                          </h2>
-                          <p className="mt-2 text-[length:var(--ds-body)] text-slate-400 max-w-xl">
-                            Track statuses, generate documents, and keep your outreach consistent — all in one place.
-                          </p>
-
-                          <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <Badge variant="purple">Faster workflow</Badge>
-                            <Badge variant="info">Cleaner tracking</Badge>
-                            <Badge variant="success">Better follow-ups</Badge>
-                          </div>
-
-                          <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                            <PrimaryButton onClick={handleNewJob} aria-label="Add a new job">
-                              <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
-                              Add New Job
-                            </PrimaryButton>
-                            <SecondaryButton
-                              onClick={() => navigate(createPageUrl("Applications"))}
-                              aria-label="Go to applications"
-                            >
-                              <TrendingUp className="w-4 h-4 mr-2" aria-hidden="true" />
-                              View Applications
-                            </SecondaryButton>
-                          </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        {/* Left: just + */}
+                        <div className="flex items-center justify-center sm:justify-start">
+                          <PrimaryButton
+                            onClick={handleNewJob}
+                            aria-label="Add a new job"
+                            className="h-14 w-14 p-0 rounded-2xl"
+                          >
+                            <Plus className="h-6 w-6" aria-hidden="true" />
+                          </PrimaryButton>
                         </div>
 
-                        <div className="grid grid-cols-3 md:grid-cols-1 gap-3 w-full md:w-[220px]">
-                          <StatCard label="This week" value={`${weekApps}`} icon={Clock} hint="Jobs added in last 7 days" />
-                          <StatCard label="Streak" value={`${streak}d`} icon={Zap} hint="Days with at least 1 job added" />
-                          <StatCard label="Offers" value={`${weekOffers}`} icon={Target} hint="Offers updated in last 7 days" />
+                        {/* Right: stats (still inside card) */}
+                        <div className="w-full sm:w-auto">
+                          <div className="grid grid-cols-3 gap-3">
+                            <MiniStat label="This week" value={`${weekApps}`} icon={Clock} />
+                            <MiniStat label="Streak" value={`${streak}d`} icon={Zap} />
+                            <MiniStat label="Offers" value={`${weekOffers}`} icon={Target} />
+                          </div>
                         </div>
                       </div>
                     </CardContent>

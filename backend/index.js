@@ -187,3 +187,29 @@ app.http("dashboard", {
   authLevel: "anonymous",
   handler: withOptions(require("./src/functions/dashboard.js").dashboard)
 });
+app.http("settings", {
+  methods: ["GET", "POST", "OPTIONS"],
+  route: "settings",
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") return { status: 204 };
+
+    if (request.method === "GET") {
+      return require("./src/functions/settingsGet.js").settingsGet(request, context);
+    }
+
+    if (request.method === "POST") {
+      return require("./src/functions/settingsSave.js").settingsSave(request, context);
+    }
+
+    return { status: 405, body: "Method not allowed" };
+  },
+});
+app.http("supportCreate", {
+  methods: ["POST", "OPTIONS"],
+  route: "support",
+  authLevel: "anonymous",
+  handler: withOptions(
+    require("./src/functions/supportCreate.js").supportCreate
+  ),
+});
