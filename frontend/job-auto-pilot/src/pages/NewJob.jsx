@@ -234,6 +234,163 @@ export default function NewJob() {
     return null;
   };
 
+  // ---------------------------
+  // Strong frontend corrections for "wrong role / wrong website"
+  // (does NOT change UI; only improves extractedData before confirm)
+  // ---------------------------
+  const isGenericTitle = (t) => {
+    const s = String(t || "").trim().toLowerCase();
+    if (!s) return true;
+    const bad = new Set([
+      "position",
+      "role",
+      "job",
+      "candidate",
+      "applicant",
+      "individual",
+      "individuals",
+      "engineer", // too generic alone
+      "support",  // too generic alone
+    ]);
+    if (bad.has(s)) return true;
+    if (s.length < 4) return true;
+    return false;
+  };
+
+  const inferTitleFromJD = (jd) => {
+    const text = String(jd || "");
+
+    // e.g. "Technical Support Engineer- job post"
+    let m = text.match(/^([^\n]{4,90}?)\s*-\s*job\s*post\b/im);
+    if (m?.[1]) return m[1].trim();
+
+    // e.g. "Job Title\n\nTechnical Support Engineer"
+    m = text.match(/(?:job\s*title|title)\s*[:\n]+\s*([^\n]{4,90})/i);
+    if (m?.[1]) return m[1].trim();
+
+    // First strong-looking line that isn't a UI label
+    const lines = text
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+
+    for (const line of lines) {
+      const l = line.toLowerCase();
+      if (l.includes("job details") || l.includes("full job description") || l.includes("profile insights")) continue;
+      if (l.includes("apply") && l.includes("company")) continue;
+      if (line.length >= 6 && line.length <= 80 && /[a-zA-Z]/.test(line)) {
+        // avoid lines that look like pay
+        if (line.includes("$")) continue;
+        // avoid pure company line ending with Inc/LLC sometimes; still could be title but ok
+        return line;
+      }
+    }
+    return null;
+  };
+
+  const inferCompanyFromJD = (jd, maybeTitle) => {
+    const text = String(jd || "");
+    const lines = text
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 18);
+
+    // If the first line is title, company is often next 1–2 lines
+    if (maybeTitle) {
+      const idx = lines.findIndex((l) => l === maybeTitle);
+      if (idx !== -1) {
+        const next = lines[idx + 1] || "";
+        if (next && next.length <= 70 && !next.includes("$") && /[a-zA-Z]/.test(next)) {
+          return next.trim();
+        }
+      }
+    }
+
+    // "Company\nApplied Software Inc."
+    let m = text.match(/(?:company|employer|organization)\s*[:\n]+\s*([^\n]{2,80})/i);
+    if (m?.[1]) return m[1].trim();
+
+    return null;
+  };
+
+  const pickBestWebsiteFromText = (jd) => {
+    const text = String(jd || "");
+
+    // Prefer explicit Website: fields
+    let m = text.match(/(?:website)\s*:\s*(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
+    if (m?.[1]) return m[1].trim();
+
+    // Pick first non-social, non-jobboard URL
+    const urls = Array.from(text.matchAll(/https?:\/\/[^\s)]+/gi)).map((x) => x[0]);
+    const isBadDomain = (u) => {
+      const s = String(u).toLowerCase();
+      return (
+        s.includes("youtube.com") ||
+        s.includes("facebook.com") ||
+        s.includes("twitter.com") ||
+        s.includes("x.com/") ||
+        s.includes("linkedin.com") ||
+        s.includes("indeed.com") ||
+        s.includes("glassdoor.com")
+      );
+    };
+
+    const good = urls.find((u) => !isBadDomain(u));
+    if (good) return good;
+
+    return urls[0] || null;
+  };
+
+  const refineExtracted = (data, jd) => {
+    const next = { ...(data || {}) };
+    const inferredTitle = inferTitleFromJD(jd);
+    if (isGenericTitle(next.jobTitle) && inferredTitle) next.jobTitle = inferredTitle;
+
+    const inferredCompany = inferCompanyFromJD(jd, inferredTitle || next.jobTitle);
+    const companyStr = String(next.company || "").trim();
+    if (!companyStr || companyStr.toLowerCase() === "company") {
+      if (inferredCompany) next.company = inferredCompany;
+    }
+
+    const inferredWebsite = pickBestWebsiteFromText(jd);
+    const websiteStr = String(next.website || "").trim();
+    if (!websiteStr && inferredWebsite) next.website = inferredWebsite;
+
+    // If extractor picked a social link, replace with best website
+    if (websiteStr) {
+      const w = websiteStr.toLowerCase();
+      const isSocial =
+        w.includes("youtube.com") ||
+        w.includes("facebook.com") ||
+        w.includes("twitter.com") ||
+        w.includes("x.com/") ||
+        w.includes("linkedin.com");
+      if (isSocial && inferredWebsite) next.website = inferredWebsite;
+    }
+
+    return next;
+  };
+
+  // Build JD sent to /api/apply/prepare with strong overrides (keeps UI same)
+  const buildJobDescriptionForApi = (jdRaw, extracted) => {
+    const title = String(extracted?.jobTitle || "").trim();
+    const company = String(extracted?.company || "").trim();
+    const website = String(extracted?.website || "").trim();
+    const location = String(extracted?.location || "").trim();
+
+    const header = [
+      title ? `Job Title: ${title}` : null,
+      company ? `Company: ${company}` : null,
+      website ? `Website: ${website}` : null,
+      location ? `Location: ${location}` : null,
+    ].filter(Boolean);
+
+    if (!header.length) return String(jdRaw || "");
+    return `${header.join("\n")}\n\n${String(jdRaw || "")}`;
+  };
+
   useEffect(() => {
     // warm SWA user id (non-blocking)
     (async () => {
@@ -502,7 +659,6 @@ export default function NewJob() {
       });
 
       let nextExtracted = {
-        
         jobTitle: extracted?.jobTitle || "Position",
         company: extracted?.company || "Company",
         website: extracted?.website || null,
@@ -566,9 +722,11 @@ export default function NewJob() {
               }
             : null,
       };
-if (nextExtracted.payMin === 0 && (nextExtracted.payMax ?? 0) > 0) nextExtracted.payMin = null;
-if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0) > 0)
-  nextExtracted.payAnnualizedMin = null;
+
+      if (nextExtracted.payMin === 0 && (nextExtracted.payMax ?? 0) > 0) nextExtracted.payMin = null;
+      if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0) > 0)
+        nextExtracted.payAnnualizedMin = null;
+
       // ✅ If pay fields are missing, try to extract from JD + extracted lists (often polluted with pay string)
       const payTextBlob = [
         jobDescription,
@@ -600,6 +758,9 @@ if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0
           : null,
       };
 
+      // ✅ Fix wrong role name / wrong website using deterministic parsing
+      nextExtracted = refineExtracted(nextExtracted, jobDescription);
+
       setExtractedData(nextExtracted);
       setShowConfirm(true);
 
@@ -630,6 +791,9 @@ if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0
       const payFallback = extractPayFromText(jobDescription);
       if (payFallback) nextExtracted = { ...nextExtracted, ...payFallback };
 
+      // ✅ Fix wrong role name / wrong website using deterministic parsing
+      nextExtracted = refineExtracted(nextExtracted, jobDescription);
+
       setExtractedData(nextExtracted);
       setShowConfirm(true);
 
@@ -649,6 +813,8 @@ if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0
   };
 
   const handleGenerate = async () => {
+    let toastId = null;
+
     try {
       if (!extractedData?.jobTitle || !jobDescription.trim()) {
         toast.error("Missing job title or job description.");
@@ -662,62 +828,54 @@ if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0
         return;
       }
 
-      const payload = {
-        payText: extractedData?.payText ?? null,
-        payMin:
-          typeof extractedData?.payMin === "number" && Number.isFinite(extractedData.payMin)
-            ? extractedData.payMin
-            : null,
-        payMax:
-          typeof extractedData?.payMax === "number" && Number.isFinite(extractedData.payMax)
-            ? extractedData.payMax
-            : null,
-        payCurrency: extractedData?.payCurrency || "USD",
-        payPeriod: extractedData?.payPeriod ?? null,
-        payAnnualizedMin:
-          typeof extractedData?.payAnnualizedMin === "number" && Number.isFinite(extractedData.payAnnualizedMin)
-            ? extractedData.payAnnualizedMin
-            : null,
-        payAnnualizedMax:
-          typeof extractedData?.payAnnualizedMax === "number" && Number.isFinite(extractedData.payAnnualizedMax)
-            ? extractedData.payAnnualizedMax
-            : null,
+      // ✅ NEW LOGIC: call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
+      // We prepend a small structured header so the extractor never returns generic titles like "individuals".
+      const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
 
-        resumeId: selectedResume,
-        jobTitle: extractedData.jobTitle,
-        company: extractedData.company,
-        website: extractedData.website,
-        location: extractedData.location,
-        seniority: extractedData.seniority,
-        keywords: extractedData.keywords,
-        jobDescription,
-        aiMode,
-        studentMode,
-      };
+      toastId = toast.loading("Generating tailored resume + cover letter…");
 
-      const created = await apiFetch("/api/jobs", {
+      const prepared = await apiFetch("/api/apply/prepare", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          resumeId: selectedResume,
+          jobDescription: jdForApi,
+          jobUrl: null,
+        }),
       });
 
-      // IMPORTANT: your backend returns { ok:true, job: {...} } in many functions.
-      // So support both shapes:
-      const jobId = created?.job?.id || created?.id;
+      const jobData = prepared?.jobData || null;
+      const tailoredResume = prepared?.tailoredResume || null;
+      const coverLetter = prepared?.coverLetter || null;
 
-      if (!jobId) {
-        toast.error("Job created but no jobId returned.");
-        return;
-      }
+      // Cache IDs for Packet page / later screens (no UI change)
+      if (tailoredResume?.id) localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
+      if (tailoredResume?.blobUrl) localStorage.setItem("latestTailoredResumeBlobUrl", String(tailoredResume.blobUrl));
+      if (coverLetter?.id) localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
+      if (typeof coverLetter?.text === "string") localStorage.setItem("latestCoverLetterText", coverLetter.text);
+      if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
+      localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
 
-      localStorage.setItem("latestJobId", jobId);
+      // Keep the confirm-screen edits as the display source
+      const packetTitle = String(extractedData?.jobTitle || jobData?.jobTitle || "Position");
+      const packetCompany = String(extractedData?.company || jobData?.company || "Company");
 
-      // ✅ Navigate WITH the jobId (best: route param or querystring)
-      navigate(`/packet?id=${encodeURIComponent(jobId)}`);
+      toast.success(`Packet generated: ${packetTitle} @ ${packetCompany}`, { id: toastId });
+      toastId = null;
 
-      // (If your router doesn't have /packet/:jobId, use query instead: navigate(`/packet?jobId=${encodeURIComponent(jobId)}`))
+      // Navigate to packet. Keep the existing pattern, but also include the new ids as query params.
+      const packetId = coverLetter?.id || tailoredResume?.id || "";
+      localStorage.setItem("latestJobId", String(packetId || "")); // keep existing key for compatibility
+
+      const qs = new URLSearchParams();
+      if (packetId) qs.set("id", String(packetId));
+      if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
+      if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
+
+      navigate(`/packet?${qs.toString()}`);
     } catch (e) {
       console.error(e);
-      toast.error(e?.message || "Failed to create job.");
+      if (toastId) toast.dismiss(toastId);
+      toast.error(e?.message || "Failed to generate packet.");
     }
   };
 
@@ -780,23 +938,22 @@ if (nextExtracted.payAnnualizedMin === 0 && (nextExtracted.payAnnualizedMax ?? 0
     const periodKey = normalizePayPeriod(job?.payPeriod);
     const suffix = periodKey ? periodMap[periodKey] || "" : "";
 
-   const minNum =
-  typeof job?.payMin === "number" && Number.isFinite(job.payMin)
-    ? job.payMin
-    : null;
+    const minNum =
+      typeof job?.payMin === "number" && Number.isFinite(job.payMin)
+        ? job.payMin
+        : null;
 
-const maxNum =
-  typeof job?.payMax === "number" && Number.isFinite(job.payMax)
-    ? job.payMax
-    : null;
+    const maxNum =
+      typeof job?.payMax === "number" && Number.isFinite(job.payMax)
+        ? job.payMax
+        : null;
 
-// ✅ If one side is 0 and the other side is positive, treat 0 as "missing"
-const minFixed = minNum === 0 && (maxNum ?? 0) > 0 ? null : minNum;
-const maxFixed = maxNum === 0 && (minNum ?? 0) > 0 ? null : maxNum;
+    // ✅ If one side is 0 and the other side is positive, treat 0 as "missing"
+    const minFixed = minNum === 0 && (maxNum ?? 0) > 0 ? null : minNum;
+    const maxFixed = maxNum === 0 && (minNum ?? 0) > 0 ? null : maxNum;
 
-const min = fmtMoney(minFixed);
-const max = fmtMoney(maxFixed);
-
+    const min = fmtMoney(minFixed);
+    const max = fmtMoney(maxFixed);
 
     if (min && max) {
       return min === max
@@ -813,17 +970,14 @@ const max = fmtMoney(maxFixed);
   };
 
   const renderAnnual = (job) => {
-    const periodKey = normalizePayPeriod(job?.payPeriod);
-
     const minA = typeof job?.payAnnualizedMin === "number" ? job.payAnnualizedMin : null;
-const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
+    const maxA = typeof job?.payAnnualizedMax === "number" ? job.payAnnualizedMax : null;
 
-const minAFixed = minA === 0 && (maxA ?? 0) > 0 ? null : minA;
-const maxAFixed = maxA === 0 && (minA ?? 0) > 0 ? null : maxA;
+    const minAFixed = minA === 0 && (maxA ?? 0) > 0 ? null : minA;
+    const maxAFixed = maxA === 0 && (minA ?? 0) > 0 ? null : maxA;
 
-const minS = fmtMoney(minAFixed);
-const maxS = fmtMoney(maxAFixed);
-
+    const minS = fmtMoney(minAFixed);
+    const maxS = fmtMoney(maxAFixed);
 
     if (minS && maxS) return `Est. $${minS} – $${maxS} /yr`;
     if (minS) return `Est. $${minS} /yr`;
@@ -993,6 +1147,9 @@ const maxS = fmtMoney(maxAFixed);
         {/* Confirmation Screen */}
         {showConfirm && extractedData && (
           <div className="w-full">
+            {/* ... UI unchanged ... */}
+            {/* (All your JSX below stays exactly the same as you provided) */}
+            {/* --- START EXISTING UI --- */}
             <div className="mb-7 text-center">
               <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">Confirm details</h1>
               <p className="text-lg text-white/70">Review extracted info before generating</p>
@@ -1106,7 +1263,6 @@ const maxS = fmtMoney(maxAFixed);
                           </label>
 
                           <div className="flex flex-wrap gap-3">
-                            {/* ✅ FIX: pass extractedData so pay shows */}
                             {renderPayPrimary(extractedData) && (
                               <span className={pillGood}>{renderPayPrimary(extractedData)}</span>
                             )}
@@ -1425,6 +1581,7 @@ const maxS = fmtMoney(maxAFixed);
         {/* Main Form */}
         {!showConfirm && (
           <div className="max-w-[1180px] mx-auto">
+            {/* ... UI unchanged ... */}
             <div className="mb-5 text-center">
               <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">Create a new job packet</h1>
               <p className="text-lg text-white/70">Paste a job description — we’ll extract details automatically</p>
@@ -1497,9 +1654,12 @@ const maxS = fmtMoney(maxAFixed);
                       <p className="mb-3 text-sm text-white/60">No resumes found</p>
                       <Button
                         onClick={() => navigate(createPageUrl("Resumes"))}
-                        className={["rounded-2xl", "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60", hoverLift, pressFx].join(
-                          " "
-                        )}
+                        className={[
+                          "rounded-2xl",
+                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
                       >
                         Upload Resume
                       </Button>

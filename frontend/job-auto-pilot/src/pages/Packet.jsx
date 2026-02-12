@@ -2,7 +2,14 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
-import { Rocket, Download, CheckCircle2, ArrowLeft, FileText, Loader2 } from "lucide-react";
+import {
+  Rocket,
+  Download,
+  CheckCircle2,
+  ArrowLeft,
+  FileText,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 export default function Packet() {
@@ -10,80 +17,71 @@ export default function Packet() {
   const [packetData, setPacketData] = useState(null);
   const [isGenerating, setIsGenerating] = useState(true);
 
- useEffect(() => {
-  const urlParams = new URLSearchParams(window.location.search);
-const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
+  // ---------------------------
+  // API helper (SWA cookies + safe JSON)
+  // ---------------------------
+  const apiFetch = async (path, options = {}) => {
+    const res = await fetch(path, {
+      ...options,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
 
-
-  if (!jobId) {
-    navigate(createPageUrl("AppHome"));
-    return;
-  }
-
-  let cancelled = false;
-  let timer = null;
-
-  const readJsonSafe = async (res) => {
     const text = await res.text().catch(() => "");
-    if (!text) return null;
+    let data = null;
     try {
-      return JSON.parse(text);
+      data = text ? JSON.parse(text) : null;
     } catch {
-      return { raw: text };
+      data = { raw: text };
     }
+
+    if (!res.ok) {
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        (typeof data?.raw === "string" ? data.raw : "") ||
+        text ||
+        `Request failed (${res.status})`;
+
+      const err = new Error(msg);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+
+    return data;
   };
 
-  const run = async () => {
-    try {
-      setIsGenerating(true);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
 
-      // ✅ Kick off generation (SWA cookies required)
-      const startRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/generate`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!jobId) {
+      navigate(createPageUrl("AppHome"));
+      return;
+    }
 
-      if (!startRes.ok) {
-        const data = await readJsonSafe(startRes);
-        const msg = data?.error || data?.raw || `Generation start failed (${startRes.status})`;
+    let cancelled = false;
+    let timer = null;
 
-        // ✅ if session expired, send them to login
-        if (startRes.status === 401) {
-          toast.error("Session expired, please log in.");
-          navigate("/login"); // or createPageUrl("Login") if you have it
-          return;
-        }
+    const goLogin = () => {
+      toast.error("Session expired, please log in.");
+      navigate("/login");
+    };
 
-        throw new Error(msg);
-      }
+    const poll = async () => {
+      if (cancelled) return;
 
-      // ✅ Poll job (NO userId query param, cookies included)
-      const poll = async () => {
-        if (cancelled) return;
-
-        const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      try {
+        const payload = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
           method: "GET",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
         });
 
-        if (!r.ok) {
-          const data = await readJsonSafe(r);
-          const msg = data?.error || data?.raw || `Status request failed (${r.status})`;
-
-          if (r.status === 401) {
-            toast.error("Session expired, please log in.");
-            navigate("/login");
-            return;
-          }
-
-          throw new Error(msg);
-        }
-
-        const payload = await r.json().catch(() => null);
         const job = payload?.job || payload;
-
         if (!job) throw new Error("Missing job payload");
 
         if (job.status === "completed") {
@@ -99,28 +97,91 @@ const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
         }
 
         timer = setTimeout(poll, 1200);
-      };
+      } catch (e) {
+        console.error(e);
 
-      poll();
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.message || "Could not start generation.");
-      setIsGenerating(false);
-    }
-  };
+        if (e?.status === 401) {
+          goLogin();
+          return;
+        }
 
-  run();
+        toast.error(e?.message || "Status request failed.");
+        setIsGenerating(false);
+      }
+    };
 
-  return () => {
-    cancelled = true;
-    if (timer) clearTimeout(timer);
-  };
-}, [navigate]);
+    const run = async () => {
+      try {
+        setIsGenerating(true);
 
+        // ✅ First try to read job — avoid re-generating if already completed
+        try {
+          const payload = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+            method: "GET",
+          });
+          const job = payload?.job || payload;
 
-  // ✅ Real downloads (for now: downloads as .txt from the saved job outputs)
+          if (job?.status === "completed") {
+            setPacketData(job);
+            setIsGenerating(false);
+            return;
+          }
+
+          if (job?.status === "failed") {
+            toast.error("Generation failed.");
+            setIsGenerating(false);
+            return;
+          }
+        } catch (e) {
+          // If auth expired, bounce to login; if job missing, go home.
+          if (e?.status === 401) return goLogin();
+          if (e?.status === 404) {
+            toast.error("Job not found.");
+            navigate(createPageUrl("AppHome"));
+            return;
+          }
+          // Otherwise: proceed to try generation kickoff
+        }
+
+        // ✅ Kick off generation (idempotent-friendly)
+        try {
+          await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}/generate`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+        } catch (e) {
+          // If already generating, just poll.
+          if (e?.status === 401) return goLogin();
+          if (e?.status !== 409 && e?.status !== 423) {
+            throw e;
+          }
+        }
+
+        // ✅ Poll until completed
+        poll();
+      } catch (e) {
+        console.error(e);
+        if (e?.status === 401) {
+          goLogin();
+          return;
+        }
+        toast.error(e?.message || "Could not start generation.");
+        setIsGenerating(false);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [navigate]);
+
+  // ✅ Real downloads (downloads as .txt from saved outputs)
   const downloadTextFile = (filename, text) => {
     if (!text) return toast.error("No document available");
+
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
 
@@ -136,7 +197,7 @@ const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
   };
 
   const handleDownloadResume = () => {
-    const resume = packetData?.outputs?.resume;
+    const resume = packetData?.outputs?.resume || packetData?.outputs?.resumeBullets;
     downloadTextFile(resume?.fileName || "resume.txt", resume?.text || "");
   };
 
@@ -154,7 +215,7 @@ const jobId = urlParams.get("id") || localStorage.getItem("latestJobId");
     navigate(createPageUrl("AppHome"));
   };
 
-  // Show generating state (keeps your style, not a redesign)
+  // Generating state (UI unchanged)
   if (isGenerating && !packetData) {
     return (
       <div className="min-h-screen bg-[hsl(240,10%,4%)]">

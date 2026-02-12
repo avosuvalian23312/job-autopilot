@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import AppNav from "@/components/app/AppNav";
 import { Button } from "@/components/ui/button";
@@ -17,31 +17,164 @@ import {
 import { toast } from "sonner";
 
 export default function Results() {
+  const navigate = useNavigate();
   const urlParams = new URLSearchParams(window.location.search);
   const id = urlParams.get("id");
+
   const [copied, setCopied] = useState(null);
   const [application, setApplication] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (id) {
-      const data = sessionStorage.getItem(`app_${id}`);
-      if (data) {
-        setApplication(JSON.parse(data));
-      }
-      setIsLoading(false);
+  const apiFetch = async (path, options = {}) => {
+    const res = await fetch(path, {
+      ...options,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+
+    const text = await res.text().catch(() => "");
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text };
     }
-  }, [id]);
+
+    if (!res.ok) {
+      const msg =
+        data?.error ||
+        data?.message ||
+        data?.detail ||
+        (typeof data?.raw === "string" ? data.raw : "") ||
+        text ||
+        `Request failed (${res.status})`;
+
+      const err = new Error(msg);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+
+    return data;
+  };
+
+  const normalizeJobToApplication = (job) => {
+    const outputs = job?.outputs || {};
+    const coverObj =
+      outputs?.coverLetter || outputs?.cover_letter || job?.coverLetter || job?.cover_letter || {};
+    const resumeObj =
+      outputs?.resumeBullets ||
+      outputs?.resume_bullets ||
+      outputs?.resume ||
+      job?.resumeBullets ||
+      job?.resume_bullets ||
+      job?.resume ||
+      {};
+
+    const jobTitle = job?.jobTitle || job?.job_title || job?.title || "Job";
+    const company = job?.company || job?.company_name || "Company";
+
+    const coverText =
+      typeof coverObj?.text === "string"
+        ? coverObj.text
+        : typeof job?.cover_letter === "string"
+        ? job.cover_letter
+        : "";
+
+    const resumeText =
+      typeof resumeObj?.text === "string"
+        ? resumeObj.text
+        : typeof job?.resume_bullets === "string"
+        ? job.resume_bullets
+        : "";
+
+    return {
+      job_title: jobTitle,
+      company,
+      status: job?.status || job?.state || "unknown",
+      job_link: job?.jobLink || job?.job_link || job?.website || job?.link || null,
+      cover_letter: coverText,
+      resume_bullets: resumeText,
+      __outputs: {
+        cover: coverObj,
+        resume: resumeObj,
+      },
+      __rawJob: job,
+    };
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!id) {
+        setIsLoading(false);
+        setApplication(null);
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const payload = await apiFetch(`/api/jobs/${encodeURIComponent(id)}`, {
+          method: "GET",
+        });
+
+        const job = payload?.job || payload;
+        if (!job) throw new Error("Missing job payload");
+
+        // ✅ If not ready, send them to Packet page (which handles generate+poll)
+        if (job.status && job.status !== "completed") {
+          navigate(`/packet?id=${encodeURIComponent(id)}`);
+          return;
+        }
+
+        const normalized = normalizeJobToApplication(job);
+
+        if (!cancelled) {
+          setApplication(normalized);
+          setIsLoading(false);
+        }
+      } catch (e) {
+        console.error(e);
+
+        if (e?.status === 401) {
+          toast.error("Session expired, please log in.");
+          navigate("/login");
+          return;
+        }
+
+        if (!cancelled) {
+          setApplication(null);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, navigate]);
 
   const handleCopy = (text, type) => {
-    navigator.clipboard.writeText(text);
+    const t = String(text || "");
+    if (!t.trim()) return toast.error("Nothing to copy yet");
+    navigator.clipboard.writeText(t);
     setCopied(type);
     toast.success(`${type} copied to clipboard`);
     setTimeout(() => setCopied(null), 2000);
   };
 
   const handleDownload = (text, filename) => {
-    const blob = new Blob([text], { type: "text/plain" });
+    const t = String(text || "");
+    if (!t.trim()) return toast.error("No document available");
+
+    const blob = new Blob([t], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -87,7 +220,11 @@ export default function Results() {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link to={createPageUrl("AppHome")}>
-            <Button variant="ghost" size="icon" className="text-white/40 hover:text-white hover:bg-white/5 rounded-xl">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white/40 hover:text-white hover:bg-white/5 rounded-xl"
+            >
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
@@ -108,10 +245,16 @@ export default function Results() {
           <div className="lg:col-span-2">
             <Tabs defaultValue="cover_letter" className="w-full">
               <TabsList className="bg-white/5 border border-white/5 rounded-xl p-1 mb-6">
-                <TabsTrigger value="cover_letter" className="rounded-lg data-[state=active]:bg-purple-600 data-[state=active]:text-white text-white/50 px-6">
+                <TabsTrigger
+                  value="cover_letter"
+                  className="rounded-lg data-[state=active]:bg-purple-600 data-[state=active]:text-white text-white/50 px-6"
+                >
                   Cover Letter
                 </TabsTrigger>
-                <TabsTrigger value="resume_bullets" className="rounded-lg data-[state=active]:bg-purple-600 data-[state=active]:text-white text-white/50 px-6">
+                <TabsTrigger
+                  value="resume_bullets"
+                  className="rounded-lg data-[state=active]:bg-purple-600 data-[state=active]:text-white text-white/50 px-6"
+                >
                   Resume Bullets
                 </TabsTrigger>
               </TabsList>
@@ -151,19 +294,29 @@ export default function Results() {
                   onClick={() => handleCopy(application.cover_letter, "Cover letter")}
                   className="w-full justify-start bg-white/5 hover:bg-white/10 text-white/70 rounded-xl py-5 border border-white/5"
                 >
-                  {copied === "Cover letter" ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-400" /> : <Copy className="w-4 h-4 mr-3" />}
+                  {copied === "Cover letter" ? (
+                    <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4 mr-3" />
+                  )}
                   Copy Cover Letter
                 </Button>
                 <Button
                   onClick={() => handleCopy(application.resume_bullets, "Resume bullets")}
                   className="w-full justify-start bg-white/5 hover:bg-white/10 text-white/70 rounded-xl py-5 border border-white/5"
                 >
-                  {copied === "Resume bullets" ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-400" /> : <Copy className="w-4 h-4 mr-3" />}
+                  {copied === "Resume bullets" ? (
+                    <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4 mr-3" />
+                  )}
                   Copy Resume Bullets
                 </Button>
                 <div className="border-t border-white/5 pt-3">
                   <Button
-                    onClick={() => handleDownload(application.cover_letter, `${application.company}_cover_letter.txt`)}
+                    onClick={() =>
+                      handleDownload(application.cover_letter, `${application.company}_cover_letter.txt`)
+                    }
                     className="w-full justify-start bg-white/5 hover:bg-white/10 text-white/70 rounded-xl py-5 border border-white/5"
                   >
                     <Download className="w-4 h-4 mr-3" />
@@ -171,7 +324,9 @@ export default function Results() {
                   </Button>
                 </div>
                 <Button
-                  onClick={() => handleDownload(application.cover_letter, `${application.company}_cover_letter.docx`)}
+                  onClick={() =>
+                    handleDownload(application.cover_letter, `${application.company}_cover_letter.docx`)
+                  }
                   className="w-full justify-start bg-white/5 hover:bg-white/10 text-white/70 rounded-xl py-5 border border-white/5"
                 >
                   <Download className="w-4 h-4 mr-3" />
@@ -196,7 +351,12 @@ export default function Results() {
                   <span className="text-purple-400 font-medium capitalize">{application.status}</span>
                 </div>
                 {application.job_link && (
-                  <a href={application.job_link} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 text-xs underline block">
+                  <a
+                    href={application.job_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 text-xs underline block"
+                  >
                     View original posting →
                   </a>
                 )}

@@ -213,3 +213,40 @@ app.http("supportCreate", {
     require("./src/functions/supportCreate.js").supportCreate
   ),
 });
+app.http("resumeOptimize", {
+  methods: ["POST", "OPTIONS"],
+  route: "resume/optimize",
+  authLevel: "anonymous",
+  handler: withOptions(require("./src/functions/resumeOptimize.js").resumeOptimize),
+});
+const { applyPrepare } = require("./src/functions/applyPrepare");
+const { applyPrepare } = require("./src/functions/applyPrepare");
+const { coverLettersList } = require("./src/functions/coverLettersList");
+const { coverLettersGet } = require("./src/functions/coverLettersGet");
+
+app.http("applyPrepare", {
+  methods: ["POST", "OPTIONS"],
+  route: "apply/prepare",
+  authLevel: "anonymous",
+  handler: applyPrepare,
+});
+app.http("applyPrepare", {
+  methods: ["POST", "OPTIONS"],
+  route: "apply/prepare",
+  authLevel: "anonymous",
+  handler: applyPrepare,
+});
+
+app.http("coverLettersList", {
+  methods: ["GET", "OPTIONS"],
+  route: "coverletters",
+  authLevel: "anonymous",
+  handler: coverLettersList,
+});
+
+app.http("coverLettersGet", {
+  methods: ["GET", "OPTIONS"],
+  route: "coverletters/{id}",
+  authLevel: "anonymous",
+  handler: coverLettersGet,
+});
