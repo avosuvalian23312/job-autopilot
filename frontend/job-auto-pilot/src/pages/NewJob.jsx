@@ -916,7 +916,10 @@ export default function NewJob() {
       setIsAnalyzing(false);
     }
   };
-
+const AI_MODE_BACKEND = {
+  standard: "STANDARD",
+  elite: "ELITE",
+};
   const handleGenerate = async () => {
     let toastId = null;
 
@@ -938,15 +941,21 @@ export default function NewJob() {
       const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
 
       toastId = toast.loading("Generating tailored resume + cover letter…");
+const prepared = await apiFetch("/api/apply/prepare", {
+  method: "POST",
+  body: JSON.stringify({
+    resumeId: selectedResume,
+    jobDescription: jdForApi,
+    jobUrl: null,
 
-      const prepared = await apiFetch("/api/apply/prepare", {
-        method: "POST",
-        body: JSON.stringify({
-          resumeId: selectedResume,
-          jobDescription: jdForApi,
-          jobUrl: null,
-        }),
-      });
+    // ✅ send mode to backend so it can pick the prompt
+    aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
+
+    // (optional) send student flag too if prompts differ
+    studentMode: !!studentMode,
+  }),
+});
+
 
       // ✅ CRITICAL: do NOT cache direct blob URLs anywhere (private storage => must use /api/resume/sas)
       // Clear legacy keys so Packet (or any other screen) can't accidentally open a raw blob URL.

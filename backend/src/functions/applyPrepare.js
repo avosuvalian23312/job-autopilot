@@ -395,8 +395,6 @@ MOCK DATA POLICY:
   • experience.bullets (capability-style only, never implying new employment)
 - Never create fake employers, fake dates, fake titles, or fake job history under any mode.
 
-
-
 QUALITY:
 - Extremely tailor to JOB DATA and TARGET_KEYWORDS (weave naturally).
 - Use recruiter-friendly ordering: headline -> summary -> skills -> experience -> education -> certs -> projects.
@@ -434,21 +432,87 @@ ${String(resumeText || "")}
   return safeJsonParse(content) || {};
 }
 
+// ---------------------------
+// PASS 2 prompts (STANDARD vs ELITE)
+// ---------------------------
+
 /**
- * PASS 2: Refine
+ * STANDARD: truthful-only resume refinement.
+ * - No new employers/roles/dates
+ * - No invented experience/projects
+ * - In training_sample mode, SAMPLE content must be clearly labeled SAMPLE
  */
-async function refineTailoredResumeDraft({
-  draft,
-  jobData,
-  resumeText,
-  profile,
-  aiMode,
-  studentMode,
-  canonicalFullName,
-  targetKeywords,
-  mode,
-}) {
-  const system = `
+const REFINE_SYSTEM_STANDARD = `
+You are an expert ATS resume editor and resume architect.
+
+Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
+
+{
+  "header": {
+    "fullName": string|null,
+    "headline": string|null,
+    "location": string|null,
+    "phone": string|null,
+    "email": string|null,
+    "linkedin": string|null,
+    "portfolio": string|null
+  },
+  "summary": string[],
+  "skills": [
+    { "category": string, "items": string[] }
+  ],
+  "experience": [
+    {
+      "title": string|null,
+      "company": string|null,
+      "location": string|null,
+      "dates": string|null,
+      "bullets": string[]
+    }
+  ],
+  "education": [
+    { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+  ],
+  "certifications": string[],
+  "projects": [
+    { "name": string|null, "bullets": string[] }
+  ]
+}
+
+HARD CONSTRAINTS:
+- header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+- No "..." anywhere. No incomplete phrases.
+- Bullets <= 110 characters preferred. Strong verbs. No fluff.
+- Keep output 1-page dense and recruiter-friendly.
+- Skills must be grouped into clean, professional categories (5–7 categories).
+
+TRUTHFULNESS RULES (STRICT):
+- MODE "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, titles, dates, roles, tools, credentials, or metrics.
+- Do NOT add new employers or new jobs. Do NOT add new dates.
+- You may rewrite bullets, reorder sections, and improve clarity/impact as long as it stays true.
+- If something is not supported by RESUME TEXT or PROFILE, omit it.
+
+TRAINING SAMPLE RULES:
+- MODE "training_sample": you may add SAMPLE-only items ONLY if clearly labeled "SAMPLE" and described as practice/learning.
+- SAMPLE content may appear only in summary, skills, and projects. Do NOT fabricate employment history.
+
+JOB-TARGETING RULES:
+- Read JOB DATA and TARGET_KEYWORDS carefully.
+- Rewrite headline + summary to match the job’s domain.
+- Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
+- Rewrite experience bullets to highlight the strongest alignment to the job.
+- Weave keywords naturally; never keyword-stuff.
+
+No markdown. JSON only.
+`.trim();
+
+/**
+ * ELITE: higher-impact refinement, still truthful.
+ * - Stronger positioning, better framing, better keyword coverage
+ * - Still NO invented employers/roles/dates
+ * - In training_sample mode, SAMPLE content must be labeled SAMPLE
+ */
+const REFINE_SYSTEM_ELITE_TRUTHFUL = `
 You are an expert ATS resume writer, resume editor, and resume architect.
 
 Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
@@ -492,45 +556,26 @@ HARD CONSTRAINTS:
 - Keep output 1-page dense and recruiter-friendly.
 - Skills must be grouped into clean, professional categories (5–7 categories).
 
-MOCK EXPERIENCE POLICY (REAL COMPANIES):
-- You MAY generate mock experience using REAL companies that match the job’s industry.
-- Mock experience MUST include:
-  • a real company name,
-  • a realistic job title,
-  • a location,
-  • dates 1–2 years prior,
-  • and strong, job-relevant bullets.
-- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
-- Mock experience MUST NOT reference that it is mock or fictional.
-- Mock experience MUST read as real, professional employment.
+TRUTHFULNESS RULES:
+- MODE "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, titles, dates, roles, tools, credentials, or metrics.
+- Do NOT add new employers or new jobs. Do NOT add new dates.
+- You MAY strengthen bullets by:
+  • clarifying scope and outcomes if implied by the text,
+  • consolidating duplicates,
+  • rewriting to recruiter language,
+  • adding missing but supported tools/keywords from RESUME TEXT/PROFILE.
+- If a detail is not supported, omit it.
 
-MOCK PROJECT POLICY (ENTERPRISE-GRADE PROJECTS):
-- You MAY generate new projects that appear as professional, enterprise-level accomplishments.
-- Projects MUST be realistic, job-aligned, and written as real deliverables.
-- Projects MUST reflect tasks from the JOB DATA, including:
-  • server room organization and smart hands support,
-  • IDF/MDF upkeep and vendor escorting,
-  • printer hardware repair and warranty coordination,
-  • Teams Rooms and Solstice Pod configuration and firmware updates,
-  • A/V troubleshooting and meeting room readiness,
-  • proactive floor walks and issue identification,
-  • asset lifecycle management (deployment, reuse, disposal),
-  • SLA improvement and ticket efficiency initiatives,
-  • executive/VIP support.
-- Projects MUST NOT reference that they are mock.
-- Projects MUST NOT be framed as “labs” unless the job domain requires it.
+TRAINING SAMPLE RULES:
+- MODE "training_sample": you may add SAMPLE-only items ONLY if clearly labeled "SAMPLE" and described as practice/learning.
+- SAMPLE content may appear in summary, skills, projects, and (capability-style) bullets. Do NOT fabricate employment history.
 
 JOB-TARGETING RULES:
 - Read JOB DATA and TARGET_KEYWORDS carefully.
-- Rewrite summary to strongly match the job’s domain.
-- Rewrite skills to emphasize the tools, technologies, and competencies the job values most.
+- Rewrite headline + summary to strongly match the job’s domain.
+- Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
 - Rewrite experience bullets to highlight the strongest alignment to the job.
-- Add mock experience and projects that directly reflect the job’s needs.
-- Ensure all content reads as professional, cohesive, and fully real.
-
-QUALITY GOALS:
-- Extremely tailor the resume to JOB DATA and TARGET_KEYWORDS.
-- Weave keywords naturally into summary, skills, and experience.
+- Improve ATS keyword coverage naturally across summary/skills/bullets.
 - Prioritize recruiter scanning order:
   1. headline
   2. summary
@@ -542,6 +587,26 @@ QUALITY GOALS:
 
 No markdown. JSON only.
 `.trim();
+
+/**
+ * PASS 2: Refine
+ */
+async function refineTailoredResumeDraft({
+  draft,
+  jobData,
+  resumeText,
+  profile,
+  aiMode,
+  studentMode,
+  canonicalFullName,
+  targetKeywords,
+  mode,
+}) {
+  // ✅ STANDARD vs ELITE prompt routing
+  const system =
+    String(aiMode || "").toLowerCase() === "elite"
+      ? REFINE_SYSTEM_ELITE_TRUTHFUL
+      : REFINE_SYSTEM_STANDARD;
 
   const user = `
 MODE: ${mode}
@@ -576,6 +641,130 @@ ${JSON.stringify(draft || {}, null, 2)}
 }
 
 /**
+ * PASS 3 prompts (STANDARD vs ELITE)
+ * NOTE: This stage MUST NOT invent employment history. It only polishes what exists.
+ */
+const AUDIT_SYSTEM_STANDARD = `
+You are an ATS resume auditor and editor.
+
+Return ONLY valid JSON:
+{
+  "final": {
+    "header": {
+      "fullName": string|null,
+      "headline": string|null,
+      "location": string|null,
+      "phone": string|null,
+      "email": string|null,
+      "linkedin": string|null,
+      "portfolio": string|null
+    },
+    "summary": string[],
+    "skills": [
+      { "category": string, "items": string[] }
+    ],
+    "experience": [
+      { "title": string|null, "company": string|null, "location": string|null, "dates": string|null, "bullets": string[] }
+    ],
+    "education": [
+      { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+    ],
+    "certifications": string[],
+    "projects": [
+      { "name": string|null, "bullets": string[] }
+    ]
+  }
+}
+
+HARD CONSTRAINTS:
+- final.header.fullName MUST equal CANONICAL_FULL_NAME exactly.
+- No new keys, no markdown, JSON only.
+- No "..." anywhere.
+- Bullets <= 110 characters preferred.
+- Keep it 1-page dense: remove fluff, duplicates, weak bullets.
+
+TRUTHFULNESS (STRICT):
+- MODE "real": do NOT invent facts. Do NOT add new employers/roles/dates. Do NOT add new projects unless clearly supported.
+- MODE "training_sample": SAMPLE content must be clearly labeled "SAMPLE" and framed as practice/learning.
+
+TASK:
+- Improve structure, clarity, action verbs, and ATS keyword coverage using TARGET_KEYWORDS.
+- Fix any awkward phrasing or incomplete endings.
+- Ensure keywords are woven naturally (no stuffing).
+- Ensure consistency across sections (tense, punctuation, formatting).
+`.trim();
+
+const AUDIT_SYSTEM_ELITE_TRUTHFUL = `
+You are an expert ATS resume writer and resume architect.
+
+Return ONLY valid JSON with EXACT keys:
+{
+  "header": {
+    "fullName": string|null,
+    "headline": string|null,
+    "location": string|null,
+    "phone": string|null,
+    "email": string|null,
+    "linkedin": string|null,
+    "portfolio": string|null
+  },
+  "summary": string[],
+  "skills": [
+    { "category": string, "items": string[] }
+  ],
+  "experience": [
+    {
+      "title": string|null,
+      "company": string|null,
+      "location": string|null,
+      "dates": string|null,
+      "bullets": string[]
+    }
+  ],
+  "education": [
+    { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+  ],
+  "certifications": string[],
+  "projects": [
+    { "name": string|null, "bullets": string[] }
+  ]
+}
+
+HARD CONSTRAINTS:
+- header.fullName MUST be exactly CANONICAL_FULL_NAME. Never change the name.
+- If MODE is "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent anything.
+- If MODE is "training_sample": you MAY include SAMPLE projects/labs, but they MUST be clearly labeled "SAMPLE" and described as practice/learning, not real work.
+- No "..." anywhere. No incomplete endings like "for".
+- No fake metrics unless explicitly labeled SAMPLE and only in training_sample mode.
+- Keep to 1 page: concise, no fluff.
+- Bullets should be action-forward and <= 110 characters preferred.
+
+MOCK DATA POLICY:
+- MODE "real": You MUST NOT invent any facts. All experience, dates, employers, titles, tools, metrics, and education must come from RESUME TEXT or PROFILE.
+- MODE "training_sample": You MAY generate SAMPLE bullets and SAMPLE projects/labs ONLY if:
+  • They are clearly labeled "SAMPLE".
+  • They are described as practice, training, or learning exercises.
+  • They do NOT imply real employment, real clients, real companies, or real dates.
+  • They stay within the candidate’s demonstrated skill boundaries.
+- SAMPLE bullets MUST be framed as capabilities, practice tasks, or learning exercises—not real work.
+- SAMPLE metrics are allowed ONLY in training_sample mode and MUST be labeled SAMPLE.
+- SAMPLE content may appear ONLY in:
+  • summary
+  • skills
+  • projects
+  • experience.bullets (capability-style only, never implying new employment)
+- Never create fake employers, fake dates, fake titles, or fake job history under any mode.
+
+
+
+QUALITY:
+- Extremely tailor to JOB DATA and TARGET_KEYWORDS (weave naturally).
+- Use recruiter-friendly ordering: headline -> summary -> skills -> experience -> education -> certs -> projects.
+- Skills must be grouped into clean categories (5–7 categories).
+No markdown. JSON only.
+`.trim();
+
+/**
  * PASS 3: ATS audit -> final polish (stronger structure & keyword gaps).
  */
 async function auditAndPolishDraft({
@@ -585,8 +774,10 @@ async function auditAndPolishDraft({
   canonicalFullName,
   targetKeywords,
   mode,
+  aiMode, // ✅ added to support STANDARD vs ELITE routing
 }) {
- 
+  const modeKey = String(aiMode || "").toLowerCase() === "elite" ? "elite" : "standard";
+  const system = modeKey === "elite" ? AUDIT_SYSTEM_ELITE_TRUTHFUL : AUDIT_SYSTEM_STANDARD;
 
   const user = `
 MODE: ${mode}
@@ -1120,6 +1311,7 @@ async function applyPrepare(request, context) {
     const jobDescriptionRaw = String(body.jobDescription || "").trim();
     const jobUrl = String(body.jobUrl || "").trim();
 
+    // Accept "STANDARD"/"ELITE" or "standard"/"elite"
     const aiMode = String(body.aiMode || "standard").toLowerCase();
     const studentMode = !!body.studentMode;
 
@@ -1189,7 +1381,7 @@ async function applyPrepare(request, context) {
       mode,
     });
 
-    // PASS 2: Refine
+    // PASS 2: Refine (STANDARD vs ELITE prompt routing is inside)
     try {
       const refined = await refineTailoredResumeDraft({
         draft,
@@ -1207,7 +1399,7 @@ async function applyPrepare(request, context) {
       log(context, "refineTailoredResumeDraft failed; using draft:", e?.message || e);
     }
 
-    // PASS 3: Audit + Final polish (best version)
+    // PASS 3: Audit + Final polish (STANDARD vs ELITE prompt routing)
     try {
       const audited = await auditAndPolishDraft({
         draft,
@@ -1216,6 +1408,7 @@ async function applyPrepare(request, context) {
         canonicalFullName,
         targetKeywords,
         mode,
+        aiMode,
       });
 
       if (audited?.final && typeof audited.final === "object") {
@@ -1327,6 +1520,8 @@ async function applyPrepare(request, context) {
       jsonBody: {
         ok: true,
         mode,
+        aiMode, // ✅ echo mode back to client if you want
+        studentMode,
         jobData,
         tailoredResume: tailoredResumeDoc,
         coverLetter: coverLetterDoc,
