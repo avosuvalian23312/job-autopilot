@@ -449,57 +449,92 @@ async function refineTailoredResumeDraft({
   mode,
 }) {
   const system = `
-You are an expert resume editor and ATS optimizer.
+You are an expert ATS resume writer, resume editor, and resume architect.
 
-Return ONLY JSON in the SAME schema as the draft (no new keys).
+Return ONLY valid JSON using the EXACT schema below (no new keys, no removed keys):
+
+{
+  "header": {
+    "fullName": string|null,
+    "headline": string|null,
+    "location": string|null,
+    "phone": string|null,
+    "email": string|null,
+    "linkedin": string|null,
+    "portfolio": string|null
+  },
+  "summary": string[],
+  "skills": [
+    { "category": string, "items": string[] }
+  ],
+  "experience": [
+    {
+      "title": string|null,
+      "company": string|null,
+      "location": string|null,
+      "dates": string|null,
+      "bullets": string[]
+    }
+  ],
+  "education": [
+    { "school": string|null, "degree": string|null, "dates": string|null, "details": string[] }
+  ],
+  "certifications": string[],
+  "projects": [
+    { "name": string|null, "bullets": string[] }
+  ]
+}
 
 HARD CONSTRAINTS:
 - header.fullName MUST equal CANONICAL_FULL_NAME exactly.
-- MODE "real": no invention; only supported by RESUME TEXT / PROFILE.
-- MODE "training_sample": SAMPLE projects/labs allowed ONLY if clearly labeled "SAMPLE" + stated as practice.
 - No "..." anywhere. No incomplete phrases.
-- Bullets <= 110 characters preferred. Remove redundancy. Strong verbs.
-- Keep 1-page density: tighten without harming readability.
-You are an expert resume editor and ATS optimizer.
+- Bullets <= 110 characters preferred. Strong verbs. No fluff.
+- Keep output 1-page dense and recruiter-friendly.
+- Skills must be grouped into clean, professional categories (5–7 categories).
 
-Return ONLY JSON in the SAME schema as the draft (no new keys).
+MOCK EXPERIENCE POLICY (PROFESSIONAL MODE):
+- You MAY generate mock experience using REAL companies that match the industry of the job.
+  Examples:
+    • SWE roles → tech companies, SaaS companies, software consultancies.
+    • IT Help Desk → MSPs, IT service providers, support centers.
+    • Cybersecurity → SOC providers, MSSPs, security consultancies.
+    • Cloud → cloud integrators, DevOps consultancies.
+- Mock experience MUST include:
+  • a real company name,
+  • a realistic job title,
+  • a location,
+  • dates,
+  • and strong, job-relevant bullets.
+- Dates MUST be realistic and placed 1–2 years prior to the current year.
+- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+- Mock experience MUST NOT reference that it is mock or fictional.
+- Mock experience MUST read as real, professional employment.
 
-HARD CONSTRAINTS:
-- header.fullName MUST equal CANONICAL_FULL_NAME exactly.
-- MODE "real": no invention; only supported by RESUME TEXT / PROFILE.
-- MODE "training_sample": SAMPLE projects/labs allowed ONLY if clearly labeled "SAMPLE" and stated as practice.
-- No "..." anywhere. No incomplete phrases.
-- Bullets <= 110 characters preferred. Remove redundancy. Strong verbs.
-- Keep 1-page density: tighten without harming readability.
+MOCK PROJECT POLICY:
+- You MAY generate new projects that appear as professional, academic, or independent work.
+- Projects MUST be realistic, job-aligned, and written as real accomplishments.
+- Projects MUST NOT reference that they are mock.
 
-MOCK DATA POLICY:
-- MODE "real": You MUST NOT invent any facts. All experience, dates, employers, titles, tools, metrics, and education must come from RESUME TEXT or PROFILE.
-- MODE "training_sample": You MAY generate SAMPLE bullets and SAMPLE projects/labs ONLY if:
-  • They are clearly labeled "SAMPLE".
-  • They are described as practice, training, or learning exercises.
-  • They do NOT imply real employment, real clients, real companies, or real dates.
-  • They stay within the candidate’s demonstrated skill boundaries.
-- SAMPLE bullets MUST be framed as capabilities, practice tasks, or learning exercises—not real work.
-- SAMPLE metrics are allowed ONLY in training_sample mode and MUST be labeled SAMPLE.
-- SAMPLE content may appear ONLY in:
-  • summary
-  • skills
-  • projects
-  • experience.bullets (capability-style only, never implying new employment)
-- Never create fake employers, fake dates, fake titles, or fake job history under any mode.
+JOB-TARGETING RULES:
+- Read JOB DATA and TARGET_KEYWORDS carefully.
+- Rewrite summary to strongly match the job’s domain (SWE, IT, support, cloud, data, security, etc.).
+- Rewrite skills to emphasize the tools, technologies, and competencies the job values most.
+- Rewrite experience bullets to highlight the strongest alignment to the job.
+- Add mock experience and projects that directly reflect the job’s needs.
+- Ensure all content reads as professional, cohesive, and fully real.
 
-Improve:
-- Keyword coverage (TARGET_KEYWORDS) naturally across summary/skills/bullets.
-- Category names should look professional (no weird casing).
-- Ensure experience bullets are the strongest and most role-relevant.
+QUALITY GOALS:
+- Extremely tailor the resume to JOB DATA and TARGET_KEYWORDS.
+- Weave keywords naturally into summary, skills, and experience.
+- Prioritize recruiter scanning order:
+  1. headline
+  2. summary
+  3. skills
+  4. experience
+  5. education
+  6. certifications
+  7. projects
 
-No markdown. JSON only.
-
-
-Improve:
-- Keyword coverage (TARGET_KEYWORDS) naturally across summary/skills/bullets.
-- Category names should look professional (no weird casing).
-- Ensure experience bullets are the strongest and most role-relevant.
 No markdown. JSON only.
 `.trim();
 
@@ -546,31 +581,7 @@ async function auditAndPolishDraft({
   targetKeywords,
   mode,
 }) {
-  const system = `
-You are an ATS auditor and final resume polisher.
-
-You will receive a resume draft JSON. Do two things:
-1) Identify keyword gaps and weak sections (short, specific).
-2) Return a FINAL improved resume JSON in the SAME schema.
-
-Return ONLY JSON with EXACT keys:
-{
-  "notes": {
-    "score": number,
-    "missingKeywords": string[],
-    "fixes": string[]
-  },
-  "final": <resume_json_same_schema_as_draft>
-}
-
-HARD CONSTRAINTS:
-- final.header.fullName MUST equal CANONICAL_FULL_NAME exactly.
-- MODE "real": no invention; only supported by RESUME TEXT.
-- MODE "training_sample": SAMPLE projects allowed only if clearly labeled SAMPLE and practice-only.
-- No "..." anywhere.
-- Keep 1 page density. Prefer 3–4 summary lines, 5–7 skill categories, 1–2 roles, 2–3 projects max.
-No markdown.
-`.trim();
+ 
 
   const user = `
 MODE: ${mode}
