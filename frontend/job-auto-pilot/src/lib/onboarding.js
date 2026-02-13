@@ -1,36 +1,51 @@
 // src/lib/onboarding.js
-const KEY = "jobautopilot_onboarding_v1";
+// Local-only onboarding state (simple + reliable)
 
-const read = () => {
+const KEY_PRICING = "onboarding_pricing_done_v1";
+const KEY_SETUP = "onboarding_setup_done_v1";
+
+const readBool = (key) => {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+    return localStorage.getItem(key) === "1";
   } catch {
-    return {};
+    return false;
   }
 };
 
-const write = (val) => localStorage.setItem(KEY, JSON.stringify(val || {}));
+const writeBool = (key, val) => {
+  try {
+    if (val) localStorage.setItem(key, "1");
+    else localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+};
 
 export const onboarding = {
   getState() {
-    const s = read();
-    return { pricingDone: !!s.pricingDone, setupDone: !!s.setupDone };
+    return {
+      pricingDone: readBool(KEY_PRICING),
+      setupDone: readBool(KEY_SETUP),
+    };
   },
+
   getNextStep() {
-    const s = onboarding.getState();
+    const s = this.getState();
     if (!s.pricingDone) return "pricing";
     if (!s.setupDone) return "setup";
     return "done";
   },
-  setPricingDone(done = true) {
-    const s = read();
-    write({ ...s, pricingDone: !!done });
+
+  completePricing() {
+    writeBool(KEY_PRICING, true);
   },
-  setSetupDone(done = true) {
-    const s = read();
-    write({ ...s, setupDone: !!done });
+
+  completeSetup() {
+    writeBool(KEY_SETUP, true);
   },
+
   reset() {
-    localStorage.removeItem(KEY);
+    writeBool(KEY_PRICING, false);
+    writeBool(KEY_SETUP, false);
   },
 };

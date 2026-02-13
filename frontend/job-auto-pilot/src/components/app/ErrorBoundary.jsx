@@ -1,53 +1,45 @@
 // src/components/app/ErrorBoundary.jsx
 import React from "react";
 
-export class ErrorBoundary extends React.Component {
+export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, info) {
-    // Replace with your logging hook (Sentry, AppInsights, etc.)
-    console.error("ErrorBoundary:", error, info);
-  }
-
-  componentDidUpdate(prevProps) {
-    // Optional reset on navigation / key changes
-    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      // eslint-disable-next-line react/no-did-update-set-state
-      this.setState({ hasError: false });
-    }
+    console.error("App ErrorBoundary:", error, info);
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        this.props.fallback || (
-          <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-            <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/5 p-6">
-              <div className="text-xl font-semibold mb-2">Something crashed</div>
-              <div className="text-sm text-white/70 mb-4">
-                Open DevTools → Console to see the error, then refresh.
-              </div>
-              <button
-                className="px-4 py-2 rounded-xl bg-white/10 border border-white/15 hover:bg-white/15"
-                onClick={() => window.location.reload()}
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
-        )
-      );
-    }
+    if (!this.state.hasError) return this.props.children;
 
-    return this.props.children;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white text-slate-900 p-6">
+        <div className="max-w-xl w-full rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="text-xl font-bold mb-2">Something crashed.</div>
+          <div className="text-sm text-slate-600 mb-4">
+            Open DevTools → Console to see the real error.
+          </div>
+
+          {import.meta?.env?.DEV && this.state.error?.message ? (
+            <pre className="text-xs bg-slate-50 border border-slate-200 rounded-xl p-3 overflow-auto">
+              {String(this.state.error.message)}
+            </pre>
+          ) : null}
+
+          <button
+            className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white"
+            onClick={() => window.location.reload()}
+          >
+            Reload
+          </button>
+        </div>
+      </div>
+    );
   }
 }
-
-export default ErrorBoundary;
