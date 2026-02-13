@@ -1,3 +1,4 @@
+// src/components/landing/AuthModal.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
@@ -28,9 +29,15 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // ✅ Where you want users to land after login
-  // IMPORTANT: must start with "/"
-  const AFTER_LOGIN_PATH = "/pricing";
+  /**
+   * ✅ IMPORTANT CHANGE
+   * Always return to "/" after login so YOUR App router decides:
+   *   first login -> /Pricing -> /Setup -> /AppHome
+   *   already onboarded -> /AppHome
+   *
+   * This avoids case-sensitivity issues (/pricing vs /Pricing) and keeps all logic centralized.
+   */
+  const AFTER_LOGIN_PATH = "/";
 
   // ✅ Your public logos (must exist in /public/logos/)
   const GOOGLE_LOGO = "/logos/google-logo-9808.png";
@@ -67,6 +74,13 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
     triggerPulse();
 
+    // optional callback
+    try {
+      onComplete?.({ provider: "google" });
+    } catch {
+      // ignore
+    }
+
     setTimeout(() => {
       swaLogin("google", AFTER_LOGIN_PATH);
     }, 220);
@@ -78,6 +92,13 @@ export default function AuthModal({ open, onClose, onComplete }) {
     setBusy(true);
 
     triggerPulse();
+
+    // optional callback
+    try {
+      onComplete?.({ provider: "microsoft" });
+    } catch {
+      // ignore
+    }
 
     setTimeout(() => {
       swaLogin("aad", AFTER_LOGIN_PATH);
@@ -212,7 +233,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     </span>
                   </Button>
 
-                  {/* ✅ Microsoft now matches Google: black background + white text */}
                   <Button
                     onClick={startMicrosoft}
                     disabled={busy}
@@ -222,7 +242,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                       <img
                         src={MICROSOFT_LOGO}
                         alt="Microsoft"
-                        className="h-5 w-5 object-contain"
+                        className="h-5 h-5 w-5 object-contain"
                         loading="lazy"
                       />
                       <span>Continue with Microsoft</span>
