@@ -8,6 +8,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-d
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { onboarding } from "@/lib/onboarding";
+import ErrorBoundary from "@/components/app/ErrorBoundary";
 
 const { Pages, Layout } = pagesConfig;
 
@@ -120,6 +121,12 @@ function AppRoutes() {
     </Routes>
   );
 }
+<Router>
+  <NavigationTracker />
+  <ErrorBoundary>
+    <AppRoutes />
+  </ErrorBoundary>
+</Router>
 
 export default function App() {
   return (
