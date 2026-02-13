@@ -5,7 +5,10 @@ import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
+import { onboarding } from "@/lib/onboarding";
+onboarding.setPricingDone(true);
+const navigate = useNavigate();
+navigate("/Setup");
 const plans = [
   {
     name: "Free",

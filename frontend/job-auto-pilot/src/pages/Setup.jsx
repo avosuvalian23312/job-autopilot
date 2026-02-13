@@ -12,7 +12,11 @@ import {
 } from "@/components/ui/select";
 import { Rocket, Upload, FileText, Check, ChevronRight, Briefcase } from "lucide-react";
 import { toast } from "sonner";
-
+import { onboarding } from "@/lib/onboarding";
+// ...
+onboarding.setSetupDone(true);
+const navigate = useNavigate();
+navigate("/AppHome");
 const targetRoles = [
   "Software Engineer",
   "Product Manager",
