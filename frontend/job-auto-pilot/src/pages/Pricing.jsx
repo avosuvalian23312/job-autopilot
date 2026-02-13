@@ -6,9 +6,6 @@ import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { onboarding } from "@/lib/onboarding";
-onboarding.setPricingDone(true);
-const navigate = useNavigate();
-navigate("/Setup");
 const plans = [
   {
     name: "Free",
@@ -68,6 +65,7 @@ export default function Pricing() {
   const handleSelectPlan = async (planName) => {
     setLoadingPlan(planName);
     await new Promise(resolve => setTimeout(resolve, 800));
+    onboarding.setPricingDone(true);
     navigate(createPageUrl("Setup"));
   };
 

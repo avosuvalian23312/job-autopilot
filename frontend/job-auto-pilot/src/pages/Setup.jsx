@@ -14,9 +14,7 @@ import { Rocket, Upload, FileText, Check, ChevronRight, Briefcase } from "lucide
 import { toast } from "sonner";
 import { onboarding } from "@/lib/onboarding";
 // ...
-onboarding.setSetupDone(true);
-const navigate = useNavigate();
-navigate("/AppHome");
+
 const targetRoles = [
   "Software Engineer",
   "Product Manager",
@@ -232,6 +230,8 @@ export default function Setup() {
       localStorage.setItem("defaultResumeId", resumeData.id.toString());
 
       toast.success("Resume uploaded and saved to your account.");
+      onboarding.setSetupDone(true);
+      const navigate = useNavigate();
       navigate(createPageUrl("AppHome"));
     } catch (e) {
       console.error(e);
