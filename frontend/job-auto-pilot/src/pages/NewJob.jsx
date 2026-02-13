@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,12 @@ export default function NewJob() {
 
   // ✅ Generate loading overlay (same UX as Packet)
   const [isGeneratingPacket, setIsGeneratingPacket] = useState(false);
+
+  // ✅ Show phase text while generating (so user sees progress immediately)
+  const [generatePhase, setGeneratePhase] = useState("Generating packet…");
+
+  // ✅ hard lock to prevent double-click / double-run
+  const generatingRef = useRef(false);
 
   // ---------------------------
   // Helpers
@@ -561,7 +567,11 @@ export default function NewJob() {
             Number.isFinite(jd.payPercentile)
           ? jd.payPercentile
           : null,
-      payPercentileSource: pick(ex.payPercentileSource, jd.payPercentileSource, null),
+      payPercentileSource: pick(
+        ex.payPercentileSource,
+        jd.payPercentileSource,
+        null
+      ),
 
       employmentType: pick(ex.employmentType, jd.employmentType, null),
       workModel: pick(ex.workModel, jd.workModel, null),
@@ -807,6 +817,16 @@ export default function NewJob() {
     })();
   }, []);
 
+  // ✅ prevent scroll while generating overlay is up
+  useEffect(() => {
+    if (!isGeneratingPacket) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isGeneratingPacket]);
+
   // ---------------------------
   // Load resumes
   // ---------------------------
@@ -934,10 +954,14 @@ export default function NewJob() {
         requirements:
           extracted?.requirements && typeof extracted.requirements === "object"
             ? {
-                skillsRequired: Array.isArray(extracted.requirements.skillsRequired)
+                skillsRequired: Array.isArray(
+                  extracted.requirements.skillsRequired
+                )
                   ? extracted.requirements.skillsRequired
                   : [],
-                skillsPreferred: Array.isArray(extracted.requirements.skillsPreferred)
+                skillsPreferred: Array.isArray(
+                  extracted.requirements.skillsPreferred
+                )
                   ? extracted.requirements.skillsPreferred
                   : [],
                 educationRequired:
@@ -1070,7 +1094,14 @@ export default function NewJob() {
     elite: "ELITE",
   };
 
+  // ✅ ensures the loading overlay paints BEFORE the network request starts
+  const yieldToPaint = async () =>
+    new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
   const handleGenerate = async () => {
+    if (generatingRef.current) return; // hard lock
+    generatingRef.current = true;
+
     let toastId = null;
 
     try {
@@ -1079,15 +1110,20 @@ export default function NewJob() {
         return;
       }
 
-      // ✅ show same loading UX while this button-driven API flow runs
+      // ✅ show loading phase immediately on click
+      setGeneratePhase("Starting packet generation…");
       setIsGeneratingPacket(true);
 
-      // ensure logged in (no fallback)
+      // ✅ force paint so user sees overlay + button spinner instantly
+      await yieldToPaint();
+
+      setGeneratePhase("Checking login…");
       await ensureUserId();
 
       // call /api/apply/prepare (generates tailored PDF + cover letter + returns jobData)
       const jdForApi = buildJobDescriptionForApi(jobDescription, extractedData);
 
+      setGeneratePhase("Generating tailored resume + cover letter…");
       toastId = toast.loading("Generating tailored resume + cover letter…");
 
       const prepared = await apiFetch("/api/apply/prepare", {
@@ -1121,18 +1157,24 @@ export default function NewJob() {
       const coverLetter = preparedSafe?.coverLetter || null;
 
       if (tailoredResume?.id)
-        localStorage.setItem("latestTailoredResumeId", String(tailoredResume.id));
+        localStorage.setItem(
+          "latestTailoredResumeId",
+          String(tailoredResume.id)
+        );
       if (coverLetter?.id)
         localStorage.setItem("latestCoverLetterId", String(coverLetter.id));
       if (typeof coverLetter?.text === "string")
         localStorage.setItem("latestCoverLetterText", coverLetter.text);
-      if (jobData) localStorage.setItem("latestJobData", JSON.stringify(jobData));
+      if (jobData)
+        localStorage.setItem("latestJobData", JSON.stringify(jobData));
       localStorage.setItem("latestSourceResumeId", String(selectedResume || ""));
 
       // ✅ NEW: Save the job to DB via Jobs API (this was missing)
       // This is the fix for: "newjob isnt sending the jobs api to save it in the db"
       let savedJob = null;
       try {
+        setGeneratePhase("Saving job to dashboard…");
+
         const payload = buildJobCreatePayload({
           extracted: extractedData,
           preparedJobData: jobData,
@@ -1175,6 +1217,8 @@ export default function NewJob() {
       });
       toastId = null;
 
+      setGeneratePhase("Opening packet…");
+
       const qs = new URLSearchParams();
       qs.set("mode", "prepare");
       if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
@@ -1188,6 +1232,8 @@ export default function NewJob() {
       toast.error(e?.message || "Failed to generate packet.");
     } finally {
       setIsGeneratingPacket(false);
+      setGeneratePhase("Generating packet…");
+      generatingRef.current = false;
     }
   };
 
@@ -1415,7 +1461,7 @@ export default function NewJob() {
             <div className="relative z-10 flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow-2xl">
               <Loader2 className="w-5 h-5 text-white animate-spin" />
               <span className="text-white/85 text-sm font-medium">
-                Generating packet…
+                {generatePhase || "Generating packet…"}
               </span>
             </div>
           </div>
@@ -1509,7 +1555,9 @@ export default function NewJob() {
             {/* Blur content while generating */}
             <div
               className={
-                isGeneratingPacket ? "pointer-events-none select-none blur-[1px]" : ""
+                isGeneratingPacket
+                  ? "pointer-events-none select-none blur-[1px]"
+                  : ""
               }
               aria-busy={isGeneratingPacket}
             >
@@ -2084,9 +2132,13 @@ export default function NewJob() {
               </div>
 
               <div
-                className={["rounded-2xl p-7", surface, edge, brandRing, ambient].join(
-                  " "
-                )}
+                className={[
+                  "rounded-2xl p-7",
+                  surface,
+                  edge,
+                  brandRing,
+                  ambient,
+                ].join(" ")}
               >
                 {/* Top row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -2108,7 +2160,9 @@ export default function NewJob() {
 
                     {resumesLoading ? (
                       <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                        <p className="mb-0 text-sm text-white/60">Loading resumes…</p>
+                        <p className="mb-0 text-sm text-white/60">
+                          Loading resumes…
+                        </p>
                       </div>
                     ) : hasResumes ? (
                       <Select
@@ -2156,7 +2210,9 @@ export default function NewJob() {
                       </Select>
                     ) : (
                       <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                        <p className="mb-3 text-sm text-white/60">No resumes found</p>
+                        <p className="mb-3 text-sm text-white/60">
+                          No resumes found
+                        </p>
                         <Button
                           onClick={() => navigate(createPageUrl("Resumes"))}
                           className={[
