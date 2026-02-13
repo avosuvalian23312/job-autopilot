@@ -11,8 +11,9 @@ import {
   Navigate,
 } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
-import { AuthProvider, useAuth } from "@/lib/AuthContext";
-import UserNotRegisteredError from "@/components/UserNotRegisteredError";
+import { AuthProvider } from "@/lib/AuthContext";
+import AuthGate from "@/components/app/AuthGate";
+import { useAuth } from "@/hooks/useAuth";
 import { onboarding } from "@/lib/onboarding";
 
 const { Pages, Layout } = pagesConfig;
@@ -30,110 +31,105 @@ const Spinner = () => (
   </div>
 );
 
-// Your AuthContext already uses authError.type === 'auth_required' when not logged in.
-// We'll treat anything that's NOT auth_required as "logged in" for routing purposes.
-const useAuthStatus = () => {
-  const { authError, isAuthenticated, user } = useAuth();
-
-  const isAnonymous = authError?.type === "auth_required";
-
-  // Prefer explicit boolean if your context provides it
-  const authed =
-    typeof isAuthenticated === "boolean" ? isAuthenticated : !!user || !isAnonymous;
-
-  return { isAnonymous, authed };
-};
-
-// ✅ Root: decides where to go
+// Decides where "/" should go
 const IndexRedirect = () => {
-  const { isAnonymous } = useAuthStatus();
+  const { status, nextRoute } = useAuth();
 
-  if (isAnonymous) return <Navigate to="/Landing" replace />;
-
-  const step = onboarding.getNextStep();
-  if (step === "pricing") return <Navigate to="/Pricing" replace />;
-  if (step === "setup") return <Navigate to="/Setup" replace />;
-  return <Navigate to="/AppHome" replace />;
+  if (status === "loading") return <Spinner />;
+  return <Navigate to={nextRoute || "/Landing"} replace />;
 };
 
-// ✅ Protect pages from anonymous users
-const RequireAuth = ({ children }) => {
-  const { isAnonymous } = useAuthStatus();
-  if (isAnonymous) return <Navigate to="/Landing" replace />;
-  return <>{children}</>;
-};
+// Blocks skipping steps (Pricing -> Setup -> AppHome)
+const OnboardingGate = ({ step, children }) => {
+  const { status, isAuthenticated, isNewUser } = useAuth();
 
-// ✅ If user is logged in and onboarding done, don't allow going back to onboarding pages
-const OnboardingOnly = ({ children }) => {
-  const { isAnonymous } = useAuthStatus();
-  if (isAnonymous) return <Navigate to="/Landing" replace />;
+  if (status === "loading") return <Spinner />;
+  if (!isAuthenticated) return <Navigate to="/Landing" replace />;
 
-  const step = onboarding.getNextStep();
-  if (step === "done") return <Navigate to="/AppHome" replace />;
-
-  return <>{children}</>;
-};
-
-const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError } = useAuth();
-
-  if (isLoadingPublicSettings || isLoadingAuth) return <Spinner />;
-
-  // Keep your existing gating for "user_not_registered"
-  // If you want "new user" to go Pricing instead of error screen, tell me
-  // and we'll replace this with Pricing+Setup flow.
-  if (authError?.type === "user_not_registered") {
-    return <UserNotRegisteredError />;
+  // If backend says new user, always force pricing first
+  if (isNewUser) {
+    if (step !== "pricing") return <Navigate to="/Pricing" replace />;
+    return <>{children}</>;
   }
+
+  const next = onboarding.getNextStep(); // "pricing" | "setup" | "done"
+
+  if (next === "done") return <Navigate to="/AppHome" replace />;
+  if (next !== step) {
+    return <Navigate to={next === "pricing" ? "/Pricing" : "/Setup"} replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const AppRoutes = () => {
+  const { status, isAuthenticated, nextRoute } = useAuth();
+
+  if (status === "loading") return <Spinner />;
+
+  const LandingPage = Pages["Landing"];
+  const PricingPage = Pages["Pricing"];
+  const SetupPage = Pages["Setup"];
+  const HomePage = Pages["AppHome"];
 
   return (
     <Routes>
-      {/* ✅ Smart root */}
+      {/* Smart root */}
       <Route path="/" element={<IndexRedirect />} />
 
-      {/* ✅ Landing: always accessible (anonymous) but if logged in, jump to the correct place */}
+      {/* Landing is public, but if authed -> send them onward */}
       <Route
         path="/Landing"
-        element={<IndexRedirect />}
+        element={
+          isAuthenticated ? (
+            <Navigate to={nextRoute || "/AppHome"} replace />
+          ) : LandingPage ? (
+            <LayoutWrapper currentPageName="Landing">
+              <LandingPage />
+            </LayoutWrapper>
+          ) : (
+            <PageNotFound />
+          )
+        }
       />
 
-      {/* ✅ Pricing: only during onboarding */}
+      {/* Pricing: must be logged in + must be correct onboarding step */}
       <Route
         path="/Pricing"
         element={
-          <OnboardingOnly>
+          <OnboardingGate step="pricing">
             <LayoutWrapper currentPageName="Pricing">
-              {Pages["Pricing"] ? <Pages["Pricing"] /> : <PageNotFound />}
+              {PricingPage ? <PricingPage /> : <PageNotFound />}
             </LayoutWrapper>
-          </OnboardingOnly>
+          </OnboardingGate>
         }
       />
 
-      {/* ✅ Setup: only during onboarding */}
+      {/* Setup: must be logged in + must be correct onboarding step */}
       <Route
         path="/Setup"
         element={
-          <OnboardingOnly>
+          <OnboardingGate step="setup">
             <LayoutWrapper currentPageName="Setup">
-              {Pages["Setup"] ? <Pages["Setup"] /> : <PageNotFound />}
+              {SetupPage ? <SetupPage /> : <PageNotFound />}
             </LayoutWrapper>
-          </OnboardingOnly>
+          </OnboardingGate>
         }
       />
 
-      {/* ✅ Home: requires auth */}
+      {/* AppHome (and everything else): requires login */}
       <Route
         path="/AppHome"
         element={
-          <RequireAuth>
+          <AuthGate mode="protected" redirectTo="/Landing">
             <LayoutWrapper currentPageName="AppHome">
-              {Pages["AppHome"] ? <Pages["AppHome"] /> : <PageNotFound />}
+              {HomePage ? <HomePage /> : <PageNotFound />}
             </LayoutWrapper>
-          </RequireAuth>
+          </AuthGate>
         }
       />
 
-      {/* ✅ Everything else: requires auth by default */}
+      {/* All other pages are protected by default */}
       {Object.entries(Pages).map(([path, Page]) => {
         if (["Landing", "Pricing", "Setup", "AppHome"].includes(path)) return null;
 
@@ -142,11 +138,11 @@ const AuthenticatedApp = () => {
             key={path}
             path={`/${path}`}
             element={
-              <RequireAuth>
+              <AuthGate mode="protected" redirectTo="/Landing">
                 <LayoutWrapper currentPageName={path}>
                   <Page />
                 </LayoutWrapper>
-              </RequireAuth>
+              </AuthGate>
             }
           />
         );
@@ -163,7 +159,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <NavigationTracker />
-          <AuthenticatedApp />
+          <AppRoutes />
         </Router>
         <Toaster />
       </QueryClientProvider>
