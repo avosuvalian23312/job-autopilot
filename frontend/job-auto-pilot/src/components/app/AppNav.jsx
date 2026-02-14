@@ -1,7 +1,16 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Rocket, Home, FileText, BarChart3, Settings, LogOut, Coins } from "lucide-react";
+import {
+  Rocket,
+  Home,
+  FileText,
+  BarChart3,
+  Settings,
+  LogOut,
+  Coins,
+} from "lucide-react";
+import { onboarding } from "@/lib/onboarding";
 
 const navItems = [
   { label: "Home", icon: Home, page: "AppHome" },
@@ -11,7 +20,31 @@ const navItems = [
   { label: "Settings", icon: Settings, page: "AppSettings" },
 ];
 
+// Azure Static Web Apps logout helper
+function swaLogout(redirectPath = "/") {
+  const safe = redirectPath && redirectPath.startsWith("/") ? redirectPath : "/";
+  // Clears SWA auth cookie/session
+  window.location.href = `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(
+    safe
+  )}`;
+}
+
 export default function AppNav({ currentPage, credits = 87 }) {
+  const handleLogout = () => {
+    // Optional: clear local-only onboarding / cached UI state
+    try {
+      onboarding?.reset?.();
+      localStorage.removeItem("onboardingComplete");
+      localStorage.removeItem("preferences");
+      // If you want to also clear resumes cache:
+      // localStorage.removeItem("resumes");
+      // localStorage.removeItem("defaultResumeId");
+    } catch {}
+
+    // Actually sign out of SWA
+    swaLogout("/");
+  };
+
   return (
     <nav className="border-b border-white/5 bg-[hsl(240,10%,4%)]/95 backdrop-blur-xl sticky top-0 z-40 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -48,13 +81,15 @@ export default function AppNav({ currentPage, credits = 87 }) {
             <span className="text-sm font-semibold text-purple-400">{credits}</span>
             <span className="text-xs text-white/30 hidden sm:inline">credits</span>
           </Link>
-          <Link
-            to={createPageUrl("Landing")}
+
+          <button
+            type="button"
+            onClick={handleLogout}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden md:block">Logout</span>
-          </Link>
+          </button>
         </div>
       </div>
     </nav>
