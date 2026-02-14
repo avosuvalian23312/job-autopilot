@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { onboarding } from "@/lib/onboarding";
+import { pagesConfig } from "@/pages.config";
 
 const plans = [
   {
@@ -64,59 +64,41 @@ const plans = [
   },
 ];
 
-// LocalStorage fallback key (used only if onboarding lib doesn't expose setters)
-const PRICING_DONE_KEY = "onboarding_pricing_done";
+function getSetupPath() {
+  const Pages = pagesConfig?.Pages || {};
+  const keys = Object.keys(Pages);
+  const setupKey =
+    keys.find((k) => k.toLowerCase() === "setup") ||
+    keys.find((k) => k.toLowerCase() === "onboardingsetup") ||
+    "Setup";
+  return `/${setupKey}`;
+}
 
 export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
 
-  const markPricingDone = () => {
-    // ✅ 1) Preferred: your onboarding library supports setPricingDone
-    if (typeof onboarding?.setPricingDone === "function") {
-      onboarding.setPricingDone(true);
-      return;
-    }
-
-    // ✅ 2) Alternate common patterns (if your lib uses different APIs)
-    if (typeof onboarding?.completeStep === "function") {
-      onboarding.completeStep("pricing");
-      return;
-    }
-    if (typeof onboarding?.setStepDone === "function") {
-      onboarding.setStepDone("pricing", true);
-      return;
-    }
-
-    // ✅ 3) Guaranteed fallback: store a flag so your Setup/Gate can read it
-    try {
-      localStorage.setItem(PRICING_DONE_KEY, "1");
-    } catch {
-      // ignore
-    }
-  };
-
   const handleSelectPlan = async (planName) => {
     setLoadingPlan(planName);
-
-    // tiny delay for UX
     await new Promise((resolve) => setTimeout(resolve, 800));
 
+    // ✅ mark pricing done using your onboarding lib
     try {
-      markPricingDone();
-    } catch {
-      // Never let onboarding logging block navigation
-      try {
-        localStorage.setItem(PRICING_DONE_KEY, "1");
-      } catch {}
-    }
+      if (typeof onboarding?.completePricing === "function") onboarding.completePricing();
+      else if (typeof onboarding?.setPricingDone === "function") onboarding.setPricingDone(true);
+    } catch {}
 
-    navigate(createPageUrl("Setup"));
+    // Optional: remember selected plan locally
+    try {
+      localStorage.setItem("selectedPlan", planName);
+    } catch {}
+
+    // ✅ navigate to the actual Setup route key
+    navigate(getSetupPath(), { replace: true });
   };
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
-      {/* Header */}
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -172,13 +154,7 @@ export default function Pricing() {
                   ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30 popular-card popular-card-shimmer popular-card-hover"
                   : "glass-card"
               }`}
-              style={
-                plan.popular
-                  ? {
-                      animation: "float 6s ease-in-out infinite",
-                    }
-                  : {}
-              }
+              style={plan.popular ? { animation: "float 6s ease-in-out infinite" } : {}}
             >
               {plan.popular && (
                 <>
@@ -205,8 +181,7 @@ export default function Pricing() {
                       <TooltipTrigger asChild>
                         <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
                           <span>
-                            {plan.credits} credits
-                            {plan.name === "Free" ? " total" : "/month"}
+                            {plan.credits} credits{plan.name === "Free" ? " total" : "/month"}
                           </span>
                           <HelpCircle className="w-3 h-3" />
                         </div>
@@ -226,9 +201,7 @@ export default function Pricing() {
               <p className="text-sm text-white/40 mb-6">{plan.description}</p>
 
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">
-                  ${plan.price}
-                </span>
+                <span className="text-4xl font-bold text-white">${plan.price}</span>
                 <span className="text-white/40">/month</span>
               </div>
 
@@ -253,10 +226,7 @@ export default function Pricing() {
 
               <ul className="space-y-3">
                 {plan.features.map((f) => (
-                  <li
-                    key={f}
-                    className="flex items-start gap-3 text-sm text-white/60"
-                  >
+                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
                     <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
                     <span>{f}</span>
                   </li>
@@ -266,7 +236,6 @@ export default function Pricing() {
           ))}
         </div>
 
-        {/* Add-on */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -275,9 +244,7 @@ export default function Pricing() {
         >
           <p className="text-white/60 text-sm mb-2">
             Need more credits?{" "}
-            <span className="text-purple-400 font-medium">
-              Top-up anytime: $5 for 20 credits
-            </span>
+            <span className="text-purple-400 font-medium">Top-up anytime: $5 for 20 credits</span>
           </p>
           <p className="text-white/30 text-xs">Credits never expire</p>
         </motion.div>

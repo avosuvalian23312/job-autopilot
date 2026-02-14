@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
  * mode:
  *  - "protected": requires login. if anonymous -> redirectTo
  *  - "publicOnly": only for logged-out pages. if authenticated -> redirectTo
+ *  - "public": always render (no redirects)
  */
 export default function AuthGate({
   mode = "protected",
@@ -21,6 +22,7 @@ export default function AuthGate({
 
   useEffect(() => {
     if (status === "loading") return;
+    if (mode === "public") return; // ✅ never redirect
 
     const shouldRedirectProtected = mode === "protected" && !isAuthenticated;
     const shouldRedirectPublicOnly = mode === "publicOnly" && isAuthenticated;
@@ -44,6 +46,8 @@ export default function AuthGate({
       </div>
     );
   }
+
+  if (mode === "public") return <>{children}</>;
 
   if (mode === "protected" && !isAuthenticated) return null;
   if (mode === "publicOnly" && isAuthenticated) return null;
