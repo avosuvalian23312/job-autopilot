@@ -10,10 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Rocket, Upload, FileText, Check, ChevronRight, Briefcase } from "lucide-react";
+import {
+  Rocket,
+  Upload,
+  FileText,
+  Check,
+  ChevronRight,
+  Briefcase,
+} from "lucide-react";
 import { toast } from "sonner";
 import { onboarding } from "@/lib/onboarding";
-// ...
 
 const targetRoles = [
   "Software Engineer",
@@ -26,7 +32,14 @@ const targetRoles = [
   "Other",
 ];
 
-const seniorityLevels = ["Intern", "Junior", "Mid-Level", "Senior", "Lead", "Principal"];
+const seniorityLevels = [
+  "Intern",
+  "Junior",
+  "Mid-Level",
+  "Senior",
+  "Lead",
+  "Principal",
+];
 const locationPrefs = ["Remote", "Hybrid", "On-site"];
 const tones = ["Professional", "Confident", "Concise"];
 
@@ -103,7 +116,9 @@ function SectionCard({ title, icon: Icon, children, description }) {
           </div>
         ) : null}
         <div className="min-w-0">
-          <h3 className="text-base md:text-lg font-semibold text-white">{title}</h3>
+          <h3 className="text-base md:text-lg font-semibold text-white">
+            {title}
+          </h3>
           {description ? (
             <p className="text-sm text-white/40 mt-1">{description}</p>
           ) : null}
@@ -147,6 +162,28 @@ export default function Setup() {
     );
   };
 
+  const markSetupDoneSafely = () => {
+    // Preferred: library setter if it exists
+    try {
+      if (typeof onboarding?.setSetupDone === "function") {
+        onboarding.setSetupDone(true);
+      }
+    } catch {}
+
+    // LocalStorage fallbacks so Gate/redirect logic can see it
+    try {
+      localStorage.setItem("onboarding_setup_done", "1");
+      localStorage.setItem("setupDone", "1");
+
+      ["onboarding", "base44_onboarding", "jobautopilot_onboarding"].forEach(
+        (k) => {
+          const cur = JSON.parse(localStorage.getItem(k) || "{}");
+          localStorage.setItem(k, JSON.stringify({ ...cur, setupDone: true }));
+        }
+      );
+    } catch {}
+  };
+
   const handleFinish = async () => {
     try {
       const preferences = {
@@ -161,7 +198,6 @@ export default function Setup() {
       localStorage.setItem("preferences", JSON.stringify(preferences));
       localStorage.setItem("onboardingComplete", "true");
 
-      // ✅ Upload mode: Blob + Cosmos (account-based)
       if (!uploadedFile) {
         toast.error("Please upload a resume file");
         return;
@@ -177,13 +213,13 @@ export default function Setup() {
       });
 
       if (!sasResp.ok || !sasResp.data?.ok) {
-        // Common case: not logged in -> backend returns 401
         if (sasResp.status === 401) {
           toast.error("You're not logged in. Please sign in again.");
           return;
         }
         const msg =
-          sasResp.data?.error || `Failed to get upload URL (HTTP ${sasResp.status})`;
+          sasResp.data?.error ||
+          `Failed to get upload URL (HTTP ${sasResp.status})`;
         toast.error(msg);
         return;
       }
@@ -212,7 +248,8 @@ export default function Setup() {
 
       if (!saveResp.ok || !saveResp.data?.ok) {
         const msg =
-          saveResp.data?.error || `Failed to save resume (HTTP ${saveResp.status})`;
+          saveResp.data?.error ||
+          `Failed to save resume (HTTP ${saveResp.status})`;
         toast.error(msg);
         return;
       }
@@ -230,12 +267,17 @@ export default function Setup() {
       localStorage.setItem("defaultResumeId", resumeData.id.toString());
 
       toast.success("Resume uploaded and saved to your account.");
-      onboarding.setSetupDone(true);
-      const navigate = useNavigate();
-      navigate(createPageUrl("AppHome"));
+
+      // ✅ Mark setup done without crashing if onboarding API differs
+      markSetupDoneSafely();
+
+      // ✅ Navigate using the hook you already created at the top-level
+      navigate(createPageUrl("AppHome"), { replace: true });
     } catch (e) {
       console.error(e);
-      toast.error(e?.message || "Something went wrong while saving your resume.");
+      toast.error(
+        e?.message || "Something went wrong while saving your resume."
+      );
     }
   };
 
@@ -255,14 +297,20 @@ export default function Setup() {
               <Rocket className="w-4 h-4 text-white" />
             </div>
             <div className="leading-tight">
-              <div className="font-bold text-white text-[15px]">Job Autopilot</div>
-              <div className="text-[11px] text-white/40">Profile setup • ~60 seconds</div>
+              <div className="font-bold text-white text-[15px]">
+                Job Autopilot
+              </div>
+              <div className="text-[11px] text-white/40">
+                Profile setup • ~60 seconds
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <p className="text-xs text-amber-400">Testing Mode: Setup shown every login</p>
+              <p className="text-xs text-amber-400">
+                Testing Mode: Setup shown every login
+              </p>
             </div>
 
             <div className="flex items-center gap-2 text-sm text-white/40">
@@ -283,7 +331,8 @@ export default function Setup() {
             Let&apos;s set up your profile
           </h1>
           <p className="text-base sm:text-lg text-white/40 mt-3">
-            Upload your resume and set preferences so we can tailor documents to you.
+            Upload your resume and set preferences so we can tailor documents to
+            you.
           </p>
 
           {/* progress bar */}
@@ -296,7 +345,9 @@ export default function Setup() {
             </div>
             <div className="mt-2 flex items-center justify-between text-xs text-white/40">
               <span className={step >= 1 ? "text-white/60" : ""}>Resume</span>
-              <span className={step >= 2 ? "text-white/60" : ""}>Preferences</span>
+              <span className={step >= 2 ? "text-white/60" : ""}>
+                Preferences
+              </span>
             </div>
           </div>
         </div>
@@ -348,7 +399,9 @@ export default function Setup() {
                 {uploadedFile ? (
                   <div className="mt-6 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70">
                     <FileText className="w-4 h-4 text-purple-300" />
-                    <span className="max-w-[260px] truncate">{uploadedFile.name}</span>
+                    <span className="max-w-[260px] truncate">
+                      {uploadedFile.name}
+                    </span>
                     <Check className="w-4 h-4 text-green-500" />
                   </div>
                 ) : (
@@ -370,7 +423,8 @@ export default function Setup() {
                   Step 2: Your preferences
                 </h2>
                 <p className="text-sm text-white/40 mt-1">
-                  Helps generate cover letters and bullet points that match your goals.
+                  Helps generate cover letters and bullet points that match your
+                  goals.
                 </p>
               </div>
               <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white/50">
