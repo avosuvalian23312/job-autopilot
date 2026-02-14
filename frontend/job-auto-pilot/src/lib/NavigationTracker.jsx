@@ -1,42 +1,41 @@
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useAuth } from './AuthContext';
-import { base44 } from '@/api/base44Client';
-import { pagesConfig } from '@/pages.config';
+import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
+import { useAuth } from "./AuthContext";
+import { base44 } from "@/api/base44Client";
+import { pagesConfig } from "@/pages.config";
 
 export default function NavigationTracker() {
-    const location = useLocation();
-    const { isAuthenticated } = useAuth();
-    const { Pages, mainPage } = pagesConfig;
-    const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+  const location = useLocation();
+  const { isAuthenticated } = useAuth();
+  const { Pages, mainPage } = pagesConfig;
+  const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 
-    // Log user activity when navigating to a page
-    useEffect(() => {
-        // Extract page name from pathname
-        const pathname = location.pathname;
-        let pageName;
+  useEffect(() => {
+    const pathname = location.pathname || "";
+    let pageName;
 
-        if (pathname === '/' || pathname === '') {
-            pageName = mainPageKey;
-        } else {
-            // Remove leading slash and get the first segment
-            const pathSegment = pathname.replace(/^\//, '').split('/')[0];
+    if (pathname === "/" || pathname === "") {
+      pageName = mainPageKey;
+    } else {
+      const pathSegment = pathname.replace(/^\//, "").split("/")[0];
+      const pageKeys = Object.keys(Pages || {});
+      const matchedKey = pageKeys.find(
+        (key) => key.toLowerCase() === String(pathSegment).toLowerCase()
+      );
+      pageName = matchedKey || null;
+    }
 
-            // Try case-insensitive lookup in Pages config
-            const pageKeys = Object.keys(Pages);
-            const matchedKey = pageKeys.find(
-                key => key.toLowerCase() === pathSegment.toLowerCase()
-            );
+    if (!isAuthenticated || !pageName) return;
 
-            pageName = matchedKey || null;
-        }
+    // ✅ HARD GUARD: base44 may be null during init/misconfig
+    const logFn = base44?.appLogs?.logUserInApp;
+    if (typeof logFn !== "function") return;
 
-        if (isAuthenticated && pageName) {
-            base44.appLogs.logUserInApp(pageName).catch(() => {
-                // Silently fail - logging shouldn't break the app
-            });
-        }
-    }, [location, isAuthenticated, Pages, mainPageKey]);
+    const p = logFn(pageName);
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {});
+    }
+  }, [location.pathname, isAuthenticated, Pages, mainPageKey]);
 
-    return null;
+  return null;
 }
