@@ -4,8 +4,14 @@ import { createPageUrl } from "@/utils";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { onboarding } from "@/lib/onboarding";
+
 const plans = [
   {
     name: "Free",
@@ -58,14 +64,53 @@ const plans = [
   },
 ];
 
+// LocalStorage fallback key (used only if onboarding lib doesn't expose setters)
+const PRICING_DONE_KEY = "onboarding_pricing_done";
+
 export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
 
+  const markPricingDone = () => {
+    // ✅ 1) Preferred: your onboarding library supports setPricingDone
+    if (typeof onboarding?.setPricingDone === "function") {
+      onboarding.setPricingDone(true);
+      return;
+    }
+
+    // ✅ 2) Alternate common patterns (if your lib uses different APIs)
+    if (typeof onboarding?.completeStep === "function") {
+      onboarding.completeStep("pricing");
+      return;
+    }
+    if (typeof onboarding?.setStepDone === "function") {
+      onboarding.setStepDone("pricing", true);
+      return;
+    }
+
+    // ✅ 3) Guaranteed fallback: store a flag so your Setup/Gate can read it
+    try {
+      localStorage.setItem(PRICING_DONE_KEY, "1");
+    } catch {
+      // ignore
+    }
+  };
+
   const handleSelectPlan = async (planName) => {
     setLoadingPlan(planName);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    onboarding.setPricingDone(true);
+
+    // tiny delay for UX
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    try {
+      markPricingDone();
+    } catch {
+      // Never let onboarding logging block navigation
+      try {
+        localStorage.setItem(PRICING_DONE_KEY, "1");
+      } catch {}
+    }
+
     navigate(createPageUrl("Setup"));
   };
 
@@ -98,7 +143,7 @@ export default function Pricing() {
           <p className="text-sm text-white/30 mb-8">
             No credit card for Free. Cancel anytime.
           </p>
-          
+
           <Button
             onClick={() => handleSelectPlan("Free")}
             disabled={loadingPlan === "Free"}
@@ -127,9 +172,13 @@ export default function Pricing() {
                   ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30 popular-card popular-card-shimmer popular-card-hover"
                   : "glass-card"
               }`}
-              style={plan.popular ? {
-                animation: "float 6s ease-in-out infinite",
-              } : {}}
+              style={
+                plan.popular
+                  ? {
+                      animation: "float 6s ease-in-out infinite",
+                    }
+                  : {}
+              }
             >
               {plan.popular && (
                 <>
@@ -156,15 +205,16 @@ export default function Pricing() {
                       <TooltipTrigger asChild>
                         <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
                           <span>
-                            {plan.credits} credits{plan.name === "Free" ? " total" : "/month"}
+                            {plan.credits} credits
+                            {plan.name === "Free" ? " total" : "/month"}
                           </span>
                           <HelpCircle className="w-3 h-3" />
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="text-xs">
-                          {plan.name === "Free" 
-                            ? "Limited total credits for trying out" 
+                          {plan.name === "Free"
+                            ? "Limited total credits for trying out"
                             : "Monthly credits: 1 credit = 1 AI generation"}
                         </p>
                       </TooltipContent>
@@ -203,7 +253,10 @@ export default function Pricing() {
 
               <ul className="space-y-3">
                 {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
+                  <li
+                    key={f}
+                    className="flex items-start gap-3 text-sm text-white/60"
+                  >
                     <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
                     <span>{f}</span>
                   </li>
@@ -222,7 +275,9 @@ export default function Pricing() {
         >
           <p className="text-white/60 text-sm mb-2">
             Need more credits?{" "}
-            <span className="text-purple-400 font-medium">Top-up anytime: $5 for 20 credits</span>
+            <span className="text-purple-400 font-medium">
+              Top-up anytime: $5 for 20 credits
+            </span>
           </p>
           <p className="text-white/30 text-xs">Credits never expire</p>
         </motion.div>
