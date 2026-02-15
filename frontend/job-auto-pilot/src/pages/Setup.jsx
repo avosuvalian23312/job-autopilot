@@ -17,6 +17,7 @@ import {
   Check,
   ChevronRight,
   Briefcase,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { onboarding } from "@/lib/onboarding";
@@ -40,6 +41,7 @@ const seniorityLevels = [
   "Lead",
   "Principal",
 ];
+
 const locationPrefs = ["Remote", "Hybrid", "On-site"];
 const tones = ["Professional", "Confident", "Concise"];
 
@@ -53,7 +55,7 @@ async function apiFetch(path, { method = "GET", body } = {}) {
   const res = await fetch(path, {
     method,
     headers,
-    credentials: "include", // ✅ important for SWA auth cookies
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -132,6 +134,7 @@ function SectionCard({ title, icon: Icon, children, description }) {
 export default function Setup() {
   const [step, setStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
 
   // Preferences
@@ -147,13 +150,11 @@ export default function Setup() {
   };
 
   const handleNext = () => {
-    if (step === 1) {
-      if (!uploadedFile) {
-        toast.error("Please upload a resume file");
-        return;
-      }
+    if (step === 1 && !uploadedFile) {
+      toast.error("Please upload a resume file");
+      return;
     }
-    setStep(step + 1);
+    setStep(2);
   };
 
   const toggleRole = (role) => {
@@ -162,30 +163,33 @@ export default function Setup() {
     );
   };
 
-  const markSetupDoneSafely = () => {
-    // Preferred: library setter if it exists
-    try {
-      if (typeof onboarding?.setSetupDone === "function") {
-        onboarding.setSetupDone(true);
-      }
-    } catch {}
+  const completeSetupCloud = async (preferences) => {
+    // ✅ Cloud-first: uses Cosmos via /api/profile
+    if (typeof onboarding?.completeSetup === "function") {
+      await onboarding.completeSetup(preferences);
+      return;
+    }
 
-    // LocalStorage fallbacks so Gate/redirect logic can see it
-    try {
-      localStorage.setItem("onboarding_setup_done", "1");
-      localStorage.setItem("setupDone", "1");
+    // ✅ Compatibility if your lib exposes a setter
+    if (typeof onboarding?.setSetupDone === "function") {
+      await onboarding.setSetupDone(true, preferences);
+      return;
+    }
 
-      ["onboarding", "base44_onboarding", "jobautopilot_onboarding"].forEach(
-        (k) => {
-          const cur = JSON.parse(localStorage.getItem(k) || "{}");
-          localStorage.setItem(k, JSON.stringify({ ...cur, setupDone: true }));
-        }
-      );
-    } catch {}
+    throw new Error("onboarding.completeSetup / setSetupDone not found");
   };
 
   const handleFinish = async () => {
+    if (isSaving) return;
+
     try {
+      if (!uploadedFile) {
+        toast.error("Please upload a resume file");
+        return;
+      }
+
+      setIsSaving(true);
+
       const preferences = {
         targetRoles: selectedRoles,
         seniority,
@@ -194,14 +198,10 @@ export default function Setup() {
         tone,
       };
 
-      // Store preferences + onboarding flag like before (UI expects these)
-      localStorage.setItem("preferences", JSON.stringify(preferences));
-      localStorage.setItem("onboardingComplete", "true");
-
-      if (!uploadedFile) {
-        toast.error("Please upload a resume file");
-        return;
-      }
+      // Optional: keep preferences locally for instant UI hydration
+      try {
+        localStorage.setItem("preferences", JSON.stringify(preferences));
+      } catch {}
 
       // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
       const sasResp = await apiFetch("/api/resume/upload-url", {
@@ -255,29 +255,34 @@ export default function Setup() {
       }
 
       // Optional local cache so UI remains smooth
-      const resumeData = {
-        id: Date.now(),
-        name: uploadedFile.name,
-        source: "upload",
-        blobName,
-        created: new Date().toISOString(),
-      };
+      try {
+        const resumeData = {
+          id: Date.now(),
+          name: uploadedFile.name,
+          source: "upload",
+          blobName,
+          created: new Date().toISOString(),
+        };
+        localStorage.setItem("resumes", JSON.stringify([resumeData]));
+        localStorage.setItem("defaultResumeId", resumeData.id.toString());
+      } catch {}
 
-      localStorage.setItem("resumes", JSON.stringify([resumeData]));
-      localStorage.setItem("defaultResumeId", resumeData.id.toString());
+      // ✅ Mark setup done in CLOUD (Cosmos)
+      try {
+        await completeSetupCloud(preferences);
+      } catch (e) {
+        console.error("Setup onboarding (cloud) failed:", e);
+        // Don’t block the user from proceeding if the write fails,
+        // but you should check /api/profile endpoints if this happens.
+      }
 
       toast.success("Resume uploaded and saved to your account.");
-
-      // ✅ Mark setup done without crashing if onboarding API differs
-      markSetupDoneSafely();
-
-      // ✅ Navigate using the hook you already created at the top-level
       navigate(createPageUrl("AppHome"), { replace: true });
     } catch (e) {
       console.error(e);
-      toast.error(
-        e?.message || "Something went wrong while saving your resume."
-      );
+      toast.error(e?.message || "Something went wrong while saving your resume.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -331,8 +336,7 @@ export default function Setup() {
             Let&apos;s set up your profile
           </h1>
           <p className="text-base sm:text-lg text-white/40 mt-3">
-            Upload your resume and set preferences so we can tailor documents to
-            you.
+            Upload your resume and set preferences so we can tailor documents to you.
           </p>
 
           {/* progress bar */}
@@ -345,14 +349,12 @@ export default function Setup() {
             </div>
             <div className="mt-2 flex items-center justify-between text-xs text-white/40">
               <span className={step >= 1 ? "text-white/60" : ""}>Resume</span>
-              <span className={step >= 2 ? "text-white/60" : ""}>
-                Preferences
-              </span>
+              <span className={step >= 2 ? "text-white/60" : ""}>Preferences</span>
             </div>
           </div>
         </div>
 
-        {/* Step 1: Upload Resume (ONLY) */}
+        {/* Step 1: Upload Resume */}
         {step === 1 && (
           <div className="glass-card rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_20px_80px_rgba(0,0,0,0.45)] p-6 sm:p-8">
             <div className="flex items-start justify-between gap-6 mb-6">
@@ -370,11 +372,7 @@ export default function Setup() {
               </div>
             </div>
 
-            <SectionCard
-              title="Upload resume"
-              icon={Upload}
-              description="Best results: PDF or DOCX"
-            >
+            <SectionCard title="Upload resume" icon={Upload} description="Best results: PDF or DOCX">
               <div className="rounded-2xl border-2 border-dashed border-white/10 bg-black/10 p-6 sm:p-10 text-center hover:border-purple-500/40 transition-colors">
                 <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center mx-auto mb-4">
                   <Upload className="w-7 h-7 text-purple-300" />
@@ -399,9 +397,7 @@ export default function Setup() {
                 {uploadedFile ? (
                   <div className="mt-6 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70">
                     <FileText className="w-4 h-4 text-purple-300" />
-                    <span className="max-w-[260px] truncate">
-                      {uploadedFile.name}
-                    </span>
+                    <span className="max-w-[260px] truncate">{uploadedFile.name}</span>
                     <Check className="w-4 h-4 text-green-500" />
                   </div>
                 ) : (
@@ -423,8 +419,7 @@ export default function Setup() {
                   Step 2: Your preferences
                 </h2>
                 <p className="text-sm text-white/40 mt-1">
-                  Helps generate cover letters and bullet points that match your
-                  goals.
+                  Helps generate cover letters and bullet points that match your goals.
                 </p>
               </div>
               <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white/50">
@@ -530,10 +525,20 @@ export default function Setup() {
               <div className="flex items-center justify-end pt-4 border-t border-white/10">
                 <Button
                   onClick={handleFinish}
-                  className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5"
+                  disabled={isSaving}
+                  className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
                 >
-                  Finish setup
-                  <ChevronRight className="w-4 h-4 ml-2" />
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      Finish setup
+                      <ChevronRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -545,7 +550,7 @@ export default function Setup() {
           <Button
             onClick={() => setStep(Math.max(1, step - 1))}
             variant="ghost"
-            disabled={step === 1}
+            disabled={step === 1 || isSaving}
             className="text-white/50 hover:text-white hover:bg-white/5 disabled:opacity-30 rounded-xl"
           >
             Back
@@ -554,7 +559,8 @@ export default function Setup() {
           {step === 1 && (
             <Button
               onClick={handleNext}
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5"
+              disabled={isSaving}
+              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
             >
               Continue
               <ChevronRight className="w-4 h-4 ml-2" />
