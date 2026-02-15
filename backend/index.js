@@ -320,3 +320,51 @@ app.http("profileUpdate", {
   authLevel: "anonymous",
   handler: profileUpdate,
 });
+const creditsMe = require("./src/functions/creditsMe");
+const creditsSpend = require("./src/functions/creditsSpend");
+const creditsGrant = require("./src/functions/creditsGrant");
+const creditsLedger = require("./src/functions/creditsLedger");
+
+app.http("creditsMe", {
+  methods: ["GET", "OPTIONS"],
+  route: "credits/me",
+  authLevel: "anonymous",
+  handler: creditsMe,
+});
+
+app.http("creditsSpend", {
+  methods: ["POST", "OPTIONS"],
+  route: "credits/spend",
+  authLevel: "anonymous",
+  handler: creditsSpend,
+});
+
+app.http("creditsGrant", {
+  methods: ["POST", "OPTIONS"],
+  route: "credits/grant",
+  authLevel: "anonymous",
+  handler: creditsGrant,
+});
+
+app.http("creditsLedger", {
+  methods: ["GET", "OPTIONS"],
+  route: "credits/ledger",
+  authLevel: "anonymous",
+  handler: creditsLedger,
+});
+const stripeCheckout = require("./src/functions/stripeCheckout");
+const stripeWebhook = require("./src/functions/stripeWebhook");
+
+app.http("stripeCheckout", {
+  methods: ["POST", "OPTIONS"],
+  route: "stripe/checkout",
+  authLevel: "anonymous",
+  handler: stripeCheckout,
+});
+
+app.http("stripeWebhook", {
+  methods: ["POST"],
+  route: "stripe/webhook",
+  authLevel: "anonymous",
+  handler: stripeWebhook,
+});
