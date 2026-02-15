@@ -1,133 +1,202 @@
 "use strict";
 
-const { usersContainer } = require("./cosmos.cjs");
+const { profilesContainer } = require("./cosmos.cjs");
 
+// -------- helpers --------
 async function readJson(request) {
   try {
     return await request.json();
   } catch {
-    return {};
+    const t = await request.text();
+    if (!t) return {};
+    try {
+      return JSON.parse(t);
+    } catch {
+      return {};
+    }
   }
 }
 
-async function getOrCreateUserDoc(userId) {
-  const c = usersContainer();
-  const item = c.item(userId, userId);
+function nowIso() {
+  return new Date().toISOString();
+}
 
-  try {
-    const { resource } = await item.read();
-    if (resource) return resource;
-  } catch (e) {
-    // 404 -> create below
-  }
-
-  const now = new Date().toISOString();
-  const base = {
+function defaultProfile(userId) {
+  const ts = nowIso();
+  return {
     id: userId,
     userId,
-    createdAt: now,
-    billing: {
-      planId: "free",
-      status: "active",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null,
-      processedEventIds: [],
-      updatedAt: now,
-    },
-    creditsBalance: 0,
-    credits: 0,
-    creditsUpdatedAt: now,
+    onboarding: { pricingDone: false, setupDone: false },
+    plan: { planId: "free", status: "active" },
+    credits: { balance: 0, updatedAt: ts },
+    creditsLedger: [], // most recent first
+    stripeEvents: [], // processed Stripe event ids (idempotency)
+    createdAt: ts,
+    updatedAt: ts,
   };
-
-  await c.items.create(base);
-  return base;
 }
 
-function clampEventIds(arr, max = 50) {
-  if (!Array.isArray(arr)) return [];
-  if (arr.length <= max) return arr;
-  return arr.slice(arr.length - max);
+async function readProfile(userId) {
+  try {
+    const { resource } = await profilesContainer.item(userId, userId).read();
+    if (resource) return resource;
+  } catch (e) {
+    if (e.code !== 404) throw e;
+  }
+
+  // Not found -> create a default profile doc
+  const prof = defaultProfile(userId);
+  await profilesContainer.items.upsert(prof);
+  return prof;
 }
 
-async function markEventOnce(userId, eventId) {
-  const c = usersContainer();
-  const doc = await getOrCreateUserDoc(userId);
+async function replaceWithRetry(userId, mutator, maxRetries = 5) {
+  let lastErr = null;
 
-  const processed = clampEventIds(doc?.billing?.processedEventIds || []);
-  if (processed.includes(eventId)) return false;
+  for (let i = 0; i < maxRetries; i++) {
+    const { resource, etag } = await profilesContainer.item(userId, userId).read();
 
-  processed.push(eventId);
+    const next = mutator(resource || defaultProfile(userId));
+    next.updatedAt = nowIso();
+    if (!next.id) next.id = userId;
+    if (!next.userId) next.userId = userId;
 
-  const now = new Date().toISOString();
-  const next = {
-    ...doc,
-    billing: {
-      ...(doc.billing || {}),
-      processedEventIds: processed,
-      updatedAt: now,
-    },
-  };
+    try {
+      const resp = await profilesContainer.item(userId, userId).replace(next, {
+        accessCondition: { type: "IfMatch", condition: etag },
+      });
+      return resp.resource;
+    } catch (e) {
+      lastErr = e;
+      // 412 = precondition failed (etag mismatch) -> retry
+      if (e.code === 412) continue;
+      throw e;
+    }
+  }
 
-  await c.item(userId, userId).replace(next);
-  return true;
+  throw lastErr || new Error("Failed to update profile (etag retries exceeded)");
 }
 
-async function setPlan(userId, { planId, status, stripeCustomerId, stripeSubscriptionId }) {
-  const c = usersContainer();
-  const doc = await getOrCreateUserDoc(userId);
-
-  const now = new Date().toISOString();
-  const next = {
-    ...doc,
-    billing: {
-      ...(doc.billing || {}),
-      planId: planId || doc?.billing?.planId || "free",
-      status: status || doc?.billing?.status || "active",
-      stripeCustomerId: stripeCustomerId ?? doc?.billing?.stripeCustomerId ?? null,
-      stripeSubscriptionId: stripeSubscriptionId ?? doc?.billing?.stripeSubscriptionId ?? null,
-      updatedAt: now,
-    },
-    // also store flat fields for compatibility with any old code
-    planId: planId || doc.planId || "free",
-    plan: planId || doc.plan || "free",
-  };
-
-  await c.item(userId, userId).replace(next);
-  return next;
+function pushLedger(profile, entry) {
+  const arr = Array.isArray(profile.creditsLedger) ? profile.creditsLedger : [];
+  arr.unshift(entry);
+  // cap to prevent infinite growth
+  profile.creditsLedger = arr.slice(0, 200);
 }
 
-async function grantCredits(userId, amount, reason = "grant") {
-  const c = usersContainer();
-  const doc = await getOrCreateUserDoc(userId);
+// -------- API --------
+async function setPlan(userId, patch) {
+  return replaceWithRetry(userId, (p) => {
+    p.plan = { ...(p.plan || {}), ...(patch || {}) };
+    return p;
+  });
+}
 
-  const add = Number(amount || 0);
-  if (!Number.isFinite(add) || add <= 0) return doc;
+async function setOnboarding(userId, patch) {
+  return replaceWithRetry(userId, (p) => {
+    p.onboarding = { ...(p.onboarding || {}), ...(patch || {}) };
+    return p;
+  });
+}
 
-  const now = new Date().toISOString();
-  const cur = Number(doc.creditsBalance || doc.credits || 0) || 0;
-  const nextBal = cur + add;
-
-  const ledger = Array.isArray(doc.creditsLedger) ? doc.creditsLedger : [];
-  ledger.push({ ts: now, type: "credit", amount: add, reason });
-  while (ledger.length > 50) ledger.shift();
-
-  const next = {
-    ...doc,
-    creditsBalance: nextBal,
-    credits: nextBal,
-    creditsAvailable: nextBal,
-    creditsUpdatedAt: now,
-    creditsLedger: ledger,
+async function getCredits(userId) {
+  const p = await readProfile(userId);
+  return {
+    balance: Number(p?.credits?.balance || 0) || 0,
+    plan: p.plan || null,
+    onboarding: p.onboarding || null,
   };
+}
 
-  await c.item(userId, userId).replace(next);
-  return next;
+async function grantCredits(userId, amount, reason, meta) {
+  const delta = Number(amount || 0) || 0;
+  if (delta <= 0) return getCredits(userId);
+
+  const ts = nowIso();
+
+  const updated = await replaceWithRetry(userId, (p) => {
+    const cur = Number(p?.credits?.balance || 0) || 0;
+    p.credits = { balance: cur + delta, updatedAt: ts };
+
+    pushLedger(p, {
+      id: `led_${ts}_${Math.random().toString(16).slice(2)}`,
+      ts,
+      type: "grant",
+      delta,
+      reason: reason || "grant",
+      meta: meta || null,
+    });
+
+    return p;
+  });
+
+  return { balance: updated.credits.balance };
+}
+
+async function spendCredits(userId, amount, reason, meta) {
+  const delta = Number(amount || 0) || 0;
+  if (delta <= 0) return getCredits(userId);
+
+  const ts = nowIso();
+
+  const updated = await replaceWithRetry(userId, (p) => {
+    const cur = Number(p?.credits?.balance || 0) || 0;
+    if (cur < delta) {
+      const err = new Error("Insufficient credits");
+      err.code = "INSUFFICIENT_CREDITS";
+      throw err;
+    }
+
+    p.credits = { balance: cur - delta, updatedAt: ts };
+
+    pushLedger(p, {
+      id: `led_${ts}_${Math.random().toString(16).slice(2)}`,
+      ts,
+      type: "spend",
+      delta: -delta,
+      reason: reason || "spend",
+      meta: meta || null,
+    });
+
+    return p;
+  });
+
+  return { balance: updated.credits.balance };
+}
+
+async function listLedger(userId, limit = 50) {
+  const p = await readProfile(userId);
+  const arr = Array.isArray(p.creditsLedger) ? p.creditsLedger : [];
+  return arr.slice(0, Math.max(1, Math.min(200, Number(limit) || 50)));
+}
+
+// Idempotency: record Stripe event id once per user
+async function markEventOnce(userId, stripeEventId) {
+  if (!userId || !stripeEventId) return false;
+
+  const updated = await replaceWithRetry(userId, (p) => {
+    const ev = Array.isArray(p.stripeEvents) ? p.stripeEvents : [];
+    if (ev.includes(stripeEventId)) {
+      p.stripeEvents = ev;
+      p.__alreadyProcessed = true; // internal flag
+      return p;
+    }
+    ev.unshift(stripeEventId);
+    p.stripeEvents = ev.slice(0, 500); // cap
+    return p;
+  });
+
+  return !updated.__alreadyProcessed;
 }
 
 module.exports = {
   readJson,
-  getOrCreateUserDoc,
-  markEventOnce,
+  readProfile,
   setPlan,
+  setOnboarding,
+  getCredits,
   grantCredits,
+  spendCredits,
+  listLedger,
+  markEventOnce,
 };
