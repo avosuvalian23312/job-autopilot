@@ -95,38 +95,70 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
+function normalizeCancelPath() {
+  // Always send a relative app path (Stripe checkout builds full URLs server-side).
+  try {
+    const p = window.location.pathname || "/Pricing";
+    return p.startsWith("/") ? p : "/Pricing";
+  } catch {
+    return "/Pricing";
+  }
+}
+
 export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleSelectPlan = async (plan) => {
     if (loadingPlan) return;
+    setErrorMsg("");
     setLoadingPlan(plan.id);
 
     // tiny UX delay
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 200));
 
     const successPath = getSetupPath();
-    const cancelPath = window.location.pathname || "/Pricing";
+    const cancelPath = normalizeCancelPath();
 
-    const resp = await postJson("/api/stripe/checkout", {
-      planId: plan.id,
-      successPath,
-      cancelPath,
-    });
+    try {
+      const resp = await postJson("/api/stripe/checkout", {
+        planId: plan.id, // free | pro | power
+        successPath, // where to land after checkout
+        cancelPath, // where to return if user cancels
+      });
 
-    if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
-      console.error("Checkout failed:", resp);
+      if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
+        console.error("Checkout failed:", resp);
+        setLoadingPlan(null);
+
+        // If Stripe is misconfigured, free should still be usable.
+        if (plan.id === "free") {
+          navigate(successPath, { replace: true });
+          return;
+        }
+
+        const msg =
+          resp.data?.error ||
+          resp.data?.message ||
+          `Checkout failed (HTTP ${resp.status})`;
+        setErrorMsg(msg);
+        return;
+      }
+
+      // ✅ Redirect to Stripe (or direct Setup URL for Free if your backend returns it)
+      window.location.assign(resp.data.url);
+    } catch (e) {
+      console.error(e);
       setLoadingPlan(null);
-      // fallback: don’t brick user
+
       if (plan.id === "free") {
         navigate(successPath, { replace: true });
+        return;
       }
-      return;
-    }
 
-    // Paid plans go to Stripe; Free returns direct Setup URL
-    window.location.assign(resp.data.url);
+      setErrorMsg(e?.message || "Checkout failed. Try again.");
+    }
   };
 
   return (
@@ -151,12 +183,16 @@ export default function Pricing() {
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
             Choose your plan
           </h1>
-          <p className="text-lg text-white/50 mb-2">
-            Start free. Upgrade anytime.
-          </p>
+          <p className="text-lg text-white/50 mb-2">Start free. Upgrade anytime.</p>
           <p className="text-sm text-white/30 mb-8">
             Secure checkout via Stripe. Cancel anytime.
           </p>
+
+          {errorMsg ? (
+            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm text-red-200">
+              {errorMsg}
+            </div>
+          ) : null}
 
           <Button
             onClick={() => handleSelectPlan(plans[0])}
@@ -208,16 +244,12 @@ export default function Pricing() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
-                          <span>
-                            {plan.credits} credits{plan.id === "free" ? "/month" : "/month"}
-                          </span>
+                          <span>{plan.credits} credits/month</span>
                           <HelpCircle className="w-3 h-3" />
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p className="text-xs">
-                          1 credit = 1 AI generation
-                        </p>
+                        <p className="text-xs">1 credit = 1 AI generation</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -227,9 +259,7 @@ export default function Pricing() {
               <p className="text-sm text-white/40 mb-6">{plan.description}</p>
 
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">
-                  ${plan.price}
-                </span>
+                <span className="text-4xl font-bold text-white">${plan.price}</span>
                 <span className="text-white/40">/month</span>
               </div>
 
@@ -254,10 +284,7 @@ export default function Pricing() {
 
               <ul className="space-y-3">
                 {plan.features.map((f) => (
-                  <li
-                    key={f}
-                    className="flex items-start gap-3 text-sm text-white/60"
-                  >
+                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
                     <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
                     <span>{f}</span>
                   </li>

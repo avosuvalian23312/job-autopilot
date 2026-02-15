@@ -10,7 +10,6 @@ import {
   LogOut,
   Coins,
 } from "lucide-react";
-import { onboarding } from "@/lib/onboarding";
 
 const navItems = [
   { label: "Home", icon: Home, page: "AppHome" },
@@ -20,31 +19,38 @@ const navItems = [
   { label: "Settings", icon: Settings, page: "AppSettings" },
 ];
 
-// Azure Static Web Apps logout helper
+// ✅ Azure Static Web Apps logout helper (REAL logout)
 function swaLogout(redirectPath = "/") {
-  const safe = redirectPath && redirectPath.startsWith("/") ? redirectPath : "/";
-  // Clears SWA auth cookie/session
-  window.location.href = `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(
-    safe
-  )}`;
+  const safe =
+    redirectPath && String(redirectPath).startsWith("/")
+      ? String(redirectPath)
+      : "/";
+  window.location.assign(
+    `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(safe)}`
+  );
 }
 
 export default function AppNav({ currentPage, credits = 87 }) {
   const handleLogout = () => {
-  // ✅ Do NOT clear localStorage/onboarding here,
-  // or you’ll be forced through Pricing + Setup again.
-  swaLogout("/");
-};
-
+    // ✅ IMPORTANT:
+    // Do NOT clear localStorage/onboarding here.
+    // Logout should ONLY clear SWA auth cookie.
+    swaLogout(createPageUrl("Landing") || "/");
+  };
 
   return (
     <nav className="border-b border-white/5 bg-[hsl(240,10%,4%)]/95 backdrop-blur-xl sticky top-0 z-40 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <Link to={createPageUrl("AppHome")} className="flex items-center gap-2.5">
+        <Link
+          to={createPageUrl("AppHome")}
+          className="flex items-center gap-2.5"
+        >
           <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
             <Rocket className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-white hidden sm:block">Job Autopilot</span>
+          <span className="font-bold text-white hidden sm:block">
+            Job Autopilot
+          </span>
         </Link>
 
         <div className="flex items-center gap-1">
@@ -70,8 +76,12 @@ export default function AppNav({ currentPage, credits = 87 }) {
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600/10 border border-purple-500/20 hover:bg-purple-600/20 transition-all cursor-pointer"
           >
             <Coins className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-semibold text-purple-400">{credits}</span>
-            <span className="text-xs text-white/30 hidden sm:inline">credits</span>
+            <span className="text-sm font-semibold text-purple-400">
+              {credits}
+            </span>
+            <span className="text-xs text-white/30 hidden sm:inline">
+              credits
+            </span>
           </Link>
 
           <button
