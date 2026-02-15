@@ -304,3 +304,19 @@ app.http("resumeSas", {
   authLevel: "anonymous",
   handler: resumeSas,
 });
+const profileMe = require("./src/functions/profileMe");
+const profileUpdate = require("./src/functions/profileUpdate");
+
+app.http("profileMe", {
+  methods: ["GET", "OPTIONS"],
+  route: "profile/me",
+  authLevel: "anonymous",
+  handler: profileMe,
+});
+
+app.http("profileUpdate", {
+  methods: ["POST", "PATCH", "OPTIONS"],
+  route: "profile",
+  authLevel: "anonymous",
+  handler: profileUpdate,
+});

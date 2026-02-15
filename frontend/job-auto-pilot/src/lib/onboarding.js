@@ -1,92 +1,86 @@
 // src/lib/onboarding.js
-// Local-only onboarding state (simple + reliable)
+// Cloud onboarding stored in Cosmos per SWA user via /api/profile
 
-const KEY_PRICING = "onboarding_pricing_done_v1";
-const KEY_SETUP = "onboarding_setup_done_v1";
+let _cache = null;
+let _inflight = null;
 
-// Backward-compat keys (so older code doesn't break)
-const LEGACY_PRICING_KEYS = [
-  "onboarding_pricing_done",
-  "pricingDone",
-  "onboarding_pricing_done_v0",
-];
-const LEGACY_SETUP_KEYS = [
-  "onboarding_setup_done",
-  "setupDone",
-  "onboarding_setup_done_v0",
-];
+async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
-const readBoolAny = (keys) => {
+  const text = await res.text();
+  let data = null;
   try {
-    return keys.some((k) => {
-      const v = localStorage.getItem(k);
-      return v === "1" || v === "true";
-    });
+    data = text ? JSON.parse(text) : null;
   } catch {
-    return false;
+    data = { raw: text };
   }
-};
 
-const writeBool = (key, val) => {
-  try {
-    if (val) localStorage.setItem(key, "1");
-    else localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-};
+  return { ok: res.ok, status: res.status, data };
+}
 
-// Mirror to legacy keys so any older checks still pass
-const mirrorBool = (legacyKeys, val) => {
-  try {
-    legacyKeys.forEach((k) => {
-      if (val) localStorage.setItem(k, "1");
-      else localStorage.removeItem(k);
-    });
-  } catch {}
-};
+async function fetchProfile(force = false) {
+  if (!force && _cache) return _cache;
+  if (!force && _inflight) return _inflight;
+
+  _inflight = (async () => {
+    const r = await api("/api/profile/me");
+    if (!r.ok || !r.data?.ok) {
+      _cache = null;
+      _inflight = null;
+      return null;
+    }
+    _cache = r.data.profile;
+    _inflight = null;
+    return _cache;
+  })();
+
+  return _inflight;
+}
+
+async function updateProfile(patch) {
+  const r = await api("/api/profile", { method: "POST", body: patch });
+  if (!r.ok || !r.data?.ok) throw new Error(r.data?.error || "Profile update failed");
+  _cache = r.data.profile;
+  return _cache;
+}
 
 export const onboarding = {
-  getState() {
+  async getState(force = false) {
+    const p = await fetchProfile(force);
+    const ob = p?.onboarding || {};
     return {
-      pricingDone: readBoolAny([KEY_PRICING, ...LEGACY_PRICING_KEYS]),
-      setupDone: readBoolAny([KEY_SETUP, ...LEGACY_SETUP_KEYS]),
+      pricingDone: !!ob.pricingDone,
+      setupDone: !!ob.setupDone,
+      selectedPlan: ob.selectedPlan || null,
     };
   },
 
-  getNextStep() {
-    const s = this.getState();
+  async getNextStep(force = false) {
+    const s = await this.getState(force);
     if (!s.pricingDone) return "pricing";
     if (!s.setupDone) return "setup";
     return "done";
   },
 
-  // ✅ Canonical
-  completePricing() {
-    writeBool(KEY_PRICING, true);
-    mirrorBool(LEGACY_PRICING_KEYS, true);
+  async completePricing(planName = null) {
+    await updateProfile({
+      onboarding: { pricingDone: true, selectedPlan: planName || null },
+    });
   },
 
-  completeSetup() {
-    writeBool(KEY_SETUP, true);
-    mirrorBool(LEGACY_SETUP_KEYS, true);
+  async completeSetup(preferences = null) {
+    const patch = { onboarding: { setupDone: true } };
+    if (preferences) patch.preferences = preferences;
+    await updateProfile(patch);
   },
 
-  // ✅ Aliases so your UI code doesn't crash
-  setPricingDone(val = true) {
-    writeBool(KEY_PRICING, !!val);
-    mirrorBool(LEGACY_PRICING_KEYS, !!val);
-  },
-
-  setSetupDone(val = true) {
-    writeBool(KEY_SETUP, !!val);
-    mirrorBool(LEGACY_SETUP_KEYS, !!val);
-  },
-
-  reset() {
-    writeBool(KEY_PRICING, false);
-    writeBool(KEY_SETUP, false);
-    mirrorBool(LEGACY_PRICING_KEYS, false);
-    mirrorBool(LEGACY_SETUP_KEYS, false);
+  clearCache() {
+    _cache = null;
+    _inflight = null;
   },
 };

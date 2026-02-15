@@ -31,19 +31,11 @@ function swaLogout(redirectPath = "/") {
 
 export default function AppNav({ currentPage, credits = 87 }) {
   const handleLogout = () => {
-    // Optional: clear local-only onboarding / cached UI state
-    try {
-      onboarding?.reset?.();
-      localStorage.removeItem("onboardingComplete");
-      localStorage.removeItem("preferences");
-      // If you want to also clear resumes cache:
-      // localStorage.removeItem("resumes");
-      // localStorage.removeItem("defaultResumeId");
-    } catch {}
+  // ✅ Do NOT clear localStorage/onboarding here,
+  // or you’ll be forced through Pricing + Setup again.
+  swaLogout("/");
+};
 
-    // Actually sign out of SWA
-    swaLogout("/");
-  };
 
   return (
     <nav className="border-b border-white/5 bg-[hsl(240,10%,4%)]/95 backdrop-blur-xl sticky top-0 z-40 shadow-lg">

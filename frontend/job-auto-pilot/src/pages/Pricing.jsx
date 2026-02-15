@@ -78,27 +78,50 @@ export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
 
+  const persistPricingCloud = async (planName) => {
+    // ✅ Cloud-first: write to Cosmos via your onboarding lib
+    if (typeof onboarding?.completePricing === "function") {
+      await onboarding.completePricing(planName);
+      return;
+    }
+
+    // ✅ Compatibility: some versions use setters
+    if (typeof onboarding?.setPricingDone === "function") {
+      // (val, planName) supported by the cloud version I gave you
+      await onboarding.setPricingDone(true, planName);
+      return;
+    }
+
+    // If neither exists, throw so we stop silently failing
+    throw new Error("onboarding.completePricing / setPricingDone not found");
+  };
+
   const handleSelectPlan = async (planName) => {
+    if (loadingPlan) return;
     setLoadingPlan(planName);
-    await new Promise((resolve) => setTimeout(resolve, 800));
 
-    // ✅ mark pricing done using your onboarding lib
+    // tiny delay for UX
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
     try {
-      if (typeof onboarding?.completePricing === "function") onboarding.completePricing();
-      else if (typeof onboarding?.setPricingDone === "function") onboarding.setPricingDone(true);
-    } catch {}
+      await persistPricingCloud(planName);
+    } catch (e) {
+      console.error("Pricing onboarding failed:", e);
+      // Still allow navigation if the write fails
+      // (but you should check /api/profile endpoints if this happens)
+    }
 
-    // Optional: remember selected plan locally
+    // Optional: keep local selected plan for UI only (not onboarding logic)
     try {
       localStorage.setItem("selectedPlan", planName);
     } catch {}
 
-    // ✅ navigate to the actual Setup route key
     navigate(getSetupPath(), { replace: true });
   };
 
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+      {/* Header */}
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -236,6 +259,7 @@ export default function Pricing() {
           ))}
         </div>
 
+        {/* Add-on */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

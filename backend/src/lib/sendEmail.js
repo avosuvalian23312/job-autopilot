@@ -1,28 +1,47 @@
-"use strict";
+// backend/src/lib/cosmosClient.js
+import { CosmosClient } from "@azure/cosmos";
 
-const sgMail = require("@sendgrid/mail");
-
-function isConfigured() {
-  return Boolean(process.env.SENDGRID_API_KEY && process.env.SUPPORT_TO_EMAIL && process.env.SUPPORT_FROM_EMAIL);
-}
-
-async function sendSupportEmail({ subject, text }) {
-  const apiKey = process.env.SENDGRID_API_KEY;
-  const to = process.env.SUPPORT_TO_EMAIL;
-  const from = process.env.SUPPORT_FROM_EMAIL;
-
-  if (!apiKey || !to || !from) {
-    throw new Error("Email not configured. Set SENDGRID_API_KEY, SUPPORT_TO_EMAIL, SUPPORT_FROM_EMAIL.");
+/**
+ * Parse AccountEndpoint + AccountKey from connection string
+ * Works on all @azure/cosmos versions
+ */
+function parseCosmosConnectionString(connStr) {
+  if (!connStr) {
+    throw new Error("Missing COSMOS_CONNECTION_STRING");
   }
 
-  sgMail.setApiKey(apiKey);
+  const parts = connStr.split(";").reduce((acc, part) => {
+    const [key, value] = part.split("=");
+    if (key && value) acc[key] = value;
+    return acc;
+  }, {});
 
-  await sgMail.send({
-    to,
-    from,
-    subject,
-    text,
-  });
+  if (!parts.AccountEndpoint || !parts.AccountKey) {
+    throw new Error("Invalid COSMOS_CONNECTION_STRING format");
+  }
+
+  return {
+    endpoint: parts.AccountEndpoint,
+    key: parts.AccountKey,
+  };
 }
 
-module.exports = { isConfigured, sendSupportEmail };
+const { endpoint, key } = parseCosmosConnectionString(
+  process.env.COSMOS_CONNECTION_STRING
+);
+
+// ✅ Universal Cosmos client constructor
+export const cosmosClient = new CosmosClient({ endpoint, key });
+
+// Helpers
+export const db = cosmosClient.database(process.env.COSMOS_DB_NAME);
+
+export const jobsContainer = db.container(process.env.JOBS_CONTAINER_NAME);
+export const usersContainer = db.container(process.env.USERS_CONTAINER_NAME);
+
+// ✅ NEW: Profiles container (recommended separate container)
+// Set PROFILES_CONTAINER_NAME=profiles in your SWA env.
+// If not set, it falls back to USERS_CONTAINER_NAME.
+export const profilesContainer = db.container(
+  process.env.PROFILES_CONTAINER_NAME || process.env.USERS_CONTAINER_NAME
+);
