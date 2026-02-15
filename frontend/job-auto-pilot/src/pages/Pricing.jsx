@@ -1,14 +1,10 @@
-import React, { useState } from "react";
+// src/pages/Pricing.jsx
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { pagesConfig } from "@/pages.config";
 
 const plans = [
@@ -96,7 +92,6 @@ async function postJson(path, body) {
 }
 
 function normalizeCancelPath() {
-  // Always send a relative app path (Stripe checkout builds full URLs server-side).
   try {
     const p = window.location.pathname || "/Pricing";
     return p.startsWith("/") ? p : "/Pricing";
@@ -110,12 +105,20 @@ export default function Pricing() {
   const [loadingPlan, setLoadingPlan] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const forceMode = useMemo(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      return qs.get("force") === "pricing";
+    } catch {
+      return false;
+    }
+  }, []);
+
   const handleSelectPlan = async (plan) => {
     if (loadingPlan) return;
     setErrorMsg("");
     setLoadingPlan(plan.id);
 
-    // tiny UX delay
     await new Promise((r) => setTimeout(r, 200));
 
     const successPath = getSetupPath();
@@ -123,16 +126,15 @@ export default function Pricing() {
 
     try {
       const resp = await postJson("/api/stripe/checkout", {
-        planId: plan.id, // free | pro | power
-        successPath, // where to land after checkout
-        cancelPath, // where to return if user cancels
+        planId: plan.id,     // free | pro | power
+        successPath,         // server builds full URL
+        cancelPath,
       });
 
       if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
         console.error("Checkout failed:", resp);
         setLoadingPlan(null);
 
-        // If Stripe is misconfigured, free should still be usable.
         if (plan.id === "free") {
           navigate(successPath, { replace: true });
           return;
@@ -146,7 +148,6 @@ export default function Pricing() {
         return;
       }
 
-      // ✅ Redirect to Stripe (or direct Setup URL for Free if your backend returns it)
       window.location.assign(resp.data.url);
     } catch (e) {
       console.error(e);
@@ -175,18 +176,16 @@ export default function Pricing() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
-            Choose your plan
-          </h1>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Choose your plan</h1>
           <p className="text-lg text-white/50 mb-2">Start free. Upgrade anytime.</p>
-          <p className="text-sm text-white/30 mb-8">
-            Secure checkout via Stripe. Cancel anytime.
-          </p>
+          <p className="text-sm text-white/30 mb-6">Secure checkout via Stripe. Cancel anytime.</p>
+
+          {forceMode ? (
+            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
+              Test mode: opened via <span className="font-mono">?force=pricing</span> (bypassing onboarding redirect)
+            </div>
+          ) : null}
 
           {errorMsg ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm text-red-200">
@@ -218,9 +217,7 @@ export default function Pricing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.08 }}
               className={`relative rounded-2xl p-8 ${
-                plan.popular
-                  ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
-                  : "glass-card"
+                plan.popular ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30" : "glass-card"
               }`}
             >
               {plan.popular && (
@@ -231,11 +228,7 @@ export default function Pricing() {
               )}
 
               <div className="flex items-center gap-3 mb-4">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    plan.popular ? "bg-purple-600/20" : "bg-white/5"
-                  }`}
-                >
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${plan.popular ? "bg-purple-600/20" : "bg-white/5"}`}>
                   <plan.icon className="w-6 h-6 text-purple-400" />
                 </div>
                 <div>
@@ -295,12 +288,8 @@ export default function Pricing() {
         </div>
 
         <div className="glass-card rounded-2xl p-6 text-center">
-          <p className="text-white/60 text-sm mb-2">
-            Credit packs are coming next (one-time purchases).
-          </p>
-          <p className="text-white/30 text-xs">
-            Subscriptions grant monthly credits automatically via Stripe webhooks.
-          </p>
+          <p className="text-white/60 text-sm mb-2">Credit packs are coming next (one-time purchases).</p>
+          <p className="text-white/30 text-xs">Subscriptions grant monthly credits automatically via Stripe webhooks.</p>
         </div>
       </div>
     </div>

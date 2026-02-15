@@ -1,106 +1,76 @@
+// backend/src/functions/profileMe.js
 "use strict";
 
-const { getSwaUserId, getSwaUserDetails, getSwaIdentityProvider } = require("../lib/swaUser");
+const { getSwaUserId } = require("../lib/swaUser");
+const { profilesContainer } = require("../lib/cosmosClient.cjs"); // adjust if your export name differs
 
-function cors() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  };
-}
 function json(status, body) {
-  return { status, headers: { ...cors(), "Content-Type": "application/json" }, body: JSON.stringify(body) };
-}
-function periodYYYYMM(d = new Date()) {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-function allowanceForPlan(plan) {
-  // ✅ Your requirement: free allows 3 resume generations monthly
-  if (plan === "pro") return 60;
-  if (plan === "power") return 120;
-  return 3; // free
+  return { status, jsonBody: body };
 }
 
-function buildDefaultProfile({ userId, email, provider }) {
-  const now = new Date().toISOString();
-  return {
-    id: userId,
-    userId,
-    email: email || null,
-    provider: provider || null,
-    plan: "free",
-    onboarding: { pricingDone: false, setupDone: false },
-    credits: {
-      balance: 0,
-      monthlyAllowance: allowanceForPlan("free"),
-      monthlyUsed: 0,
-      monthlyPeriod: periodYYYYMM(),
-    },
-    preferences: {},
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function normalizeMonthly(profile) {
-  const cur = periodYYYYMM();
-  profile.credits = profile.credits || {};
-  if (profile.credits.monthlyPeriod !== cur) {
-    profile.credits.monthlyPeriod = cur;
-    profile.credits.monthlyUsed = 0;
-  }
-  profile.plan = profile.plan || "free";
-  profile.credits.monthlyAllowance = allowanceForPlan(profile.plan);
+function nowIso() {
+  return new Date().toISOString();
 }
 
 module.exports = async (request, context) => {
-  if (request.method === "OPTIONS") return { status: 204, headers: cors() };
-
   const userId = getSwaUserId(request);
   if (!userId) return json(401, { ok: false, error: "Not authenticated" });
 
-  const email = getSwaUserDetails(request);
-  const provider = getSwaIdentityProvider(request);
-
-  const { profilesContainer } = await import("../lib/cosmosClient.js");
-
-  const pk = userId;
-  const id = userId;
-
-  let profile = null;
+  const id = userId; // ✅ id = userId
+  const pk = userId; // ✅ pk = userId (assuming partition key is /userId)
 
   try {
-    const read = await profilesContainer.item(id, pk).read();
-    profile = read.resource;
+    const { resource } = await profilesContainer.item(id, pk).read();
+
+    // If doc exists but missing fields, normalize lightly (optional)
+    const profile = resource || null;
+    if (!profile) {
+      return json(200, {
+        ok: true,
+        profile: {
+          id,
+          userId,
+          onboarding: { pricingDone: false, setupDone: false },
+          plan: { planId: "free", status: "active" },
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+      });
+    }
+
+    // Ensure required keys exist (non-destructive)
+    profile.id = profile.id || id;
+    profile.userId = profile.userId || userId;
+    profile.onboarding = profile.onboarding || { pricingDone: false, setupDone: false };
+    profile.plan = profile.plan || { planId: "free", status: "active" };
+    profile.updatedAt = profile.updatedAt || nowIso();
+
+    return json(200, { ok: true, profile });
   } catch (e) {
-    // 404 -> create
-  }
+    const code = e?.code || e?.statusCode;
 
-  if (!profile) {
-    profile = buildDefaultProfile({ userId, email, provider });
-    await profilesContainer.items.upsert(profile);
-  } else {
-    // keep identity fresh
-    profile.email = profile.email || email || null;
-    profile.provider = profile.provider || provider || null;
-    normalizeMonthly(profile);
-    profile.updatedAt = new Date().toISOString();
-    await profilesContainer.items.upsert(profile);
-  }
+    // Not found -> create default profile (so future updates are easy)
+    if (code === 404) {
+      const profile = {
+        id,
+        userId,
+        onboarding: { pricingDone: false, setupDone: false },
+        plan: { planId: "free", status: "active" },
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
 
-  return json(200, {
-    ok: true,
-    profile: {
-      userId: profile.userId,
-      email: profile.email,
-      provider: profile.provider,
-      plan: profile.plan,
-      onboarding: profile.onboarding || { pricingDone: false, setupDone: false },
-      credits: profile.credits || null,
-      preferences: profile.preferences || {},
-    },
-  });
+      try {
+        // Upsert so the doc exists from first login
+        await profilesContainer.items.upsert(profile, { partitionKey: pk });
+      } catch (upErr) {
+        context?.log?.warn?.("profileMe: upsert default failed (continuing)", upErr);
+      }
+
+      return json(200, { ok: true, profile });
+    }
+
+    context?.log?.error?.("profileMe failed", e);
+    return json(500, { ok: false, error: e?.message || String(e) });
+  }
 };
