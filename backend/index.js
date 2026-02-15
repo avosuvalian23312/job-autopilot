@@ -1,7 +1,7 @@
 // backend/index.js (Azure Functions v4 - code-first model)
-console.log("✅ backend/index.js loaded");
-
 "use strict";
+
+console.log("✅ backend/index.js loaded");
 
 const { app } = require("@azure/functions");
 
@@ -11,7 +11,7 @@ if (!app || typeof app.http !== "function") {
   );
 }
 
-// OPTIONS guard
+// OPTIONS guard (keep simple)
 const withOptions = (handler) => async (request, context) => {
   if (request.method === "OPTIONS") return { status: 204 };
   return handler(request, context);
@@ -51,7 +51,9 @@ const lazy = (modulePath, exportName = null) =>
           jsonBody: {
             ok: false,
             error: "Handler export mismatch",
-            detail: `No function export found in ${modulePath} (expected ${exportName || "a function export"})`,
+            detail: `No function export found in ${modulePath} (expected ${
+              exportName || "a function export"
+            })`,
           },
         };
       }
@@ -91,7 +93,6 @@ app.http("jobs", {
   authLevel: "anonymous",
   handler: withOptions(async (request, context) => {
     if (request.method === "GET") {
-      // src/functions/listJobs.js
       const mod = require("./src/functions/listJobs.js");
       const fn = pickHandler(mod, "listJobs");
       if (!fn) return { status: 500, jsonBody: { ok: false, error: "listJobs export missing" } };
@@ -99,7 +100,6 @@ app.http("jobs", {
     }
 
     if (request.method === "POST") {
-      // src/functions/createJob.js
       const mod = require("./src/functions/createJob.js");
       const fn = pickHandler(mod, "createJob");
       if (!fn) return { status: 500, jsonBody: { ok: false, error: "createJob export missing" } };
@@ -124,7 +124,7 @@ app.http("authExchange", {
   methods: ["POST", "OPTIONS"],
   route: "auth/exchange",
   authLevel: "anonymous",
-  handler: lazy("./src/functions/authExchange.js"), // file is authExchange.js
+  handler: lazy("./src/functions/authExchange.js"),
 });
 
 // ========================
@@ -184,6 +184,13 @@ app.http("resumeOptimize", {
   route: "resume/optimize",
   authLevel: "anonymous",
   handler: lazy("./src/functions/resumeOptimize.js", "resumeOptimize"),
+});
+
+app.http("resumeSas", {
+  methods: ["GET", "OPTIONS"],
+  route: "resume/sas",
+  authLevel: "anonymous",
+  handler: lazy("./src/functions/resumeSas.js", "resumeSas"),
 });
 
 // ========================
@@ -272,8 +279,7 @@ app.http("userinfo", {
 });
 
 // ========================
-// Apply / Cover Letters (match EXACT file casing)
-// Files in your folder: applyPrepare.js, coverLettersGet.js
+// Apply / Cover Letters
 // ========================
 app.http("applyPrepare", {
   methods: ["POST", "OPTIONS"],
@@ -289,82 +295,74 @@ app.http("coverLettersGet", {
   handler: lazy("./src/functions/coverLettersGet.js", "coverLettersGet"),
 });
 
-// Optional (you have verifyEmailLogin.js in your folder)
 app.http("verifyEmailLogin", {
   methods: ["POST", "OPTIONS"],
   route: "verify/email-login",
   authLevel: "anonymous",
   handler: lazy("./src/functions/verifyEmailLogin.js", "verifyEmailLogin"),
 });
-const { resumeSas } = require("./src/functions/resumeSas");
 
-app.http("resumeSas", {
-  methods: ["GET", "OPTIONS"],
-  route: "resume/sas",
-  authLevel: "anonymous",
-  handler: resumeSas,
-});
-const profileMe = require("./src/functions/profileMe");
-const profileUpdate = require("./src/functions/profileUpdate");
-
+// ========================
+// Profile
+// ========================
 app.http("profileMe", {
   methods: ["GET", "OPTIONS"],
   route: "profile/me",
   authLevel: "anonymous",
-  handler: profileMe,
+  handler: lazy("./src/functions/profileMe.js", "profileMe"),
 });
 
 app.http("profileUpdate", {
   methods: ["POST", "PATCH", "OPTIONS"],
   route: "profile",
   authLevel: "anonymous",
-  handler: profileUpdate,
+  handler: lazy("./src/functions/profileUpdate.js", "profileUpdate"),
 });
-const creditsMe = require("./src/functions/creditsMe");
-const creditsSpend = require("./src/functions/creditsSpend");
-const creditsGrant = require("./src/functions/creditsGrant");
-const creditsLedger = require("./src/functions/creditsLedger");
 
+// ========================
+// Credits
+// ========================
 app.http("creditsMe", {
   methods: ["GET", "OPTIONS"],
   route: "credits/me",
   authLevel: "anonymous",
-  handler: creditsMe,
+  handler: lazy("./src/functions/creditsMe.js", "creditsMe"),
 });
 
 app.http("creditsSpend", {
   methods: ["POST", "OPTIONS"],
   route: "credits/spend",
   authLevel: "anonymous",
-  handler: creditsSpend,
+  handler: lazy("./src/functions/creditsSpend.js", "creditsSpend"),
 });
 
 app.http("creditsGrant", {
   methods: ["POST", "OPTIONS"],
   route: "credits/grant",
   authLevel: "anonymous",
-  handler: creditsGrant,
+  handler: lazy("./src/functions/creditsGrant.js", "creditsGrant"),
 });
 
 app.http("creditsLedger", {
   methods: ["GET", "OPTIONS"],
   route: "credits/ledger",
   authLevel: "anonymous",
-  handler: creditsLedger,
+  handler: lazy("./src/functions/creditsLedger.js", "creditsLedger"),
 });
-const stripeCheckout = require("./src/functions/stripeCheckout");
-const stripeWebhook = require("./src/functions/stripeWebhook");
 
+// ========================
+// Stripe (IMPORTANT: lazy load to avoid killing whole API)
+// ========================
 app.http("stripeCheckout", {
   methods: ["POST", "OPTIONS"],
   route: "stripe/checkout",
   authLevel: "anonymous",
-  handler: stripeCheckout,
+  handler: lazy("./src/functions/stripeCheckout.js", "stripeCheckout"),
 });
 
 app.http("stripeWebhook", {
   methods: ["POST"],
   route: "stripe/webhook",
   authLevel: "anonymous",
-  handler: stripeWebhook,
+  handler: lazy("./src/functions/stripeWebhook.js", "stripeWebhook"),
 });
