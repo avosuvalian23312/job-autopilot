@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/tooltip";
 import { pagesConfig } from "@/pages.config";
 
+// IMPORTANT: These IDs must match what your backend stripeCheckout expects.
+// Your backend index.js exposes:
+//   POST /api/stripe/checkout  -> route: "stripe/checkout"
+//   POST /api/stripe/webhook   -> route: "stripe/webhook"  (Stripe calls this, NOT the browser)
+//
+// Your stripeCheckout earlier used plan keys like: basic / pro / max.
+// So we map the "Power" plan to id: "max" (not "power").
 const plans = [
   {
     id: "free",
@@ -49,8 +56,7 @@ const plans = [
     cta: "Start Pro",
   },
   {
-    // IMPORTANT: backend checkout expects "max" (your earlier plan map uses basic/pro/max)
-    id: "max",
+    id: "max", // <-- backend expects "max" (Power tier)
     name: "Power",
     price: 19.99,
     credits: 60,
@@ -97,75 +103,77 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-function currentPathWithSearch() {
+async function getJson(path) {
+  const res = await fetch(path, { method: "GET", credentials: "include" });
+  const text = await res.text();
+  let data = null;
   try {
-    const p = window.location.pathname || "/pricing";
-    const s = window.location.search || "";
-    const safeP = p.startsWith("/") ? p : "/pricing";
-    return `${safeP}${s}`;
+    data = text ? JSON.parse(text) : null;
   } catch {
-    return "/pricing";
+    data = null;
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+// Keep cancel path stable (include query string so ?force=pricing stays)
+function getCancelPath() {
+  try {
+    const p = window.location.pathname || "/Pricing";
+    const s = window.location.search || "";
+    const safe = p.startsWith("/") ? p : "/Pricing";
+    return `${safe}${s}`;
+  } catch {
+    return "/Pricing";
   }
 }
 
-// Attempt to get a stable user identity for Stripe metadata.
-// Works across different response shapes.
-function extractUserId(me) {
-  if (!me) return null;
+// Your app may return different shapes. These try common locations.
+function extractUserId(obj) {
+  if (!obj || typeof obj !== "object") return null;
   return (
-    me.userId ||
-    me.id ||
-    me.sub ||
-    me.user?.id ||
-    me.user?.userId ||
-    me.profile?.id ||
-    me.profile?.userId ||
+    obj.userId ||
+    obj.id ||
+    obj.sub ||
+    obj.uid ||
+    obj.user?.id ||
+    obj.user?.userId ||
+    obj.profile?.id ||
+    obj.profile?.userId ||
     null
   );
 }
 
-function extractEmail(me) {
-  if (!me) return null;
+function extractEmail(obj) {
+  if (!obj || typeof obj !== "object") return null;
   return (
-    me.email ||
-    me.mail ||
-    me.user?.email ||
-    me.user?.mail ||
-    me.profile?.email ||
+    obj.email ||
+    obj.mail ||
+    obj.user?.email ||
+    obj.user?.mail ||
+    obj.profile?.email ||
     null
   );
 }
 
 async function fetchMe() {
-  const candidates = ["/api/profile/me", "/api/userinfo"];
+  // Backend routes available from your index.js:
+  //   GET /api/profile/me
+  //   GET /api/userinfo
+  const endpoints = ["/api/profile/me", "/api/userinfo"];
 
-  for (const url of candidates) {
+  for (const url of endpoints) {
     try {
-      const res = await fetch(url, { method: "GET", credentials: "include" });
-      if (!res.ok) continue;
+      const res = await getJson(url);
+      if (!res.ok || !res.data) continue;
 
-      const text = await res.text();
-      let data = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = null;
-      }
-
-      // accept common shapes
-      if (!data) continue;
-      if (data.ok === false) continue;
-
-      // If the endpoint wraps the user:
+      // unwrap common wrappers
       const maybe =
-        data.profile || data.user || data.me || data.account || data;
+        res.data.profile || res.data.user || res.data.me || res.data.account || res.data;
 
-      // require *some* identity field
-      if (extractUserId(maybe) || extractEmail(maybe)) return maybe;
-      // still return it if it looks like a user object
-      if (typeof maybe === "object") return maybe;
+      if (maybe && (extractUserId(maybe) || extractEmail(maybe))) return maybe;
+      if (maybe && typeof maybe === "object") return maybe;
     } catch {
-      // ignore and try next
+      // try next
     }
   }
 
@@ -192,9 +200,9 @@ export default function Pricing() {
     let alive = true;
     (async () => {
       setMeLoading(true);
-      const user = await fetchMe();
+      const u = await fetchMe();
       if (!alive) return;
-      setMe(user);
+      setMe(u);
       setMeLoading(false);
     })();
     return () => {
@@ -207,32 +215,31 @@ export default function Pricing() {
     setErrorMsg("");
     setLoadingPlan(plan.id);
 
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 200));
 
     const successPath = getSetupPath();
-    const cancelPath = currentPathWithSearch();
+    const cancelPath = getCancelPath();
 
-    // Free never calls Stripe
+    // ✅ Free should not call Stripe checkout at all
     if (plan.id === "free") {
       setLoadingPlan(null);
       navigate(successPath, { replace: true });
       return;
     }
 
-    // Require identity for paid plans so webhooks can grant credits correctly
+    // ✅ Paid plans should send userId/email so webhooks can credit the right user
     const userId = extractUserId(me);
     const email = extractEmail(me);
 
     if (!userId && !email) {
       setLoadingPlan(null);
-      setErrorMsg("Please sign in before upgrading so we can attach the subscription to your account.");
-      // Kick them to setup/login flow
+      setErrorMsg("Please sign in before upgrading so we can attach billing to your account.");
       navigate(successPath, { replace: true });
       return;
     }
 
     try {
-      // IMPORTANT: matches backend/index.js route: route: "stripe/checkout"
+      // ✅ MUST match backend route in index.js: route: "stripe/checkout"
       const resp = await postJson("/api/stripe/checkout", {
         planId: plan.id, // pro | max
         successPath,     // server builds full URL
@@ -248,9 +255,9 @@ export default function Pricing() {
         const msg =
           resp.data?.error ||
           resp.data?.message ||
+          resp.data?.detail ||
           `Checkout failed (HTTP ${resp.status})`;
 
-        // If you haven't set STRIPE_PRICE_MAX yet, you'll see a "missing env var" error here.
         setErrorMsg(msg);
         return;
       }
@@ -296,9 +303,8 @@ export default function Pricing() {
 
           {forceMode ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
-              Test mode: opened via{" "}
-              <span className="font-mono">?force=pricing</span> (bypassing onboarding
-              redirect)
+              Test mode: opened via <span className="font-mono">?force=pricing</span>{" "}
+              (bypassing onboarding redirect)
             </div>
           ) : null}
 
@@ -325,95 +331,87 @@ export default function Pricing() {
         </motion.div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {plans.map((plan, i) => {
-            // If you haven't configured STRIPE_PRICE_MAX yet, Power will error.
-            // We keep it enabled but you can flip this to true to hard-disable until ready.
-            const comingSoon = false;
-
-            return (
-              <motion.div
-                key={plan.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className={`relative rounded-2xl p-8 ${
-                  plan.popular
-                    ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
-                    : "glass-card"
-                }`}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
-                    <Sparkles className="w-3 h-3" />
-                    Most Popular
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3 mb-4">
-                  <div
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                      plan.popular ? "bg-purple-600/20" : "bg-white/5"
-                    }`}
-                  >
-                    <plan.icon className="w-6 h-6 text-purple-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
-                            <span>{plan.credits} credits/month</span>
-                            <HelpCircle className="w-3 h-3" />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="text-xs">1 credit = 1 AI generation</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+          {plans.map((plan, i) => (
+            <motion.div
+              key={plan.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08 }}
+              className={`relative rounded-2xl p-8 ${
+                plan.popular
+                  ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
+                  : "glass-card"
+              }`}
+            >
+              {plan.popular && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
+                  <Sparkles className="w-3 h-3" />
+                  Most Popular
                 </div>
+              )}
 
-                <p className="text-sm text-white/40 mb-6">{plan.description}</p>
-
-                <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-4xl font-bold text-white">${plan.price}</span>
-                  <span className="text-white/40">/month</span>
-                </div>
-
-                <Button
-                  onClick={() => handleSelectPlan(plan)}
-                  disabled={loadingPlan === plan.id || plan.id === "free" || comingSoon}
-                  className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
-                    plan.popular
-                      ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
-                      : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+              <div className="flex items-center gap-3 mb-4">
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    plan.popular ? "bg-purple-600/20" : "bg-white/5"
                   }`}
                 >
-                  {comingSoon ? (
-                    "Coming soon"
-                  ) : loadingPlan === plan.id ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                      Redirecting...
-                    </>
-                  ) : (
-                    plan.cta
-                  )}
-                </Button>
+                  <plan.icon className="w-6 h-6 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
+                          <span>{plan.credits} credits/month</span>
+                          <HelpCircle className="w-3 h-3" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">1 credit = 1 AI generation</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
 
-                <ul className="space-y-3">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-3 text-sm text-white/60">
-                      <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-              </motion.div>
-            );
-          })}
+              <p className="text-sm text-white/40 mb-6">{plan.description}</p>
+
+              <div className="flex items-baseline gap-1 mb-6">
+                <span className="text-4xl font-bold text-white">${plan.price}</span>
+                <span className="text-white/40">/month</span>
+              </div>
+
+              <Button
+                onClick={() => handleSelectPlan(plan)}
+                disabled={loadingPlan === plan.id}
+                className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
+                  plan.popular
+                    ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
+                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                }`}
+              >
+                {loadingPlan === plan.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                    {plan.id === "free" ? "Starting..." : "Redirecting..."}
+                  </>
+                ) : (
+                  plan.cta
+                )}
+              </Button>
+
+              <ul className="space-y-3">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
+                    <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          ))}
         </div>
 
         <div className="glass-card rounded-2xl p-6 text-center">
