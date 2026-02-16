@@ -3,16 +3,58 @@
 const Stripe = require("stripe");
 const { markEventOnce, setPlan, grantCredits } = require("../lib/billingStore.cjs");
 
-function json(status, body) {
+function withHeaders(extra = {}) {
+  return {
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
+function json(status, body, extraHeaders) {
   return {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: withHeaders(extraHeaders),
     body: JSON.stringify(body),
   };
 }
 
+// Azure Functions request headers can be:
+// - Fetch Headers (has .get())
+// - plain object
+function getHeader(req, name) {
+  try {
+    if (req?.headers?.get) return req.headers.get(name);
+  } catch {}
+  const h = req?.headers || {};
+  return h[name] || h[name.toLowerCase()] || null;
+}
+
+async function getRawBody(req) {
+  // Preferred: exact bytes
+  if (typeof req?.arrayBuffer === "function") {
+    const ab = await req.arrayBuffer();
+    return Buffer.from(ab);
+  }
+
+  // Some Azure setups expose rawBody
+  if (req?.rawBody) {
+    return Buffer.isBuffer(req.rawBody)
+      ? req.rawBody
+      : Buffer.from(String(req.rawBody), "utf8");
+  }
+
+  // Fallback: text (still usually ok if not transformed)
+  if (typeof req?.text === "function") {
+    const t = await req.text();
+    return Buffer.from(t, "utf8");
+  }
+
+  return Buffer.from("");
+}
+
 module.exports = async (request, context) => {
   try {
+    // Stripe will POST, not OPTIONS, but keep it safe
     if (request.method === "OPTIONS") return { status: 204, body: "" };
     if (request.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
 
@@ -27,15 +69,16 @@ module.exports = async (request, context) => {
       apiVersion: "2024-06-20",
     });
 
-    const sig = request.headers.get("stripe-signature");
+    const sig =
+      getHeader(request, "stripe-signature") ||
+      getHeader(request, "Stripe-Signature");
+
     if (!sig) {
-      // If you see this while clicking your pricing button,
-      // you're hitting the WEBHOOK endpoint from the browser (wrong endpoint).
+      // This should ONLY happen if you hit the webhook from a browser / wrong endpoint
       return json(400, { ok: false, error: "Missing stripe-signature" });
     }
 
-    // Must use raw bytes
-    const rawBody = Buffer.from(await request.arrayBuffer());
+    const rawBody = await getRawBody(request);
 
     let event;
     try {
