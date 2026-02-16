@@ -1,10 +1,15 @@
 // src/pages/Pricing.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { pagesConfig } from "@/pages.config";
 
 const plans = [
@@ -44,7 +49,8 @@ const plans = [
     cta: "Start Pro",
   },
   {
-    id: "power",
+    // IMPORTANT: backend checkout expects "max" (your earlier plan map uses basic/pro/max)
+    id: "max",
     name: "Power",
     price: 19.99,
     credits: 60,
@@ -91,19 +97,87 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-function normalizeCancelPath() {
+function currentPathWithSearch() {
   try {
-    const p = window.location.pathname || "/Pricing";
-    return p.startsWith("/") ? p : "/Pricing";
+    const p = window.location.pathname || "/pricing";
+    const s = window.location.search || "";
+    const safeP = p.startsWith("/") ? p : "/pricing";
+    return `${safeP}${s}`;
   } catch {
-    return "/Pricing";
+    return "/pricing";
   }
+}
+
+// Attempt to get a stable user identity for Stripe metadata.
+// Works across different response shapes.
+function extractUserId(me) {
+  if (!me) return null;
+  return (
+    me.userId ||
+    me.id ||
+    me.sub ||
+    me.user?.id ||
+    me.user?.userId ||
+    me.profile?.id ||
+    me.profile?.userId ||
+    null
+  );
+}
+
+function extractEmail(me) {
+  if (!me) return null;
+  return (
+    me.email ||
+    me.mail ||
+    me.user?.email ||
+    me.user?.mail ||
+    me.profile?.email ||
+    null
+  );
+}
+
+async function fetchMe() {
+  const candidates = ["/api/profile/me", "/api/userinfo"];
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { method: "GET", credentials: "include" });
+      if (!res.ok) continue;
+
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      // accept common shapes
+      if (!data) continue;
+      if (data.ok === false) continue;
+
+      // If the endpoint wraps the user:
+      const maybe =
+        data.profile || data.user || data.me || data.account || data;
+
+      // require *some* identity field
+      if (extractUserId(maybe) || extractEmail(maybe)) return maybe;
+      // still return it if it looks like a user object
+      if (typeof maybe === "object") return maybe;
+    } catch {
+      // ignore and try next
+    }
+  }
+
+  return null;
 }
 
 export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [me, setMe] = useState(null);
+  const [meLoading, setMeLoading] = useState(true);
 
   const forceMode = useMemo(() => {
     try {
@@ -114,36 +188,69 @@ export default function Pricing() {
     }
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setMeLoading(true);
+      const user = await fetchMe();
+      if (!alive) return;
+      setMe(user);
+      setMeLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const handleSelectPlan = async (plan) => {
     if (loadingPlan) return;
     setErrorMsg("");
     setLoadingPlan(plan.id);
 
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 150));
 
     const successPath = getSetupPath();
-    const cancelPath = normalizeCancelPath();
+    const cancelPath = currentPathWithSearch();
+
+    // Free never calls Stripe
+    if (plan.id === "free") {
+      setLoadingPlan(null);
+      navigate(successPath, { replace: true });
+      return;
+    }
+
+    // Require identity for paid plans so webhooks can grant credits correctly
+    const userId = extractUserId(me);
+    const email = extractEmail(me);
+
+    if (!userId && !email) {
+      setLoadingPlan(null);
+      setErrorMsg("Please sign in before upgrading so we can attach the subscription to your account.");
+      // Kick them to setup/login flow
+      navigate(successPath, { replace: true });
+      return;
+    }
 
     try {
+      // IMPORTANT: matches backend/index.js route: route: "stripe/checkout"
       const resp = await postJson("/api/stripe/checkout", {
-        planId: plan.id,     // free | pro | power
-        successPath,         // server builds full URL
+        planId: plan.id, // pro | max
+        successPath,     // server builds full URL
         cancelPath,
+        userId,
+        email,
       });
 
       if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
         console.error("Checkout failed:", resp);
         setLoadingPlan(null);
 
-        if (plan.id === "free") {
-          navigate(successPath, { replace: true });
-          return;
-        }
-
         const msg =
           resp.data?.error ||
           resp.data?.message ||
           `Checkout failed (HTTP ${resp.status})`;
+
+        // If you haven't set STRIPE_PRICE_MAX yet, you'll see a "missing env var" error here.
         setErrorMsg(msg);
         return;
       }
@@ -152,12 +259,6 @@ export default function Pricing() {
     } catch (e) {
       console.error(e);
       setLoadingPlan(null);
-
-      if (plan.id === "free") {
-        navigate(successPath, { replace: true });
-        return;
-      }
-
       setErrorMsg(e?.message || "Checkout failed. Try again.");
     }
   };
@@ -172,18 +273,32 @@ export default function Pricing() {
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>
+
+          <div className="text-xs text-white/40">
+            {meLoading ? "Checking session..." : me ? "Signed in" : "Not signed in"}
+          </div>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Choose your plan</h1>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            Choose your plan
+          </h1>
           <p className="text-lg text-white/50 mb-2">Start free. Upgrade anytime.</p>
-          <p className="text-sm text-white/30 mb-6">Secure checkout via Stripe. Cancel anytime.</p>
+          <p className="text-sm text-white/30 mb-6">
+            Secure checkout via Stripe. Cancel anytime.
+          </p>
 
           {forceMode ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
-              Test mode: opened via <span className="font-mono">?force=pricing</span> (bypassing onboarding redirect)
+              Test mode: opened via{" "}
+              <span className="font-mono">?force=pricing</span> (bypassing onboarding
+              redirect)
             </div>
           ) : null}
 
@@ -210,86 +325,104 @@ export default function Pricing() {
         </motion.div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {plans.map((plan, i) => (
-            <motion.div
-              key={plan.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className={`relative rounded-2xl p-8 ${
-                plan.popular ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30" : "glass-card"
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
-                  <Sparkles className="w-3 h-3" />
-                  Most Popular
-                </div>
-              )}
+          {plans.map((plan, i) => {
+            // If you haven't configured STRIPE_PRICE_MAX yet, Power will error.
+            // We keep it enabled but you can flip this to true to hard-disable until ready.
+            const comingSoon = false;
 
-              <div className="flex items-center gap-3 mb-4">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${plan.popular ? "bg-purple-600/20" : "bg-white/5"}`}>
-                  <plan.icon className="w-6 h-6 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
-                          <span>{plan.credits} credits/month</span>
-                          <HelpCircle className="w-3 h-3" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">1 credit = 1 AI generation</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </div>
-
-              <p className="text-sm text-white/40 mb-6">{plan.description}</p>
-
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">${plan.price}</span>
-                <span className="text-white/40">/month</span>
-              </div>
-
-              <Button
-                onClick={() => handleSelectPlan(plan)}
-                disabled={loadingPlan === plan.id}
-                className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
+            return (
+              <motion.div
+                key={plan.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+                className={`relative rounded-2xl p-8 ${
                   plan.popular
-                    ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
-                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                    ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
+                    : "glass-card"
                 }`}
               >
-                {loadingPlan === plan.id ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                    Redirecting...
-                  </>
-                ) : (
-                  plan.cta
+                {plan.popular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
+                    <Sparkles className="w-3 h-3" />
+                    Most Popular
+                  </div>
                 )}
-              </Button>
 
-              <ul className="space-y-3">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
-                    <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          ))}
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                      plan.popular ? "bg-purple-600/20" : "bg-white/5"
+                    }`}
+                  >
+                    <plan.icon className="w-6 h-6 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
+                            <span>{plan.credits} credits/month</span>
+                            <HelpCircle className="w-3 h-3" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">1 credit = 1 AI generation</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
+
+                <p className="text-sm text-white/40 mb-6">{plan.description}</p>
+
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="text-4xl font-bold text-white">${plan.price}</span>
+                  <span className="text-white/40">/month</span>
+                </div>
+
+                <Button
+                  onClick={() => handleSelectPlan(plan)}
+                  disabled={loadingPlan === plan.id || plan.id === "free" || comingSoon}
+                  className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
+                    plan.popular
+                      ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
+                      : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                  }`}
+                >
+                  {comingSoon ? (
+                    "Coming soon"
+                  ) : loadingPlan === plan.id ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                      Redirecting...
+                    </>
+                  ) : (
+                    plan.cta
+                  )}
+                </Button>
+
+                <ul className="space-y-3">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-3 text-sm text-white/60">
+                      <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            );
+          })}
         </div>
 
         <div className="glass-card rounded-2xl p-6 text-center">
-          <p className="text-white/60 text-sm mb-2">Credit packs are coming next (one-time purchases).</p>
-          <p className="text-white/30 text-xs">Subscriptions grant monthly credits automatically via Stripe webhooks.</p>
+          <p className="text-white/60 text-sm mb-2">
+            Credit packs are coming next (one-time purchases).
+          </p>
+          <p className="text-white/30 text-xs">
+            Subscriptions grant monthly credits automatically via Stripe webhooks.
+          </p>
         </div>
       </div>
     </div>
