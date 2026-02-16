@@ -1,24 +1,12 @@
 // src/pages/Pricing.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { pagesConfig } from "@/pages.config";
 
-// IMPORTANT: These IDs must match what your backend stripeCheckout expects.
-// Your backend index.js exposes:
-//   POST /api/stripe/checkout  -> route: "stripe/checkout"
-//   POST /api/stripe/webhook   -> route: "stripe/webhook"  (Stripe calls this, NOT the browser)
-//
-// Your stripeCheckout earlier used plan keys like: basic / pro / max.
-// So we map the "Power" plan to id: "max" (not "power").
 const plans = [
   {
     id: "free",
@@ -56,7 +44,7 @@ const plans = [
     cta: "Start Pro",
   },
   {
-    id: "max", // <-- backend expects "max" (Power tier)
+    id: "power",
     name: "Power",
     price: 19.99,
     credits: 60,
@@ -103,89 +91,19 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-async function getJson(path) {
-  const res = await fetch(path, { method: "GET", credentials: "include" });
-  const text = await res.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = null;
-  }
-  return { ok: res.ok, status: res.status, data };
-}
-
-// Keep cancel path stable (include query string so ?force=pricing stays)
-function getCancelPath() {
+function normalizeCancelPath() {
   try {
     const p = window.location.pathname || "/Pricing";
-    const s = window.location.search || "";
-    const safe = p.startsWith("/") ? p : "/Pricing";
-    return `${safe}${s}`;
+    return p.startsWith("/") ? p : "/Pricing";
   } catch {
     return "/Pricing";
   }
-}
-
-// Your app may return different shapes. These try common locations.
-function extractUserId(obj) {
-  if (!obj || typeof obj !== "object") return null;
-  return (
-    obj.userId ||
-    obj.id ||
-    obj.sub ||
-    obj.uid ||
-    obj.user?.id ||
-    obj.user?.userId ||
-    obj.profile?.id ||
-    obj.profile?.userId ||
-    null
-  );
-}
-
-function extractEmail(obj) {
-  if (!obj || typeof obj !== "object") return null;
-  return (
-    obj.email ||
-    obj.mail ||
-    obj.user?.email ||
-    obj.user?.mail ||
-    obj.profile?.email ||
-    null
-  );
-}
-
-async function fetchMe() {
-  // Backend routes available from your index.js:
-  //   GET /api/profile/me
-  //   GET /api/userinfo
-  const endpoints = ["/api/profile/me", "/api/userinfo"];
-
-  for (const url of endpoints) {
-    try {
-      const res = await getJson(url);
-      if (!res.ok || !res.data) continue;
-
-      // unwrap common wrappers
-      const maybe =
-        res.data.profile || res.data.user || res.data.me || res.data.account || res.data;
-
-      if (maybe && (extractUserId(maybe) || extractEmail(maybe))) return maybe;
-      if (maybe && typeof maybe === "object") return maybe;
-    } catch {
-      // try next
-    }
-  }
-
-  return null;
 }
 
 export default function Pricing() {
   const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [me, setMe] = useState(null);
-  const [meLoading, setMeLoading] = useState(true);
 
   const forceMode = useMemo(() => {
     try {
@@ -196,20 +114,6 @@ export default function Pricing() {
     }
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setMeLoading(true);
-      const u = await fetchMe();
-      if (!alive) return;
-      setMe(u);
-      setMeLoading(false);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   const handleSelectPlan = async (plan) => {
     if (loadingPlan) return;
     setErrorMsg("");
@@ -218,46 +122,28 @@ export default function Pricing() {
     await new Promise((r) => setTimeout(r, 200));
 
     const successPath = getSetupPath();
-    const cancelPath = getCancelPath();
-
-    // ✅ Free should not call Stripe checkout at all
-    if (plan.id === "free") {
-      setLoadingPlan(null);
-      navigate(successPath, { replace: true });
-      return;
-    }
-
-    // ✅ Paid plans should send userId/email so webhooks can credit the right user
-    const userId = extractUserId(me);
-    const email = extractEmail(me);
-
-    if (!userId && !email) {
-      setLoadingPlan(null);
-      setErrorMsg("Please sign in before upgrading so we can attach billing to your account.");
-      navigate(successPath, { replace: true });
-      return;
-    }
+    const cancelPath = normalizeCancelPath();
 
     try {
-      // ✅ MUST match backend route in index.js: route: "stripe/checkout"
       const resp = await postJson("/api/stripe/checkout", {
-        planId: plan.id, // pro | max
-        successPath,     // server builds full URL
+        planId: plan.id,     // free | pro | power
+        successPath,         // server builds full URL
         cancelPath,
-        userId,
-        email,
       });
 
       if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
         console.error("Checkout failed:", resp);
         setLoadingPlan(null);
 
+        if (plan.id === "free") {
+          navigate(successPath, { replace: true });
+          return;
+        }
+
         const msg =
           resp.data?.error ||
           resp.data?.message ||
-          resp.data?.detail ||
           `Checkout failed (HTTP ${resp.status})`;
-
         setErrorMsg(msg);
         return;
       }
@@ -266,6 +152,12 @@ export default function Pricing() {
     } catch (e) {
       console.error(e);
       setLoadingPlan(null);
+
+      if (plan.id === "free") {
+        navigate(successPath, { replace: true });
+        return;
+      }
+
       setErrorMsg(e?.message || "Checkout failed. Try again.");
     }
   };
@@ -280,31 +172,18 @@ export default function Pricing() {
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>
-
-          <div className="text-xs text-white/40">
-            {meLoading ? "Checking session..." : me ? "Signed in" : "Not signed in"}
-          </div>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
-            Choose your plan
-          </h1>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Choose your plan</h1>
           <p className="text-lg text-white/50 mb-2">Start free. Upgrade anytime.</p>
-          <p className="text-sm text-white/30 mb-6">
-            Secure checkout via Stripe. Cancel anytime.
-          </p>
+          <p className="text-sm text-white/30 mb-6">Secure checkout via Stripe. Cancel anytime.</p>
 
           {forceMode ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
-              Test mode: opened via <span className="font-mono">?force=pricing</span>{" "}
-              (bypassing onboarding redirect)
+              Test mode: opened via <span className="font-mono">?force=pricing</span> (bypassing onboarding redirect)
             </div>
           ) : null}
 
@@ -338,9 +217,7 @@ export default function Pricing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.08 }}
               className={`relative rounded-2xl p-8 ${
-                plan.popular
-                  ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
-                  : "glass-card"
+                plan.popular ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30" : "glass-card"
               }`}
             >
               {plan.popular && (
@@ -351,11 +228,7 @@ export default function Pricing() {
               )}
 
               <div className="flex items-center gap-3 mb-4">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    plan.popular ? "bg-purple-600/20" : "bg-white/5"
-                  }`}
-                >
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${plan.popular ? "bg-purple-600/20" : "bg-white/5"}`}>
                   <plan.icon className="w-6 h-6 text-purple-400" />
                 </div>
                 <div>
@@ -395,7 +268,7 @@ export default function Pricing() {
                 {loadingPlan === plan.id ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                    {plan.id === "free" ? "Starting..." : "Redirecting..."}
+                    Redirecting...
                   </>
                 ) : (
                   plan.cta
@@ -415,12 +288,8 @@ export default function Pricing() {
         </div>
 
         <div className="glass-card rounded-2xl p-6 text-center">
-          <p className="text-white/60 text-sm mb-2">
-            Credit packs are coming next (one-time purchases).
-          </p>
-          <p className="text-white/30 text-xs">
-            Subscriptions grant monthly credits automatically via Stripe webhooks.
-          </p>
+          <p className="text-white/60 text-sm mb-2">Credit packs are coming next (one-time purchases).</p>
+          <p className="text-white/30 text-xs">Subscriptions grant monthly credits automatically via Stripe webhooks.</p>
         </div>
       </div>
     </div>
