@@ -1,11 +1,18 @@
 // src/App.jsx
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import NavigationTracker from "@/lib/NavigationTracker";
 import { pagesConfig } from "./pages.config";
-import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/app/ErrorBoundary";
@@ -72,8 +79,42 @@ function computeOnboardingStep({ isAuthenticated, authUserId, profile }) {
   return { step: "done", pricingDone, setupDone, mismatch: false };
 }
 
+function resolvePath(target) {
+  const keys = Object.keys(Pages || {});
+  const key = keys.find((k) => k.toLowerCase() === String(target).toLowerCase());
+  const p = `/${key || target}`;
+  return p.startsWith("/") ? p : `/${p}`;
+}
+
+const LANDING_PATH = resolvePath("Landing");
+const PRICING_PATH = resolvePath("Pricing");
+const SETUP_PATH = resolvePath("Setup");
+const APPHOME_PATH = resolvePath("AppHome");
+
+/**
+ * Normalizes trailing slashes:
+ *   /Setup/  -> /Setup
+ *   /Pricing/ -> /Pricing
+ * Avoids route mismatches + accidental redirects.
+ */
+function TrailingSlashNormalizer() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const { pathname, search, hash } = location;
+    if (pathname.length > 1 && pathname.endsWith("/")) {
+      const nextPath = pathname.replace(/\/+$/, "") || "/";
+      navigate(`${nextPath}${search}${hash}`, { replace: true });
+    }
+  }, [location.pathname, location.search, location.hash, navigate]);
+
+  return null;
+}
+
 function AppRoutes() {
   const auth = useAuth();
+  const location = useLocation();
 
   // Support both your old + new auth shapes
   const loadingAuth = !!auth?.isLoadingAuth || !!auth?.loading;
@@ -91,6 +132,39 @@ function AppRoutes() {
       return false;
     }
   }, []);
+
+  // Parse Stripe return info (works whether Stripe returns to /Setup or /Pricing or even /)
+  const stripeSessionId = useMemo(() => {
+    try {
+      return new URLSearchParams(location.search).get("session_id");
+    } catch {
+      return null;
+    }
+  }, [location.search]);
+
+  const pricingBypassActive = useMemo(() => {
+    // Bypass Pricing -> allow Setup when we have evidence checkout just succeeded
+    // (session_id from Stripe OR a recent cached session id from Pricing.jsx)
+    let storedSession = null;
+    let ts = 0;
+    let freeOverride = null;
+
+    try {
+      storedSession = localStorage.getItem("ja:checkout_session");
+      ts = Number(localStorage.getItem("ja:checkout_ts") || "0");
+      freeOverride = localStorage.getItem("ja:pricing_override");
+    } catch {
+      // ignore
+    }
+
+    const now = Date.now();
+    const fresh = !!ts && now - ts < 10 * 60 * 1000; // 10 minutes
+    const hasRecentCheckout = !!stripeSessionId || (!!storedSession && fresh);
+
+    const isFreeChosen = freeOverride === "free";
+
+    return hasRecentCheckout || isFreeChosen;
+  }, [stripeSessionId]);
 
   // Cloud onboarding truth:
   // - /.auth/me -> auth userId
@@ -143,84 +217,121 @@ function AppRoutes() {
     });
   }, [isAuthenticated, onboardingQuery.isLoading, onboardingQuery.isError, onboardingQuery.data]);
 
+  // ✅ If we just returned from Stripe (session_id) but profile isn’t updated yet,
+  // treat "pricing" as "setup" temporarily so routing doesn't bounce to /Pricing.
+  const effectiveOnboarding = useMemo(() => {
+    if (pricingBypassActive && onboarding.step === "pricing") {
+      return { ...onboarding, step: "setup" };
+    }
+    return onboarding;
+  }, [pricingBypassActive, onboarding]);
+
+  // Optional: if Stripe returned with session_id, trigger a one-time refetch
+  useEffect(() => {
+    if (!stripeSessionId) return;
+    if (!isAuthenticated) return;
+    if (loadingAuth) return;
+    if (typeof onboardingQuery.refetch === "function") onboardingQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stripeSessionId, isAuthenticated, loadingAuth]);
+
+  // Clear temporary bypass once pricing is truly done in Cosmos
+  useEffect(() => {
+    if (!onboarding.pricingDone) return;
+    try {
+      localStorage.removeItem("ja:checkout_session");
+      localStorage.removeItem("ja:checkout_ts");
+      localStorage.removeItem("ja:pricing_override");
+    } catch {
+      // ignore
+    }
+  }, [onboarding.pricingDone]);
+
   const nextPath = useMemo(() => {
     if (loadingAuth) return null;
-    if (!isAuthenticated) return "/Landing";
-    if (onboarding.step === "loading") return null;
-    if (onboarding.step === "pricing") return "/Pricing";
-    if (onboarding.step === "setup") return "/Setup";
-    return "/AppHome";
-  }, [loadingAuth, isAuthenticated, onboarding.step]);
+    if (!isAuthenticated) return LANDING_PATH;
+    if (effectiveOnboarding.step === "loading") return null;
+    if (effectiveOnboarding.step === "pricing") return PRICING_PATH;
+    if (effectiveOnboarding.step === "setup") return SETUP_PATH;
+    return APPHOME_PATH;
+  }, [loadingAuth, isAuthenticated, effectiveOnboarding.step]);
 
   const Index = () => {
     if (loadingAuth) return <Spinner />;
-    if (isAuthenticated && onboarding.step === "loading") return <Spinner />;
-    return <Navigate to={nextPath || "/Landing"} replace />;
+    if (isAuthenticated && effectiveOnboarding.step === "loading") return <Spinner />;
+    return <Navigate to={nextPath || LANDING_PATH} replace />;
   };
 
   const Gate = ({ pageName, children }) => {
+    const page = String(pageName || "");
+    const pageLower = page.toLowerCase();
+
     if (loadingAuth) return <Spinner />;
 
     // Landing: logged-out only
-    if (pageName === "Landing") {
+    if (pageLower === "landing") {
       if (isAuthenticated) {
-        if (onboarding.step === "loading") return <Spinner />;
-        return <Navigate to={nextPath || "/AppHome"} replace />;
+        if (effectiveOnboarding.step === "loading") return <Spinner />;
+        return <Navigate to={nextPath || APPHOME_PATH} replace />;
       }
       return <>{children}</>;
     }
 
     // Everything else requires auth
-    if (!isAuthenticated) return <Navigate to="/Landing" replace />;
+    if (!isAuthenticated) return <Navigate to={LANDING_PATH} replace />;
 
     // Wait until we know onboarding state
-    if (onboarding.step === "loading") return <Spinner />;
+    if (effectiveOnboarding.step === "loading") return <Spinner />;
 
     // ✅ Allow forcing Pricing for Stripe testing (bypass onboarding redirects)
-    if (pageName === "Pricing" && forcePricing) return <>{children}</>;
+    if (pageLower === "pricing" && forcePricing) return <>{children}</>;
+
+    // If we're in setup step, keep user in setup until done
+    if (effectiveOnboarding.step === "setup" && pageLower !== "setup") {
+      const qs = stripeSessionId ? `?session_id=${encodeURIComponent(stripeSessionId)}` : "";
+      return <Navigate to={`${SETUP_PATH}${qs}`} replace />;
+    }
 
     // Enforce onboarding order (cloud truth)
-    if (onboarding.step === "pricing" && pageName !== "Pricing") {
-      return <Navigate to="/Pricing" replace />;
+    if (effectiveOnboarding.step === "pricing" && pageLower !== "pricing") {
+      return <Navigate to={PRICING_PATH} replace />;
     }
 
-    if (onboarding.step === "setup" && pageName !== "Setup") {
-      return <Navigate to="/Setup" replace />;
-    }
-
-    // Prevent skipping / wrong ordering
-    if (pageName === "Setup" && onboarding.step !== "setup") {
-      return <Navigate to="/Pricing" replace />;
-    }
-
-    if (pageName === "Pricing" && onboarding.step !== "pricing") {
-      // if pricing is done, send to Setup (or AppHome if setup also done)
-      return <Navigate to={nextPath || "/AppHome"} replace />;
+    // If user tries to visit Pricing after pricing is complete, bounce forward
+    if (pageLower === "pricing" && effectiveOnboarding.step !== "pricing") {
+      if (effectiveOnboarding.step === "setup") {
+        const qs = stripeSessionId ? `?session_id=${encodeURIComponent(stripeSessionId)}` : "";
+        return <Navigate to={`${SETUP_PATH}${qs}`} replace />;
+      }
+      return <Navigate to={nextPath || APPHOME_PATH} replace />;
     }
 
     return <>{children}</>;
   };
 
   return (
-    <Routes>
-      <Route path="/" element={<Index />} />
+    <>
+      <TrailingSlashNormalizer />
+      <Routes>
+        <Route path="/" element={<Index />} />
 
-      {Object.entries(Pages).map(([path, Page]) => (
-        <Route
-          key={path}
-          path={`/${path}`}
-          element={
-            <Gate pageName={path}>
-              <LayoutWrapper currentPageName={path}>
-                <Page />
-              </LayoutWrapper>
-            </Gate>
-          }
-        />
-      ))}
+        {Object.entries(Pages).map(([path, Page]) => (
+          <Route
+            key={path}
+            path={`/${path}`}
+            element={
+              <Gate pageName={path}>
+                <LayoutWrapper currentPageName={path}>
+                  <Page />
+                </LayoutWrapper>
+              </Gate>
+            }
+          />
+        ))}
 
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </>
   );
 }
 
@@ -238,5 +349,4 @@ export default function App() {
       </QueryClientProvider>
     </AuthProvider>
   );
-  
 }

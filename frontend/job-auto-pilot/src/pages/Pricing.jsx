@@ -1,6 +1,7 @@
 // src/pages/Pricing.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,7 @@ function getCancelPath() {
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [loadingPlan, setLoadingPlan] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -134,27 +136,41 @@ export default function Pricing() {
     }
   }, []);
 
-  // ✅ If Stripe ever redirects back to /Pricing with session_id, immediately send user to Setup
-  // This makes your flow robust even if a previous session used /Pricing as the success_url.
+  // ✅ If Stripe ever redirects back to /Pricing (or anywhere) with session_id, send user to Setup
+  // AND cache the session for App.jsx to bypass the "pricingDone=false" bounce while webhook catches up.
   useEffect(() => {
     try {
       const qs = new URLSearchParams(window.location.search);
       const sessionId = qs.get("session_id");
       const canceled = qs.get("canceled");
 
-      // If session_id exists, that is a success redirect. Go Setup.
-      // If user explicitly forced pricing mode, you can still keep them here.
       if (sessionId && !forceMode) {
-        navigate(getSetupPath(), { replace: true });
+        try {
+          localStorage.setItem("ja:checkout_session", sessionId);
+          localStorage.setItem("ja:checkout_ts", String(Date.now()));
+        } catch {
+          // ignore
+        }
+
+        // Force a fresh onboarding read ASAP
+        try {
+          qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+        } catch {
+          // ignore
+        }
+
+        // Preserve session_id so Setup can read it if needed
+        navigate(`${getSetupPath()}?session_id=${encodeURIComponent(sessionId)}`, {
+          replace: true,
+        });
         return;
       }
 
-      // Optional: if canceled, keep them on pricing (default behavior)
       if (canceled) return;
     } catch {
       // ignore
     }
-  }, [navigate, forceMode]);
+  }, [navigate, forceMode, qc]);
 
   const handleSelectPlan = async (plan) => {
     if (loadingPlan) return;
@@ -167,7 +183,20 @@ export default function Pricing() {
     const cancelPath = getCancelPath();
 
     // ✅ Free: go directly to Setup (no Stripe)
+    // We still set a local "pricing override" so Gate won't bounce back to Pricing.
     if (plan.id === "free") {
+      try {
+        localStorage.setItem("ja:pricing_override", "free");
+      } catch {
+        // ignore
+      }
+
+      try {
+        qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+      } catch {
+        // ignore
+      }
+
       setLoadingPlan(null);
       navigate(successPath, { replace: true });
       return;
@@ -177,8 +206,8 @@ export default function Pricing() {
       // ✅ Must match backend: route "stripe/checkout" -> /api/stripe/checkout
       const resp = await postJson("/api/stripe/checkout", {
         planId: plan.id, // pro | max
-        successPath,     // MUST be setup
-        cancelPath,      // pricing
+        successPath, // MUST be setup
+        cancelPath, // pricing
       });
 
       if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
