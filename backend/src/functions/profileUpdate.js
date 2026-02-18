@@ -26,27 +26,56 @@ function cors(request) {
   } else {
     headers["Access-Control-Allow-Origin"] = "*";
   }
+
   return headers;
 }
 
-function reply(request, status, jsonBody) {
+function json(request, status, body) {
   return {
     status,
     headers: { ...cors(request) },
-    jsonBody,
+    jsonBody: body,
   };
 }
 
 async function safeJson(request) {
   try {
-    if (typeof request?.json === "function") return await request.json();
+    if (typeof request?.json === "function") {
+      const j = await request.json();
+      return j && typeof j === "object" ? j : {};
+    }
   } catch {
     // ignore
   }
   return {};
 }
 
-module.exports = async (request, context) => {
+function isPlainObject(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+async function readProfileOrNull(userId) {
+  try {
+    const resp = await profilesContainer.item(userId, userId).read();
+
+    // IMPORTANT: sometimes this can be undefined without throwing
+    const resource = resp?.resource || null;
+    if (!resource) return null;
+
+    return resource;
+  } catch (e) {
+    // Not found => treat as null
+    if (e?.code === 404 || e?.statusCode === 404) return null;
+    throw e;
+  }
+}
+
+async function upsertProfile(doc) {
+  return profilesContainer.items.upsert(doc);
+}
+
+// ✅ export name MUST match backend/index.js lazy(..., "profileUpdate")
+async function profileUpdate(request, context) {
   try {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: cors(request) };
@@ -54,22 +83,17 @@ module.exports = async (request, context) => {
 
     const userId = getSwaUserId(request);
     if (!userId) {
-      return reply(request, 401, { ok: false, error: "Not authenticated" });
+      return json(request, 401, { ok: false, error: "Not authenticated" });
     }
 
-    const body = (await safeJson(request)) || {};
-    const patchOnboarding =
-      body && typeof body === "object" && body.onboarding && typeof body.onboarding === "object"
-        ? body.onboarding
-        : {};
-    const patchPreferences =
-      body && typeof body === "object" && body.preferences && typeof body.preferences === "object"
-        ? body.preferences
-        : {};
+    const body = await safeJson(request);
+
+    const patchOnboarding = isPlainObject(body.onboarding) ? body.onboarding : {};
+    const patchPreferences = isPlainObject(body.preferences) ? body.preferences : {};
 
     const now = new Date().toISOString();
 
-    // Base profile shell (always defined)
+    // Base shell (always defined)
     const base = {
       id: userId,
       userId,
@@ -81,14 +105,7 @@ module.exports = async (request, context) => {
       updatedAt: now,
     };
 
-    // Read existing (but guard against resource being undefined)
-    let existing = null;
-    try {
-      const readRes = await profilesContainer.item(userId, userId).read();
-      existing = readRes?.resource || null;
-    } catch {
-      existing = null;
-    }
+    const existing = await readProfileOrNull(userId);
 
     const next = {
       ...base,
@@ -96,26 +113,30 @@ module.exports = async (request, context) => {
       id: (existing && (existing.id || existing.userId)) || userId,
       userId: (existing && existing.userId) || userId,
       onboarding: {
-        ...((existing && existing.onboarding) || base.onboarding),
+        ...base.onboarding,
+        ...((existing && existing.onboarding) || {}),
         ...patchOnboarding,
       },
       preferences: {
-        ...((existing && existing.preferences) || base.preferences),
+        ...base.preferences,
+        ...((existing && existing.preferences) || {}),
         ...patchPreferences,
       },
-      updatedAt: now,
       createdAt: (existing && existing.createdAt) || base.createdAt,
+      updatedAt: now,
     };
 
-    await profilesContainer.items.upsert(next);
+    await upsertProfile(next);
 
-    return reply(request, 200, { ok: true, profile: next });
-  } catch (e) {
-    context?.log?.error?.("profile update failed", e);
-    return reply(request, 500, {
+    return json(request, 200, { ok: true, profile: next });
+  } catch (err) {
+    context?.log?.error?.("profileUpdate crashed", err);
+    return json(request, 500, {
       ok: false,
       error: "Handler crashed",
-      detail: e?.message || String(e),
+      detail: err?.message || String(err),
     });
   }
-};
+}
+
+module.exports = { profileUpdate };
