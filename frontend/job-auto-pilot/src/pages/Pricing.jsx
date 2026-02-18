@@ -1,100 +1,51 @@
-// src/pages/Pricing.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { Check, Sparkles, Zap, Rocket, HelpCircle, Loader2 } from "lucide-react";
+import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { pagesConfig } from "@/pages.config";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Rocket,
+  Upload,
+  FileText,
+  Check,
+  ChevronRight,
+  Briefcase,
+  Loader2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { onboarding } from "@/lib/onboarding";
 
-// IMPORTANT:
-// Your backend route is: POST /api/stripe/checkout  (route: "stripe/checkout")
-// So this frontend must call "/api/stripe/checkout" (NOT webhook).
-//
-// Also: your backend plan map typically expects: basic | pro | max
-// So Power must be id: "max" (not "power").
-const plans = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    credits: 3,
-    description: "Try it out (no card needed)",
-    features: [
-      "3 credits per month (3 generations)",
-      "Basic application tracking",
-      "Resume bullet suggestions",
-      "Cover letter generation",
-      "Email support",
-    ],
-    icon: Zap,
-    popular: false,
-    cta: "Continue Free",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 14.99,
-    credits: 20,
-    description: "Best for active job hunters",
-    features: [
-      "20 credits per month",
-      "Unlimited application tracking",
-      "Analytics dashboard",
-      "Export to .docx",
-      "Priority generation",
-      "Email support",
-    ],
-    icon: Sparkles,
-    popular: true,
-    cta: "Start Pro",
-  },
-  {
-    id: "max", // <-- must match backend plan id
-    name: "Power",
-    price: 19.99,
-    credits: 60,
-    description: "Best for heavy users",
-    features: [
-      "60 credits per month",
-      "Everything in Pro",
-      "Fastest AI generation",
-      "Custom resume templates",
-      "Priority support",
-    ],
-    icon: Rocket,
-    popular: false,
-    cta: "Start Power",
-  },
+const targetRoles = [
+  "Software Engineer",
+  "Product Manager",
+  "Designer",
+  "Data Scientist",
+  "Marketing Manager",
+  "Sales",
+  "Customer Success",
+  "Other",
 ];
 
-function getSetupPath() {
-  const Pages = pagesConfig?.Pages || {};
-  const keys = Object.keys(Pages);
+const seniorityLevels = ["Intern", "Junior", "Mid-Level", "Senior", "Lead", "Principal"];
+const locationPrefs = ["Remote", "Hybrid", "On-site"];
+const tones = ["Professional", "Confident", "Concise"];
 
-  // Try to find the real key in your pages config (keeps exact casing)
-  const setupKey =
-    keys.find((k) => k.toLowerCase() === "setup") ||
-    keys.find((k) => k.toLowerCase() === "onboardingsetup") ||
-    // safer fallback is lowercase (most routers use lowercase paths)
-    "setup";
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const headers = { "Content-Type": "application/json" };
 
-  const p = `/${setupKey}`;
-  return p.startsWith("/") ? p : "/setup";
-}
-
-async function postJson(path, body) {
   const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method,
+    headers,
     credentials: "include",
-    body: JSON.stringify(body || {}),
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   const text = await res.text();
@@ -108,290 +59,429 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-function getCancelPath() {
-  // Always cancel back to Pricing
-  // Keep querystring (so ?force=pricing stays)
+async function uploadToSasUrl(uploadUrl, file) {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "x-ms-blob-type": "BlockBlob",
+      "x-ms-version": "2020-10-02",
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  let text = "";
   try {
-    const p = window.location.pathname || "/Pricing";
-    const s = window.location.search || "";
-    const safe = p.startsWith("/") ? p : "/Pricing";
-    return `${safe}${s}`;
-  } catch {
-    return "/Pricing";
-  }
+    text = await res.text();
+  } catch {}
+
+  return { ok: res.ok, status: res.status, text };
 }
 
-export default function Pricing() {
+function StepDot({ active, label }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+          active
+            ? "bg-purple-600 text-white shadow-lg shadow-purple-500/25 ring-1 ring-purple-400/40"
+            : "bg-white/5 text-white/50 border border-white/10"
+        }`}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, icon: Icon, children, description }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <div className="flex items-start gap-3 mb-4">
+        {Icon ? (
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-purple-300" />
+          </div>
+        ) : null}
+        <div className="min-w-0">
+          <h3 className="text-base md:text-lg font-semibold text-white">{title}</h3>
+          {description ? <p className="text-sm text-white/40 mt-1">{description}</p> : null}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+export default function Setup() {
+  const [step, setStep] = useState(1);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [loadingPlan, setLoadingPlan] = useState(null);
-  const [errorMsg, setErrorMsg] = useState("");
 
-  const forceMode = useMemo(() => {
-    try {
-      const qs = new URLSearchParams(window.location.search);
-      return qs.get("force") === "pricing";
-    } catch {
-      return false;
-    }
-  }, []);
+  const [selectedRoles, setSelectedRoles] = useState([]);
+  const [seniority, setSeniority] = useState("");
+  const [locationPref, setLocationPref] = useState("");
+  const [preferredCity, setPreferredCity] = useState("");
+  const [tone, setTone] = useState("Professional");
 
-  // ✅ If Stripe ever redirects back to /Pricing (or anywhere) with session_id, send user to Setup
-  // AND cache the session for App.jsx to bypass the "pricingDone=false" bounce while webhook catches up.
-  useEffect(() => {
-    try {
-      const qs = new URLSearchParams(window.location.search);
-      const sessionId = qs.get("session_id");
-      const canceled = qs.get("canceled");
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setUploadedFile(file);
+  };
 
-      if (sessionId && !forceMode) {
-        try {
-          localStorage.setItem("ja:checkout_session", sessionId);
-          localStorage.setItem("ja:checkout_ts", String(Date.now()));
-        } catch {
-          // ignore
-        }
-
-        // Force a fresh onboarding read ASAP
-        try {
-          qc.invalidateQueries({ queryKey: ["onboarding:me"] });
-        } catch {
-          // ignore
-        }
-
-        // Preserve session_id so Setup can read it if needed
-        navigate(`${getSetupPath()}?session_id=${encodeURIComponent(sessionId)}`, {
-          replace: true,
-        });
-        return;
-      }
-
-      if (canceled) return;
-    } catch {
-      // ignore
-    }
-  }, [navigate, forceMode, qc]);
-
-  const handleSelectPlan = async (plan) => {
-    if (loadingPlan) return;
-    setErrorMsg("");
-    setLoadingPlan(plan.id);
-
-    await new Promise((r) => setTimeout(r, 150));
-
-    const successPath = getSetupPath();
-    const cancelPath = getCancelPath();
-
-    // ✅ Free: go directly to Setup (no Stripe)
-    // We still set a local "pricing override" so Gate won't bounce back to Pricing.
-    if (plan.id === "free") {
-      try {
-        localStorage.setItem("ja:pricing_override", "free");
-      } catch {
-        // ignore
-      }
-
-      try {
-        qc.invalidateQueries({ queryKey: ["onboarding:me"] });
-      } catch {
-        // ignore
-      }
-
-      setLoadingPlan(null);
-      navigate(successPath, { replace: true });
+  const handleNext = () => {
+    if (step === 1 && !uploadedFile) {
+      toast.error("Please upload a resume file");
       return;
     }
+    setStep(2);
+  };
+
+  const toggleRole = (role) => {
+    setSelectedRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
+  const completeSetupCloud = async (preferences) => {
+    if (typeof onboarding?.completeSetup === "function") {
+      await onboarding.completeSetup(preferences);
+      return;
+    }
+    if (typeof onboarding?.setSetupDone === "function") {
+      await onboarding.setSetupDone(true, preferences);
+      return;
+    }
+    throw new Error("onboarding.completeSetup / setSetupDone not found");
+  };
+
+  const handleFinish = async () => {
+    if (isSaving) return;
 
     try {
-      // ✅ Must match backend: route "stripe/checkout" -> /api/stripe/checkout
-      const resp = await postJson("/api/stripe/checkout", {
-        planId: plan.id, // pro | max
-        successPath, // MUST be setup
-        cancelPath, // pricing
-      });
-
-      if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
-        console.error("Checkout failed:", resp);
-        setLoadingPlan(null);
-
-        const msg =
-          resp.data?.error ||
-          resp.data?.message ||
-          resp.data?.detail ||
-          `Checkout failed (HTTP ${resp.status})`;
-
-        setErrorMsg(msg);
+      if (!uploadedFile) {
+        toast.error("Please upload a resume file");
         return;
       }
 
-      window.location.assign(resp.data.url);
+      setIsSaving(true);
+
+      const preferences = {
+        targetRoles: selectedRoles,
+        seniority,
+        locationPreference: locationPref,
+        preferredCity,
+        tone,
+      };
+
+      try {
+        localStorage.setItem("preferences", JSON.stringify(preferences));
+      } catch {}
+
+      const sasResp = await apiFetch("/api/resume/upload-url", {
+        method: "POST",
+        body: {
+          fileName: uploadedFile.name,
+          contentType: uploadedFile.type || "application/octet-stream",
+        },
+      });
+
+      if (!sasResp.ok || !sasResp.data?.ok) {
+        if (sasResp.status === 401) {
+          toast.error("You're not logged in. Please sign in again.");
+          return;
+        }
+        const msg = sasResp.data?.error || `Failed to get upload URL (HTTP ${sasResp.status})`;
+        toast.error(msg);
+        return;
+      }
+
+      const { uploadUrl, blobName } = sasResp.data;
+
+      const up = await uploadToSasUrl(uploadUrl, uploadedFile);
+      if (!up.ok) {
+        toast.error(`Upload failed (HTTP ${up.status}). Try PDF/DOCX and re-upload.`);
+        return;
+      }
+
+      const saveResp = await apiFetch("/api/resume/save", {
+        method: "POST",
+        body: {
+          blobName,
+          originalName: uploadedFile.name,
+          contentType: uploadedFile.type || "application/octet-stream",
+          size: uploadedFile.size || 0,
+        },
+      });
+
+      if (!saveResp.ok || !saveResp.data?.ok) {
+        const msg = saveResp.data?.error || `Failed to save resume (HTTP ${saveResp.status})`;
+        toast.error(msg);
+        return;
+      }
+
+      try {
+        const resumeData = {
+          id: Date.now(),
+          name: uploadedFile.name,
+          source: "upload",
+          blobName,
+          created: new Date().toISOString(),
+        };
+        localStorage.setItem("resumes", JSON.stringify([resumeData]));
+        localStorage.setItem("defaultResumeId", resumeData.id.toString());
+      } catch {}
+
+      // ✅ Write setupDone to Cosmos
+      await completeSetupCloud(preferences);
+
+      // ✅ Force Gate to re-check Cosmos immediately
+      onboarding.clearCache();
+      await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+      await qc.refetchQueries({ queryKey: ["onboarding:me"] });
+
+      toast.success("Resume uploaded and saved to your account.");
+      navigate(createPageUrl("AppHome"), { replace: true });
     } catch (e) {
       console.error(e);
-      setLoadingPlan(null);
-      setErrorMsg(e?.message || "Checkout failed. Try again.");
+      toast.error(e?.message || "Something went wrong while saving your resume.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
-      <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
+    <div className="min-h-screen bg-[hsl(240,10%,4%)] relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[420px] rounded-full bg-purple-600/10 blur-3xl" />
+        <div className="absolute -bottom-64 left-1/3 w-[700px] h-[420px] rounded-full bg-fuchsia-500/5 blur-3xl" />
+      </div>
+
+      <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/70 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25 ring-1 ring-purple-400/20">
               <Rocket className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-white text-lg">Job Autopilot</span>
+            <div className="leading-tight">
+              <div className="font-bold text-white text-[15px]">Job Autopilot</div>
+              <div className="text-[11px] text-white/40">Profile setup • ~60 seconds</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-white/40">
+              <StepDot active={step >= 1} label="1" />
+              <div className="w-10 h-px bg-white/10" />
+              <StepDot active={step >= 2} label="2" />
+            </div>
           </div>
         </div>
+
+        <div className="h-px bg-gradient-to-r from-transparent via-purple-500/30 to-transparent" />
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
-            Choose your plan
+      <div className="relative max-w-4xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+        <div className="text-center mb-10 sm:mb-12">
+          <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+            Let&apos;s set up your profile
           </h1>
-          <p className="text-lg text-white/50 mb-2">Start free. Upgrade anytime.</p>
-          <p className="text-sm text-white/30 mb-6">
-            Secure checkout via Stripe. Cancel anytime.
+          <p className="text-base sm:text-lg text-white/40 mt-3">
+            Upload your resume and set preferences so we can tailor documents to you.
           </p>
 
-          {forceMode ? (
-            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
-              Test mode: opened via <span className="font-mono">?force=pricing</span>{" "}
-              (bypassing onboarding redirect)
+          <div className="mt-6 max-w-lg mx-auto">
+            <div className="h-2 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+              <div className="h-full bg-purple-600/70" style={{ width: step === 1 ? "50%" : "100%" }} />
             </div>
-          ) : null}
-
-          {errorMsg ? (
-            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm text-red-200">
-              {errorMsg}
+            <div className="mt-2 flex items-center justify-between text-xs text-white/40">
+              <span className={step >= 1 ? "text-white/60" : ""}>Resume</span>
+              <span className={step >= 2 ? "text-white/60" : ""}>Preferences</span>
             </div>
-          ) : null}
-
-          <Button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleSelectPlan(plans[0]);
-            }}
-            disabled={loadingPlan === "free"}
-            className="bg-white/10 hover:bg-white/15 text-white border border-white/20 px-8 py-3 rounded-xl text-base font-medium mb-8"
-          >
-            {loadingPlan === "free" ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                Starting...
-              </>
-            ) : (
-              "Continue Free"
-            )}
-          </Button>
-        </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {plans.map((plan, i) => (
-            <motion.div
-              key={plan.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className={`relative rounded-2xl p-8 ${
-                plan.popular
-                  ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
-                  : "glass-card"
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
-                  <Sparkles className="w-3 h-3" />
-                  Most Popular
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 mb-4">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    plan.popular ? "bg-purple-600/20" : "bg-white/5"
-                  }`}
-                >
-                  <plan.icon className="w-6 h-6 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
-                          <span>{plan.credits} credits/month</span>
-                          <HelpCircle className="w-3 h-3" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">1 credit = 1 AI generation</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </div>
-
-              <p className="text-sm text-white/40 mb-6">{plan.description}</p>
-
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">${plan.price}</span>
-                <span className="text-white/40">/month</span>
-              </div>
-
-              <Button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleSelectPlan(plan);
-                }}
-                disabled={loadingPlan === plan.id}
-                className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
-                  plan.popular
-                    ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
-                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
-                }`}
-              >
-                {loadingPlan === plan.id ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                    Redirecting...
-                  </>
-                ) : (
-                  plan.cta
-                )}
-              </Button>
-
-              <ul className="space-y-3">
-                {plan.features.map((f) => (
-                  <li
-                    key={f}
-                    className="flex items-start gap-3 text-sm text-white/60"
-                  >
-                    <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          ))}
+          </div>
         </div>
 
-        <div className="glass-card rounded-2xl p-6 text-center">
-          <p className="text-white/60 text-sm mb-2">
-            Credit packs are coming next (one-time purchases).
-          </p>
-          <p className="text-white/30 text-xs">
-            Subscriptions grant monthly credits automatically via Stripe webhooks.
-          </p>
+        {step === 1 && (
+          <div className="glass-card rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_20px_80px_rgba(0,0,0,0.45)] p-6 sm:p-8">
+            <div className="flex items-start justify-between gap-6 mb-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Step 1: Add your resume</h2>
+                <p className="text-sm text-white/40 mt-1">Upload a PDF or DOCX. Stored securely on your account.</p>
+              </div>
+            </div>
+
+            <SectionCard title="Upload resume" icon={Upload} description="Best results: PDF or DOCX">
+              <div className="rounded-2xl border-2 border-dashed border-white/10 bg-black/10 p-6 sm:p-10 text-center hover:border-purple-500/40 transition-colors">
+                <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center mx-auto mb-4">
+                  <Upload className="w-7 h-7 text-purple-300" />
+                </div>
+
+                <p className="text-sm sm:text-base text-white/70 font-medium">Choose a file to upload</p>
+                <p className="text-xs text-white/35 mt-1">
+                  We’ll use this to generate tailored cover letters and bullets.
+                </p>
+
+                <div className="mt-5 max-w-sm mx-auto">
+                  <Input
+                    type="file"
+                    accept=".pdf,.doc,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleFileUpload}
+                    className="bg-white/5 border-white/10 text-white file:text-white file:bg-white/10 file:border-0 file:rounded-lg file:px-3 file:py-2 file:mr-3 hover:file:bg-white/15"
+                  />
+                </div>
+
+                {uploadedFile ? (
+                  <div className="mt-6 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white/70">
+                    <FileText className="w-4 h-4 text-purple-300" />
+                    <span className="max-w-[260px] truncate">{uploadedFile.name}</span>
+                    <Check className="w-4 h-4 text-green-500" />
+                  </div>
+                ) : (
+                  <div className="mt-6 text-xs text-white/30">Accepted: .pdf, .doc, .docx</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="glass-card rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_20px_80px_rgba(0,0,0,0.45)] p-6 sm:p-8">
+            <div className="flex items-start justify-between gap-6 mb-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Step 2: Your preferences</h2>
+                <p className="text-sm text-white/40 mt-1">
+                  Helps generate cover letters and bullet points that match your goals.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <SectionCard title="Target roles" icon={Briefcase} description="Pick what you want to apply for most often.">
+                <div className="flex flex-wrap gap-2">
+                  {targetRoles.map((role) => {
+                    const active = selectedRoles.includes(role);
+                    return (
+                      <button
+                        key={role}
+                        onClick={() => toggleRole(role)}
+                        className={`px-4 py-2 rounded-xl text-sm border transition-all duration-200 ${
+                          active
+                            ? "bg-purple-600 text-white border-purple-400/40 shadow-lg shadow-purple-500/20"
+                            : "bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white/75"
+                        }`}
+                      >
+                        {role}
+                      </button>
+                    );
+                  })}
+                </div>
+              </SectionCard>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <SectionCard title="Seniority" icon={Check}>
+                  <Select value={seniority} onValueChange={setSeniority}>
+                    <SelectTrigger className="bg-white/5 border-white/10 text-white rounded-xl">
+                      <SelectValue placeholder="Select seniority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {seniorityLevels.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {level}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SectionCard>
+
+                <SectionCard title="Location preference" icon={Check}>
+                  <Select value={locationPref} onValueChange={setLocationPref}>
+                    <SelectTrigger className="bg-white/5 border-white/10 text-white rounded-xl">
+                      <SelectValue placeholder="Select preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {locationPrefs.map((pref) => (
+                        <SelectItem key={pref} value={pref}>
+                          {pref}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SectionCard>
+
+                <div className="md:col-span-2">
+                  <SectionCard title="Preferred city (optional)" icon={FileText} description="Used to prioritize nearby roles.">
+                    <Input
+                      value={preferredCity}
+                      onChange={(e) => setPreferredCity(e.target.value)}
+                      placeholder="e.g., Dallas, TX"
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl"
+                    />
+                  </SectionCard>
+                </div>
+
+                <div className="md:col-span-2">
+                  <SectionCard title="Tone for documents" icon={FileText} description="How your cover letters and bullets should sound.">
+                    <Select value={tone} onValueChange={setTone}>
+                      <SelectTrigger className="bg-white/5 border-white/10 text-white rounded-xl">
+                        <SelectValue placeholder="Select tone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tones.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </SectionCard>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-4 border-t border-white/10">
+                <Button
+                  onClick={handleFinish}
+                  disabled={isSaving}
+                  className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      Finish setup
+                      <ChevronRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mt-8">
+          <Button
+            onClick={() => setStep(Math.max(1, step - 1))}
+            variant="ghost"
+            disabled={step === 1 || isSaving}
+            className="text-white/50 hover:text-white hover:bg-white/5 disabled:opacity-30 rounded-xl"
+          >
+            Back
+          </Button>
+
+          {step === 1 && (
+            <Button
+              onClick={handleNext}
+              disabled={isSaving}
+              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
+            >
+              Continue
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -23,6 +23,16 @@ async function api(path, { method = "GET", body } = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+function extractError(r) {
+  return (
+    r?.data?.error ||
+    r?.data?.detail ||
+    r?.data?.message ||
+    (typeof r?.data === "string" ? r.data : null) ||
+    `Request failed (HTTP ${r?.status || "?"})`
+  );
+}
+
 async function fetchProfile(force = false) {
   if (!force && _cache) return _cache;
   if (!force && _inflight) return _inflight;
@@ -42,22 +52,11 @@ async function fetchProfile(force = false) {
   return _inflight;
 }
 
-function extractError(r) {
-  return (
-    r?.data?.error ||
-    r?.data?.detail ||
-    r?.data?.message ||
-    (typeof r?.data === "string" ? r.data : null) ||
-    `Profile update failed (HTTP ${r?.status || "?"})`
-  );
-}
-
 async function updateProfile(patch) {
   const safePatch = patch && typeof patch === "object" ? patch : {};
   const r = await api("/api/profile", { method: "POST", body: safePatch });
 
   if (!r.ok || !r.data?.ok) {
-    // If auth expired, clear cache so UI re-reads /api/profile/me
     if (r.status === 401) {
       _cache = null;
       _inflight = null;
@@ -87,10 +86,20 @@ export const onboarding = {
     return "done";
   },
 
-  async completePricing(planName = null) {
-    await updateProfile({
-      onboarding: { pricingDone: true, selectedPlan: planName || null },
-    });
+  // ✅ store plan choice in Cosmos (NO localStorage)
+  async setSelectedPlan(planId) {
+    if (!planId) return await fetchProfile(true);
+    return await updateProfile({ onboarding: { selectedPlan: planId } });
+  },
+
+  // ✅ mark pricing complete in Cosmos
+  async completePricing(planId) {
+    const patch = { onboarding: { pricingDone: true } };
+    // only write selectedPlan if explicitly provided
+    if (planId !== undefined && planId !== null) {
+      patch.onboarding.selectedPlan = planId;
+    }
+    await updateProfile(patch);
   },
 
   async completeSetup(preferences = null) {
