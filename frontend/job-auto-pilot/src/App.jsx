@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
@@ -71,8 +71,12 @@ function computeOnboardingStep({ isAuthenticated, authUserId, profile }) {
   }
 
   const onboarding = profile?.onboarding || {};
-  const pricingDone = !!onboarding.pricingDone;
   const setupDone = !!onboarding.setupDone;
+
+  // ✅ IMPORTANT FIX:
+  // If setupDone is true but pricingDone is false (inconsistent state),
+  // treat pricing as effectively done so the user can proceed.
+  const pricingDone = !!onboarding.pricingDone || setupDone;
 
   if (!pricingDone) return { step: "pricing", pricingDone, setupDone, mismatch: false };
   if (!setupDone) return { step: "setup", pricingDone, setupDone, mismatch: false };
@@ -127,13 +131,13 @@ function AppRoutes() {
   // ✅ Debug override: /Pricing?force=pricing bypasses onboarding redirects
   const forcePricing = useMemo(() => {
     try {
-      return new URLSearchParams(window.location.search).get("force") === "pricing";
+      return new URLSearchParams(location.search).get("force") === "pricing";
     } catch {
       return false;
     }
-  }, []);
+  }, [location.search]);
 
-  // Parse Stripe return info (works whether Stripe returns to /Setup or /Pricing or even /)
+  // Stripe return info (ONLY from URL, no localStorage)
   const stripeSessionId = useMemo(() => {
     try {
       return new URLSearchParams(location.search).get("session_id");
@@ -142,28 +146,9 @@ function AppRoutes() {
     }
   }, [location.search]);
 
-  const pricingBypassActive = useMemo(() => {
-    // Bypass Pricing -> allow Setup when we have evidence checkout just succeeded
-    // (session_id from Stripe OR a recent cached session id from Pricing.jsx)
-    let storedSession = null;
-    let ts = 0;
-    let freeOverride = null;
-
-    try {
-      storedSession = localStorage.getItem("ja:checkout_session");
-      ts = Number(localStorage.getItem("ja:checkout_ts") || "0");
-      freeOverride = localStorage.getItem("ja:pricing_override");
-    } catch {
-      // ignore
-    }
-
-    const now = Date.now();
-    const fresh = !!ts && now - ts < 10 * 60 * 1000; // 10 minutes
-    const hasRecentCheckout = !!stripeSessionId || (!!storedSession && fresh);
-
-    const isFreeChosen = freeOverride === "free";
-
-    return hasRecentCheckout || isFreeChosen;
+  const stripeBypassActive = useMemo(() => {
+    // If Stripe just returned, temporarily allow Setup while Cosmos catches up
+    return !!stripeSessionId;
   }, [stripeSessionId]);
 
   // Cloud onboarding truth:
@@ -200,7 +185,6 @@ function AppRoutes() {
       return { step: "anon", pricingDone: false, setupDone: false, mismatch: false };
     }
 
-    // While profile is loading, block routing with Spinner in Gate/Index
     if (onboardingQuery.isLoading) {
       return { step: "loading", pricingDone: false, setupDone: false, mismatch: false };
     }
@@ -217,14 +201,43 @@ function AppRoutes() {
     });
   }, [isAuthenticated, onboardingQuery.isLoading, onboardingQuery.isError, onboardingQuery.data]);
 
-  // ✅ If we just returned from Stripe (session_id) but profile isn’t updated yet,
-  // treat "pricing" as "setup" temporarily so routing doesn't bounce to /Pricing.
+  // ✅ Stripe bypass (URL only)
   const effectiveOnboarding = useMemo(() => {
-    if (pricingBypassActive && onboarding.step === "pricing") {
+    if (stripeBypassActive && onboarding.step === "pricing") {
       return { ...onboarding, step: "setup" };
     }
     return onboarding;
-  }, [pricingBypassActive, onboarding]);
+  }, [stripeBypassActive, onboarding]);
+
+  // ✅ Auto-heal inconsistent Cosmos state once:
+  // setupDone:true but pricingDone:false -> set pricingDone:true
+  const healedRef = useRef(false);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (loadingAuth) return;
+    if (onboardingQuery.isLoading || onboardingQuery.isError) return;
+
+    const p = onboardingQuery.data?.profile;
+    const ob = p?.onboarding || {};
+    const needsHeal = !!ob.setupDone && !ob.pricingDone;
+
+    if (!needsHeal) return;
+    if (healedRef.current) return;
+    healedRef.current = true;
+
+    (async () => {
+      try {
+        await fetchJson("/api/profile", {
+          method: "POST",
+          body: { onboarding: { pricingDone: true } },
+        });
+      } catch {
+        // ignore heal failure; computeOnboardingStep already treats setupDone as pricing done
+      } finally {
+        if (typeof onboardingQuery.refetch === "function") onboardingQuery.refetch();
+      }
+    })();
+  }, [isAuthenticated, loadingAuth, onboardingQuery.isLoading, onboardingQuery.isError, onboardingQuery.data, onboardingQuery]);
 
   // Optional: if Stripe returned with session_id, trigger a one-time refetch
   useEffect(() => {
@@ -234,18 +247,6 @@ function AppRoutes() {
     if (typeof onboardingQuery.refetch === "function") onboardingQuery.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stripeSessionId, isAuthenticated, loadingAuth]);
-
-  // Clear temporary bypass once pricing is truly done in Cosmos
-  useEffect(() => {
-    if (!onboarding.pricingDone) return;
-    try {
-      localStorage.removeItem("ja:checkout_session");
-      localStorage.removeItem("ja:checkout_ts");
-      localStorage.removeItem("ja:pricing_override");
-    } catch {
-      // ignore
-    }
-  }, [onboarding.pricingDone]);
 
   const nextPath = useMemo(() => {
     if (loadingAuth) return null;
@@ -283,7 +284,7 @@ function AppRoutes() {
     // Wait until we know onboarding state
     if (effectiveOnboarding.step === "loading") return <Spinner />;
 
-    // ✅ Allow forcing Pricing for Stripe testing (bypass onboarding redirects)
+    // ✅ Allow forcing Pricing for testing (bypass onboarding redirects)
     if (pageLower === "pricing" && forcePricing) return <>{children}</>;
 
     // If we're in setup step, keep user in setup until done
