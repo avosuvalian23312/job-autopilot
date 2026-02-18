@@ -6,7 +6,6 @@ const { profilesContainer } = require("../lib/cosmosClient.cjs");
 function getHeader(req, name) {
   try {
     if (req?.headers?.get) return req.headers.get(name);
-    // fallback if headers is a plain object
     return req?.headers?.[name] || req?.headers?.[name?.toLowerCase()] || null;
   } catch {
     return null;
@@ -20,7 +19,6 @@ function cors(request) {
     "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
   };
 
-  // Same-origin SWA calls don’t need this, but leaving it safe/compatible.
   if (origin) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Credentials"] = "true";
@@ -28,15 +26,14 @@ function cors(request) {
   } else {
     headers["Access-Control-Allow-Origin"] = "*";
   }
-
   return headers;
 }
 
-function json(request, status, body) {
+function reply(request, status, jsonBody) {
   return {
     status,
-    headers: { ...cors(request), "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { ...cors(request) },
+    jsonBody,
   };
 }
 
@@ -46,16 +43,7 @@ async function safeJson(request) {
   } catch {
     // ignore
   }
-  try {
-    // fallback if body is already an object/string
-    const b = request?.body;
-    if (!b) return null;
-    if (typeof b === "object") return b;
-    if (typeof b === "string") return JSON.parse(b);
-  } catch {
-    // ignore
-  }
-  return null;
+  return {};
 }
 
 module.exports = async (request, context) => {
@@ -66,46 +54,65 @@ module.exports = async (request, context) => {
 
     const userId = getSwaUserId(request);
     if (!userId) {
-      return json(request, 401, { ok: false, error: "Not authenticated" });
+      return reply(request, 401, { ok: false, error: "Not authenticated" });
     }
 
     const body = (await safeJson(request)) || {};
+    const patchOnboarding =
+      body && typeof body === "object" && body.onboarding && typeof body.onboarding === "object"
+        ? body.onboarding
+        : {};
+    const patchPreferences =
+      body && typeof body === "object" && body.preferences && typeof body.preferences === "object"
+        ? body.preferences
+        : {};
+
     const now = new Date().toISOString();
 
-    // Load existing profile or create a base shell
+    // Base profile shell (always defined)
+    const base = {
+      id: userId,
+      userId,
+      onboarding: { pricingDone: false, setupDone: false, selectedPlan: null },
+      preferences: {},
+      plan: { planId: "free", status: "active" },
+      credits: { balance: 0, updatedAt: now },
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Read existing (but guard against resource being undefined)
     let existing = null;
     try {
-      const { resource } = await profilesContainer.item(userId, userId).read();
-      existing = resource;
-    } catch (e) {
-      existing = {
-        id: userId,
-        userId,
-        onboarding: { pricingDone: false, setupDone: false, selectedPlan: null },
-        preferences: {},
-        plan: { planId: "free", status: "active" },
-        credits: { balance: 0, updatedAt: now },
-        createdAt: now,
-        updatedAt: now,
-      };
+      const readRes = await profilesContainer.item(userId, userId).read();
+      existing = readRes?.resource || null;
+    } catch {
+      existing = null;
     }
 
-    // Merge ONLY what you allow clients to update
     const next = {
-      ...existing,
-      id: existing?.id || userId,
-      userId: existing?.userId || userId,
-      onboarding: { ...(existing.onboarding || {}), ...(body.onboarding || {}) },
-      preferences: { ...(existing.preferences || {}), ...(body.preferences || {}) },
+      ...base,
+      ...(existing || {}),
+      id: (existing && (existing.id || existing.userId)) || userId,
+      userId: (existing && existing.userId) || userId,
+      onboarding: {
+        ...((existing && existing.onboarding) || base.onboarding),
+        ...patchOnboarding,
+      },
+      preferences: {
+        ...((existing && existing.preferences) || base.preferences),
+        ...patchPreferences,
+      },
       updatedAt: now,
+      createdAt: (existing && existing.createdAt) || base.createdAt,
     };
 
     await profilesContainer.items.upsert(next);
 
-    return json(request, 200, { ok: true, profile: next });
+    return reply(request, 200, { ok: true, profile: next });
   } catch (e) {
     context?.log?.error?.("profile update failed", e);
-    return json(request, 500, {
+    return reply(request, 500, {
       ok: false,
       error: "Handler crashed",
       detail: e?.message || String(e),

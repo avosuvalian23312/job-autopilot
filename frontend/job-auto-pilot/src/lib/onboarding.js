@@ -9,7 +9,7 @@ async function api(path, { method = "GET", body } = {}) {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   const text = await res.text();
@@ -34,7 +34,7 @@ async function fetchProfile(force = false) {
       _inflight = null;
       return null;
     }
-    _cache = r.data.profile;
+    _cache = r.data.profile || null;
     _inflight = null;
     return _cache;
   })();
@@ -42,10 +42,30 @@ async function fetchProfile(force = false) {
   return _inflight;
 }
 
+function extractError(r) {
+  return (
+    r?.data?.error ||
+    r?.data?.detail ||
+    r?.data?.message ||
+    (typeof r?.data === "string" ? r.data : null) ||
+    `Profile update failed (HTTP ${r?.status || "?"})`
+  );
+}
+
 async function updateProfile(patch) {
-  const r = await api("/api/profile", { method: "POST", body: patch });
-  if (!r.ok || !r.data?.ok) throw new Error(r.data?.error || "Profile update failed");
-  _cache = r.data.profile;
+  const safePatch = patch && typeof patch === "object" ? patch : {};
+  const r = await api("/api/profile", { method: "POST", body: safePatch });
+
+  if (!r.ok || !r.data?.ok) {
+    // If auth expired, clear cache so UI re-reads /api/profile/me
+    if (r.status === 401) {
+      _cache = null;
+      _inflight = null;
+    }
+    throw new Error(extractError(r));
+  }
+
+  _cache = r.data.profile || null;
   return _cache;
 }
 
