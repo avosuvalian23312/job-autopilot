@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -143,6 +143,28 @@ export default function Setup() {
   const [locationPref, setLocationPref] = useState("");
   const [preferredCity, setPreferredCity] = useState("");
   const [tone, setTone] = useState("Professional");
+
+  // Ensure setup page exits immediately when setup is already complete.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        if (typeof onboarding?.getState !== "function") return;
+        const state = await onboarding.getState(true);
+        if (!active) return;
+        if (state?.setupDone) {
+          navigate(createPageUrl("AppHome"), { replace: true });
+        }
+      } catch {
+        // no-op
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
