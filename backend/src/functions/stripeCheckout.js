@@ -75,19 +75,19 @@ module.exports = async (request, context) => {
     const PLANS = {
       starter: {
         priceId: process.env.STRIPE_PRICE_STARTER || process.env.STRIPE_PRICE_BASIC,
-        creditsPerMonth: Number(process.env.STARTER_CREDITS_PER_MONTH || process.env.BASIC_CREDITS_PER_MONTH || 0) || 0,
+        creditsPerMonth: Number(process.env.STARTER_CREDITS_PER_MONTH || process.env.BASIC_CREDITS_PER_MONTH || 50) || 50,
       },
       pro: {
         priceId: process.env.STRIPE_PRICE_PRO,
-        creditsPerMonth: Number(process.env.PRO_CREDITS_PER_MONTH || 0) || 0,
+        creditsPerMonth: Number(process.env.PRO_CREDITS_PER_MONTH || 150) || 150,
       },
       team: {
         priceId: process.env.STRIPE_PRICE_TEAM || process.env.STRIPE_PRICE_POWER || process.env.STRIPE_PRICE_MAX,
-        creditsPerMonth: Number(process.env.TEAM_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.MAX_CREDITS_PER_MONTH || 0) || 0,
+        creditsPerMonth: Number(process.env.TEAM_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.MAX_CREDITS_PER_MONTH || 300) || 300,
       },
       max: {
         priceId: process.env.STRIPE_PRICE_MAX || process.env.STRIPE_PRICE_POWER || process.env.STRIPE_PRICE_TEAM,
-        creditsPerMonth: Number(process.env.MAX_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.TEAM_CREDITS_PER_MONTH || 0) || 0,
+        creditsPerMonth: Number(process.env.MAX_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.TEAM_CREDITS_PER_MONTH || 300) || 300,
       },
     };
 

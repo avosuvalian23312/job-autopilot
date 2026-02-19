@@ -114,12 +114,13 @@ module.exports = async (request, context) => {
           ].filter(Boolean),
           creditsPerMonth: pickNum(
             process.env.STARTER_CREDITS_PER_MONTH,
-            process.env.BASIC_CREDITS_PER_MONTH
+            process.env.BASIC_CREDITS_PER_MONTH,
+            50
           ),
         },
         pro: {
           priceIds: [process.env.STRIPE_PRICE_PRO].filter(Boolean),
-          creditsPerMonth: pickNum(process.env.PRO_CREDITS_PER_MONTH),
+          creditsPerMonth: pickNum(process.env.PRO_CREDITS_PER_MONTH, 150),
         },
         team: {
           priceIds: [
@@ -130,7 +131,8 @@ module.exports = async (request, context) => {
           creditsPerMonth: pickNum(
             process.env.TEAM_CREDITS_PER_MONTH,
             process.env.POWER_CREDITS_PER_MONTH,
-            process.env.MAX_CREDITS_PER_MONTH
+            process.env.MAX_CREDITS_PER_MONTH,
+            300
           ),
         },
         max: {
@@ -142,7 +144,8 @@ module.exports = async (request, context) => {
           creditsPerMonth: pickNum(
             process.env.MAX_CREDITS_PER_MONTH,
             process.env.POWER_CREDITS_PER_MONTH,
-            process.env.TEAM_CREDITS_PER_MONTH
+            process.env.TEAM_CREDITS_PER_MONTH,
+            300
           ),
         },
       };

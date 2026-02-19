@@ -262,6 +262,11 @@ function AppRoutes() {
       return <Navigate to={nextPath || APPHOME_PATH} replace />;
     }
 
+    // If onboarding is already complete, do not allow staying on Setup.
+    if (pageLower === "setup" && effectiveOnboarding.step === "done") {
+      return <Navigate to={nextPath || APPHOME_PATH} replace />;
+    }
+
     return <>{children}</>;
   };
 
