@@ -179,6 +179,21 @@ module.exports = async (request, context) => {
       };
     }
 
+    async function hasGrantReason(userId, reason) {
+      if (!userId || !reason) return false;
+      const p = await readProfile(userId);
+      return (
+        Array.isArray(p?.creditsLedger) &&
+        p.creditsLedger.some(
+          (e) =>
+            e &&
+            e.type === "grant" &&
+            e.reason === reason &&
+            Number(e.delta || 0) > 0
+        )
+      );
+    }
+
     // 1) checkout.session.completed -> activate plan + store stripe IDs
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -208,6 +223,42 @@ module.exports = async (request, context) => {
           stripeSubscriptionId: session.subscription || null,
         });
         await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
+
+        // Fallback grant path: some setups may miss/delay invoice events.
+        // Grant once using latest invoice reason key so invoice webhook stays idempotent.
+        if (session.payment_status === "paid" && session.subscription) {
+          try {
+            const sub = await stripe.subscriptions.retrieve(session.subscription);
+            const subPriceId = sub?.items?.data?.[0]?.price?.id || null;
+            const subByPrice = resolvePlanByPriceId(subPriceId);
+            const subByPlan = resolvePlanById(planId || sub?.metadata?.planId || null);
+            const subPlanId =
+              (subByPrice && subByPrice.planId) ||
+              (subByPlan && subByPlan.planId) ||
+              planId ||
+              sub?.metadata?.planId ||
+              null;
+            const subCreditsPerMonth =
+              (subByPrice && Number(subByPrice.creditsPerMonth || 0)) ||
+              Number(sub?.metadata?.creditsPerMonth || 0) ||
+              (subByPlan && Number(subByPlan.creditsPerMonth || 0)) ||
+              0;
+            const latestInvoiceId =
+              (typeof sub?.latest_invoice === "string" && sub.latest_invoice) ||
+              sub?.latest_invoice?.id ||
+              session.id;
+            const subGrantReason = `sub_paid:${subPlanId}:${latestInvoiceId}`;
+
+            if (subCreditsPerMonth > 0) {
+              const alreadyGranted = await hasGrantReason(userId, subGrantReason);
+              if (!alreadyGranted) {
+                await grantCredits(userId, subCreditsPerMonth, subGrantReason);
+              }
+            }
+          } catch (err) {
+            context?.log?.("checkout fallback grant failed", err?.message);
+          }
+        }
       }
 
       return json(200, {
@@ -288,21 +339,27 @@ module.exports = async (request, context) => {
       }
 
       const grantReason = `sub_paid:${planId}:${invoice.id}`;
+      const alreadyGranted = await hasGrantReason(userId, grantReason);
+      if (alreadyGranted) {
+        await once(userId, `invoice:${invoice.id}`);
+        return json(200, {
+          ok: true,
+          type: event.type,
+          duplicate: true,
+          alreadyGranted: true,
+          userId,
+          planId,
+          creditsPerMonth,
+          invoiceId: invoice.id || null,
+          grantReason,
+        });
+      }
+
       const first = await once(userId, `invoice:${invoice.id}`);
       if (!first) {
         // Self-heal: older runs may have marked invoice as processed without writing grant.
-        const p = await readProfile(userId);
-        const alreadyGranted =
-          Array.isArray(p?.creditsLedger) &&
-          p.creditsLedger.some(
-            (e) =>
-              e &&
-              e.type === "grant" &&
-              e.reason === grantReason &&
-              Number(e.delta || 0) > 0
-          );
-
-        if (alreadyGranted) {
+        const duplicateHasGrant = await hasGrantReason(userId, grantReason);
+        if (duplicateHasGrant) {
           return json(200, {
             ok: true,
             type: event.type,
