@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
@@ -30,7 +30,60 @@ function swaLogout(redirectPath = "/") {
   );
 }
 
-export default function AppNav({ currentPage, credits = 87 }) {
+export default function AppNav({ currentPage, credits }) {
+  const [liveCredits, setLiveCredits] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const parseCredits = (data) => {
+      const raw =
+        data?.credits?.balance ??
+        data?.balance ??
+        data?.creditsBalance ??
+        null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null;
+    };
+
+    const loadCredits = async () => {
+      try {
+        const res = await fetch("/api/credits/me", {
+          method: "GET",
+          credentials: "include",
+        });
+        if (!res.ok) return;
+
+        const text = await res.text();
+        let data = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = null;
+        }
+
+        const parsed = parseCredits(data);
+        if (active && parsed !== null) setLiveCredits(parsed);
+      } catch {
+        // no-op
+      }
+    };
+
+    loadCredits();
+    const onFocus = () => loadCredits();
+    const intervalId = window.setInterval(loadCredits, 30000);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  const displayCredits =
+    typeof credits === "number" ? credits : liveCredits ?? 0;
+
   const handleLogout = () => {
     // ✅ IMPORTANT:
     // Do NOT clear localStorage/onboarding here.
@@ -77,7 +130,7 @@ export default function AppNav({ currentPage, credits = 87 }) {
           >
             <Coins className="w-4 h-4 text-purple-400" />
             <span className="text-sm font-semibold text-purple-400">
-              {credits}
+              {displayCredits}
             </span>
             <span className="text-xs text-white/30 hidden sm:inline">
               credits

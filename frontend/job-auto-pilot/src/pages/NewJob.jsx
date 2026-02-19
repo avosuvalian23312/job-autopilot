@@ -38,6 +38,7 @@ import {
   Stars,
   GraduationCap as EduIcon,
   Award,
+  Coins,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +65,7 @@ export default function NewJob() {
 
   // ✅ Generate loading overlay (same UX as Packet)
   const [isGeneratingPacket, setIsGeneratingPacket] = useState(false);
+  const [currentCredits, setCurrentCredits] = useState(null);
 
   // ✅ Show phase text while generating (so user sees progress immediately)
   const [generatePhase, setGeneratePhase] = useState("Generating packet…");
@@ -815,6 +817,31 @@ export default function NewJob() {
         // ignore
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCredits = async () => {
+      try {
+        const data = await apiFetch("/api/credits/me", { method: "GET" });
+        const n = Number(data?.credits?.balance ?? data?.balance ?? 0);
+        if (!cancelled && Number.isFinite(n)) {
+          setCurrentCredits(Math.max(0, Math.floor(n)));
+        }
+      } catch {
+        if (!cancelled) setCurrentCredits(null);
+      }
+    };
+
+    loadCredits();
+    const onFocus = () => loadCredits();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   // ✅ prevent scroll while generating overlay is up
@@ -2419,8 +2446,12 @@ export default function NewJob() {
                       "Generate Packet"
                     )}
                   </Button>
-                  <p className="text-center text-sm mt-2 text-white/60">
-                    Uses 1 credit
+                  <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
+                    <span>Uses 1 credit</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-purple-200">
+                      <Coins className="w-3.5 h-3.5 text-purple-300" />
+                      {currentCredits === null ? "--" : currentCredits} available
+                    </span>
                   </p>
                 </div>
               </div>
