@@ -2447,7 +2447,7 @@ export default function NewJob() {
                     )}
                   </Button>
                   <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
-                    <span>Uses 1 credit</span>
+                    <span>Uses 5 credits</span>
                     <span className="inline-flex items-center gap-1 rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-purple-200">
                       <Coins className="w-3.5 h-3.5 text-purple-300" />
                       {currentCredits === null ? "--" : currentCredits} available

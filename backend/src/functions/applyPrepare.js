@@ -7,6 +7,7 @@ const { PDFDocument, StandardFonts, rgb, degrees } = require("pdf-lib");
 
 const { callAoaiChat, safeJsonParse } = require("../lib/aoai");
 const { extractPdfLayout } = require("../lib/pdfTailor");
+const { spendCredits, grantCredits, getCredits } = require("../lib/billingStore.cjs");
 
 // ---------------------------
 // Helpers
@@ -1366,6 +1367,11 @@ ${String(resumeText || "")}
 }
 
 async function applyPrepare(request, context) {
+  let billed = false;
+  let billedUserId = null;
+  let billedReason = null;
+  let creditCost = 5;
+
   try {
     if (request.method === "OPTIONS") return { status: 204 };
 
@@ -1404,6 +1410,7 @@ async function applyPrepare(request, context) {
     // Accept "STANDARD"/"ELITE" or "standard"/"elite"
     const aiMode = String(body.aiMode || "standard").toLowerCase();
     const studentMode = !!body.studentMode;
+    creditCost = Number(process.env.PACKET_CREDIT_COST || 5) || 5;
 
     // mode "real" (default) = strictly truthful.
     // mode "training_sample" = allows explicitly-labeled SAMPLE projects with watermark.
@@ -1447,6 +1454,33 @@ async function applyPrepare(request, context) {
 
     // Load profile (trusted)
     const profile = await tryLoadUserProfile(cosmos, COSMOS_DB_NAME, user.userId);
+
+    // Charge packet cost before generation work starts.
+    billedUserId = user.userId;
+    billedReason = `packet_generate:${Date.now()}`;
+    try {
+      await spendCredits(user.userId, creditCost, billedReason, {
+        source: "apply_prepare",
+        resumeId,
+        aiMode,
+        studentMode,
+      });
+      billed = true;
+    } catch (e) {
+      if (e?.code === "INSUFFICIENT_CREDITS") {
+        const current = await getCredits(user.userId);
+        return {
+          status: 402,
+          jsonBody: {
+            ok: false,
+            error: "Insufficient credits",
+            needed: creditCost,
+            balance: Number(current?.balance || 0) || 0,
+          },
+        };
+      }
+      throw e;
+    }
 
     // Canonical name
     const nameFromResume = detectCanonicalNameFromResumeText(resumeText);
@@ -1621,9 +1655,23 @@ async function applyPrepare(request, context) {
         coverLetter: coverLetterDoc,
         overlaysApplied: [],
         misses: [],
+        creditsCharged: creditCost,
       },
     };
   } catch (err) {
+    if (billed && billedUserId && billedReason) {
+      try {
+        await grantCredits(
+          billedUserId,
+          creditCost,
+          `refund:${billedReason}`,
+          { source: "apply_prepare", reason: "generation_failed" }
+        );
+      } catch (refundErr) {
+        log(context, "applyPrepare refund failed:", refundErr?.message || refundErr);
+      }
+    }
+
     log(context, "applyPrepare error:", err);
 
     const code = err?.code || "UNKNOWN";
