@@ -38,6 +38,33 @@ function cardSnippetFromPm(pm) {
   };
 }
 
+function cardSnippetFromSourceCard(card, idHint = "") {
+  if (!card) return null;
+  return {
+    id: String(card?.id || idHint || ""),
+    brand: String(card?.brand || "").toUpperCase(),
+    last4: String(card?.last4 || ""),
+    expMonth: Number(card?.exp_month || 0) || null,
+    expYear: Number(card?.exp_year || 0) || null,
+    funding: String(card?.funding || ""),
+    country: String(card?.country || ""),
+  };
+}
+
+function cardSnippetFromCharge(charge) {
+  const c = charge?.payment_method_details?.card || null;
+  if (!c) return null;
+  return {
+    id: String(charge?.payment_method || charge?.id || ""),
+    brand: String(c.brand || "").toUpperCase(),
+    last4: String(c.last4 || ""),
+    expMonth: Number(c.exp_month || 0) || null,
+    expYear: Number(c.exp_year || 0) || null,
+    funding: String(c.funding || ""),
+    country: String(c.country || ""),
+  };
+}
+
 async function stripeBillingSummary(request, context) {
   try {
     if (request.method === "OPTIONS") {
@@ -72,7 +99,11 @@ async function stripeBillingSummary(request, context) {
     if (stripeSubscriptionId) {
       try {
         subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-          expand: ["default_payment_method"],
+          expand: [
+            "default_payment_method",
+            "latest_invoice.payment_intent.payment_method",
+            "latest_invoice.charge",
+          ],
         });
       } catch (e) {
         context?.log?.("stripeBillingSummary: sub lookup failed", e?.message);
@@ -88,38 +119,106 @@ async function stripeBillingSummary(request, context) {
 
     if (stripeCustomerId) {
       try {
-        customer = await stripe.customers.retrieve(stripeCustomerId);
+        customer = await stripe.customers.retrieve(stripeCustomerId, {
+          expand: ["invoice_settings.default_payment_method", "default_source"],
+        });
       } catch (e) {
         context?.log?.("stripeBillingSummary: customer lookup failed", e?.message);
       }
     }
 
     let paymentMethod = null;
+    let paymentMethodSource = "";
+
+    function setPayment(snippet, source) {
+      if (paymentMethod || !snippet) return;
+      paymentMethod = snippet;
+      paymentMethodSource = String(source || "");
+    }
 
     // 1) Subscription default payment method (best source for active plans)
     if (subscription?.default_payment_method) {
       if (typeof subscription.default_payment_method === "object") {
-        paymentMethod = cardSnippetFromPm(subscription.default_payment_method);
+        setPayment(
+          cardSnippetFromPm(subscription.default_payment_method),
+          "subscription.default_payment_method"
+        );
       } else {
         try {
           const pm = await stripe.paymentMethods.retrieve(
             String(subscription.default_payment_method)
           );
-          paymentMethod = cardSnippetFromPm(pm);
+          setPayment(cardSnippetFromPm(pm), "subscription.default_payment_method");
         } catch {}
       }
     }
 
-    // 2) Customer invoice settings default payment method
-    if (!paymentMethod && customer?.invoice_settings?.default_payment_method) {
-      const pmId = String(customer.invoice_settings.default_payment_method);
-      try {
-        const pm = await stripe.paymentMethods.retrieve(pmId);
-        paymentMethod = cardSnippetFromPm(pm);
-      } catch {}
+    // 2) Latest invoice payment intent method
+    if (
+      !paymentMethod &&
+      subscription?.latest_invoice?.payment_intent?.payment_method
+    ) {
+      const piMethod = subscription.latest_invoice.payment_intent.payment_method;
+      if (typeof piMethod === "object") {
+        setPayment(cardSnippetFromPm(piMethod), "latest_invoice.payment_intent");
+      } else {
+        try {
+          const pm = await stripe.paymentMethods.retrieve(String(piMethod));
+          setPayment(cardSnippetFromPm(pm), "latest_invoice.payment_intent");
+        } catch {}
+      }
     }
 
-    // 3) Fallback to first saved card
+    // 3) Customer invoice settings default payment method
+    if (!paymentMethod && customer?.invoice_settings?.default_payment_method) {
+      const defaultPm = customer.invoice_settings.default_payment_method;
+      if (typeof defaultPm === "object") {
+        setPayment(cardSnippetFromPm(defaultPm), "customer.invoice_settings.default");
+      } else {
+        const pmId = String(defaultPm);
+        try {
+          const pm = await stripe.paymentMethods.retrieve(pmId);
+          setPayment(cardSnippetFromPm(pm), "customer.invoice_settings.default");
+        } catch {}
+      }
+    }
+
+    // 4) Legacy customer default source card
+    if (!paymentMethod && customer?.default_source) {
+      const source = customer.default_source;
+      if (typeof source === "object") {
+        setPayment(
+          cardSnippetFromSourceCard(source, source?.id || ""),
+          "customer.default_source"
+        );
+      } else if (stripeCustomerId) {
+        try {
+          const src = await stripe.customers.retrieveSource(
+            stripeCustomerId,
+            String(source)
+          );
+          setPayment(
+            cardSnippetFromSourceCard(src, String(source)),
+            "customer.default_source"
+          );
+        } catch {}
+      }
+    }
+
+    // 5) Charge-level card details fallback
+    if (!paymentMethod && subscription?.latest_invoice?.charge) {
+      const ch = subscription.latest_invoice.charge;
+      if (typeof ch === "object") {
+        setPayment(cardSnippetFromCharge(ch), "latest_invoice.charge");
+      } else {
+        try {
+          const charge = await stripe.charges.retrieve(String(ch));
+          setPayment(cardSnippetFromCharge(charge), "latest_invoice.charge");
+        } catch {}
+      }
+    }
+
+    // 6) Fallback to first saved payment method card
     if (!paymentMethod && stripeCustomerId) {
       try {
         const pms = await stripe.paymentMethods.list({
@@ -128,8 +227,39 @@ async function stripeBillingSummary(request, context) {
           limit: 1,
         });
         const pm = Array.isArray(pms?.data) ? pms.data[0] : null;
-        if (pm) paymentMethod = cardSnippetFromPm(pm);
+        if (pm) {
+          setPayment(cardSnippetFromPm(pm), "customer.payment_methods.list");
+        }
       } catch {}
+    }
+
+    // 7) Fallback to first legacy source card
+    if (!paymentMethod && stripeCustomerId) {
+      try {
+        const cards = await stripe.customers.listSources(stripeCustomerId, {
+          object: "card",
+          limit: 1,
+        });
+        const card = Array.isArray(cards?.data) ? cards.data[0] : null;
+        if (card) {
+          setPayment(cardSnippetFromSourceCard(card), "customer.sources.list");
+        }
+      } catch {}
+    }
+
+    let paymentMethodMissingReason = "";
+    if (!paymentMethod) {
+      const subStatus = String(subscription?.status || plan.status || "").toLowerCase();
+      if (subStatus === "trialing") {
+        paymentMethodMissingReason =
+          "No card is attached yet (subscription is trialing).";
+      } else if (stripeCustomerId) {
+        paymentMethodMissingReason =
+          "No default card was found on this Stripe customer.";
+      } else {
+        paymentMethodMissingReason =
+          "No Stripe customer is linked to this account yet.";
+      }
     }
 
     return json(200, {
@@ -141,6 +271,8 @@ async function stripeBillingSummary(request, context) {
       currentPeriodEnd: toIso(subscription?.current_period_end),
       planId: String(plan.planId || "free"),
       paymentMethod,
+      paymentMethodSource: paymentMethodSource || null,
+      paymentMethodMissingReason: paymentMethod ? null : paymentMethodMissingReason,
     });
   } catch (e) {
     context?.log?.error?.("stripeBillingSummary failed", e);
@@ -149,4 +281,3 @@ async function stripeBillingSummary(request, context) {
 }
 
 module.exports = { stripeBillingSummary };
-

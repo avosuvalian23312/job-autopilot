@@ -68,6 +68,13 @@ function statusLabel(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function shortRef(value, head = 12, tail = 8) {
+  const raw = String(value || "");
+  if (!raw) return "-";
+  if (raw.length <= head + tail + 3) return raw;
+  return `${raw.slice(0, head)}...${raw.slice(-tail)}`;
+}
+
 /**
  * ✅ SWA auth (NO JWT):
  * Call your /api/* endpoints normally. SWA uses cookies and injects identity headers server-side.
@@ -519,11 +526,11 @@ export default function Settings() {
     !!stripeBilling?.connected || !!stripeCustomerId || !!stripeSubscriptionId;
   const stripePaymentCard = stripeBilling?.paymentMethod || null;
   const stripePaymentMethodLabel = stripePaymentCard
-    ? `${String(stripePaymentCard.brand || "CARD").toUpperCase()} •••• ${
+    ? `${String(stripePaymentCard.brand || "CARD").toUpperCase()} **** ${
         stripePaymentCard.last4 || "----"
       }`
     : paymentConnected
-    ? "No default card found"
+    ? "No default card saved"
     : "No card on file";
   const stripePaymentExp =
     stripePaymentCard?.expMonth && stripePaymentCard?.expYear
@@ -539,13 +546,15 @@ export default function Settings() {
   const stripeCardLast4 = String(stripePaymentCard?.last4 || "----");
   const stripeCardMeta = [stripePaymentCard?.funding, stripePaymentCard?.country]
     .filter(Boolean)
-    .join(" • ");
+    .join(" | ");
+  const stripeMethodSource = String(stripeBilling?.paymentMethodSource || "");
+  const stripeMissingReason = String(stripeBilling?.paymentMethodMissingReason || "");
   const stripePaymentMethodDisplay = stripePaymentCard
     ? `${stripeCardBrand} **** ${stripeCardLast4}`
     : stripePaymentMethodLabel;
-  const stripeCardMetaDisplay = stripeCardMeta
-    ? stripeCardMeta.replaceAll("•", "|")
-    : "";
+  const stripeCardMetaDisplay = stripeCardMeta;
+  const stripeCustomerShort = shortRef(stripeCustomerId, 10, 8);
+  const stripeSubscriptionShort = shortRef(stripeSubscriptionId, 10, 8);
 
   const creditsBalance =
     Number(creditsMe?.credits?.balance ?? billingProfile?.credits?.balance ?? 0) ||
@@ -1197,19 +1206,30 @@ export default function Settings() {
                           </div>
                         </div>
 
+                        {!stripePaymentCard && paymentConnected ? (
+                          <div className="mt-3 rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                            {stripeMissingReason || "No default card is attached. Add one in Billing Portal > Payment methods."}
+                          </div>
+                        ) : null}
+
                         <div className="mt-4 border-t border-white/10 pt-3 text-xs text-white/50">
                           <div>{stripePaymentMethodDisplay}</div>
                           <div className="mt-1">
-                            {stripeCardMetaDisplay || "Card metadata unavailable"}
+                            {stripeCardMetaDisplay || stripeMissingReason || "Card metadata unavailable"}
                           </div>
-                          <div className="mt-1 break-all">
+                          {stripeMethodSource ? (
+                            <div className="mt-1">
+                              Source: {stripeMethodSource}
+                            </div>
+                          ) : null}
+                          <div className="mt-1" title={stripeCustomerId || undefined}>
                             {stripeCustomerId
-                              ? `Customer: ${stripeCustomerId}`
+                              ? `Customer: ${stripeCustomerShort}`
                               : "Customer: -"}
                           </div>
-                          <div className="mt-1 break-all">
+                          <div className="mt-1" title={stripeSubscriptionId || undefined}>
                             {stripeSubscriptionId
-                              ? `Subscription: ${stripeSubscriptionId}`
+                              ? `Subscription: ${stripeSubscriptionShort}`
                               : "Subscription: -"}
                           </div>
                           <div className="mt-1">
@@ -1538,5 +1558,6 @@ export default function Settings() {
     </div>
   );
 }
+
 
 
