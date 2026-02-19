@@ -1,7 +1,7 @@
 "use strict";
 
 const Stripe = require("stripe");
-const { markEventOnce, setPlan, grantCredits } = require("../lib/billingStore.cjs");
+const { markEventOnce, setPlan, setOnboarding, grantCredits } = require("../lib/billingStore.cjs");
 
 function withHeaders(extra = {}) {
   return {
@@ -97,6 +97,68 @@ module.exports = async (request, context) => {
       return markEventOnce(userId, String(key));
     }
 
+    function planMap() {
+      const pickNum = (...vals) => {
+        for (const v of vals) {
+          const n = Number(v || 0) || 0;
+          if (n > 0) return n;
+        }
+        return 0;
+      };
+
+      return {
+        starter: {
+          priceIds: [
+            process.env.STRIPE_PRICE_STARTER,
+            process.env.STRIPE_PRICE_BASIC,
+          ].filter(Boolean),
+          creditsPerMonth: pickNum(
+            process.env.STARTER_CREDITS_PER_MONTH,
+            process.env.BASIC_CREDITS_PER_MONTH
+          ),
+        },
+        pro: {
+          priceIds: [process.env.STRIPE_PRICE_PRO].filter(Boolean),
+          creditsPerMonth: pickNum(process.env.PRO_CREDITS_PER_MONTH),
+        },
+        team: {
+          priceIds: [
+            process.env.STRIPE_PRICE_TEAM,
+            process.env.STRIPE_PRICE_POWER,
+            process.env.STRIPE_PRICE_MAX,
+          ].filter(Boolean),
+          creditsPerMonth: pickNum(
+            process.env.TEAM_CREDITS_PER_MONTH,
+            process.env.POWER_CREDITS_PER_MONTH,
+            process.env.MAX_CREDITS_PER_MONTH
+          ),
+        },
+        max: {
+          priceIds: [
+            process.env.STRIPE_PRICE_MAX,
+            process.env.STRIPE_PRICE_POWER,
+            process.env.STRIPE_PRICE_TEAM,
+          ].filter(Boolean),
+          creditsPerMonth: pickNum(
+            process.env.MAX_CREDITS_PER_MONTH,
+            process.env.POWER_CREDITS_PER_MONTH,
+            process.env.TEAM_CREDITS_PER_MONTH
+          ),
+        },
+      };
+    }
+
+    function resolvePlanByPriceId(priceId) {
+      if (!priceId) return null;
+      const entries = Object.entries(planMap());
+      for (const [planId, cfg] of entries) {
+        if (Array.isArray(cfg.priceIds) && cfg.priceIds.includes(priceId)) {
+          return { planId, creditsPerMonth: Number(cfg.creditsPerMonth || 0) || 0 };
+        }
+      }
+      return null;
+    }
+
     // 1) checkout.session.completed -> activate plan + store stripe IDs
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -116,6 +178,7 @@ module.exports = async (request, context) => {
           stripeCustomerId: session.customer || null,
           stripeSubscriptionId: session.subscription || null,
         });
+        await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
       }
 
       return json(200, { ok: true });
@@ -132,8 +195,13 @@ module.exports = async (request, context) => {
       const meta = subscription?.metadata || {};
 
       const userId = meta.userId || null;
-      const planId = meta.planId || null;
-      const creditsPerMonth = Number(meta.creditsPerMonth || 0) || 0;
+      const priceId = subscription?.items?.data?.[0]?.price?.id || null;
+      const byPrice = resolvePlanByPriceId(priceId);
+      const planId = (byPrice && byPrice.planId) || meta.planId || null;
+      const creditsPerMonth =
+        (byPrice && Number(byPrice.creditsPerMonth || 0)) ||
+        Number(meta.creditsPerMonth || 0) ||
+        0;
 
       if (!userId) return json(200, { ok: true, ignored: true });
 
@@ -146,6 +214,7 @@ module.exports = async (request, context) => {
         stripeCustomerId: subscription.customer || null,
         stripeSubscriptionId: subscription.id || null,
       });
+      await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
 
       if (creditsPerMonth > 0) {
         await grantCredits(userId, creditsPerMonth, `sub_paid:${planId}:${invoice.id}`);

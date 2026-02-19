@@ -18,8 +18,14 @@ function periodYYYYMM(d = new Date()) {
   return `${y}-${m}`;
 }
 function allowanceForPlan(plan) {
-  if (plan === "pro") return 60;
-  if (plan === "power") return 120;
+  if (plan && typeof plan === "object") {
+    return allowanceForPlan(plan.planId || "free");
+  }
+  if (plan === "starter") return 50;
+  if (plan === "pro") return 150;
+  if (plan === "team") return 300;
+  if (plan === "power") return 300;
+  if (plan === "max") return 300;
   return 3;
 }
 
@@ -29,7 +35,7 @@ module.exports = async (request, context) => {
   const userId = getSwaUserId(request);
   if (!userId) return json(401, { ok: false, error: "Not authenticated" });
 
-  const { profilesContainer } = await import("../lib/cosmosClient.js");
+  const { profilesContainer } = require("../lib/cosmosClient.cjs");
 
   const pk = userId;
   const id = userId;
@@ -60,13 +66,17 @@ module.exports = async (request, context) => {
     await profilesContainer.items.upsert(profile);
   }
 
-  profile.plan = profile.plan || "free";
+  const planId =
+    typeof profile.plan === "string"
+      ? profile.plan
+      : (profile.plan && profile.plan.planId) || "free";
+  profile.plan = profile.plan || { planId: "free", status: "active" };
   profile.credits = profile.credits || {};
   if (profile.credits.monthlyPeriod !== periodYYYYMM()) {
     profile.credits.monthlyPeriod = periodYYYYMM();
     profile.credits.monthlyUsed = 0;
   }
-  profile.credits.monthlyAllowance = allowanceForPlan(profile.plan);
+  profile.credits.monthlyAllowance = allowanceForPlan(planId);
   profile.updatedAt = new Date().toISOString();
   await profilesContainer.items.upsert(profile);
 
@@ -74,7 +84,7 @@ module.exports = async (request, context) => {
 
   return json(200, {
     ok: true,
-    plan: profile.plan,
+    plan: planId,
     credits: {
       balance: profile.credits.balance || 0,
       monthlyAllowance: profile.credits.monthlyAllowance || 0,

@@ -3,7 +3,7 @@
 const { getSwaUserId } = require("../lib/swaUser");
 
 async function getProfilesContainer() {
-  const mod = await import("../lib/cosmosClient.js");
+  const mod = require("../lib/cosmosClient.cjs");
   return mod.profilesContainer;
 }
 

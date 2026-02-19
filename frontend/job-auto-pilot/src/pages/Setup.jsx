@@ -198,11 +198,6 @@ export default function Setup() {
         tone,
       };
 
-      // Optional: keep preferences locally for instant UI hydration
-      try {
-        localStorage.setItem("preferences", JSON.stringify(preferences));
-      } catch {}
-
       // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
       const sasResp = await apiFetch("/api/resume/upload-url", {
         method: "POST",
@@ -253,19 +248,6 @@ export default function Setup() {
         toast.error(msg);
         return;
       }
-
-      // Optional local cache so UI remains smooth
-      try {
-        const resumeData = {
-          id: Date.now(),
-          name: uploadedFile.name,
-          source: "upload",
-          blobName,
-          created: new Date().toISOString(),
-        };
-        localStorage.setItem("resumes", JSON.stringify([resumeData]));
-        localStorage.setItem("defaultResumeId", resumeData.id.toString());
-      } catch {}
 
       // ✅ Mark setup done in CLOUD (Cosmos)
       try {

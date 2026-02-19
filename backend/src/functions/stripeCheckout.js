@@ -1,6 +1,7 @@
 "use strict";
 
 const Stripe = require("stripe");
+const { getSwaUserId } = require("../lib/swaUser");
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "*",
@@ -65,18 +66,34 @@ module.exports = async (request, context) => {
       return json(500, { ok: false, error: "Missing STRIPE_SECRET_KEY" });
     }
 
-    // If you only have PRO right now, keep it simple:
+    const authUserId = getSwaUserId(request);
+    if (!authUserId) {
+      return json(401, { ok: false, error: "Not authenticated" });
+    }
+
+    // Canonical plan map used by checkout + webhook metadata fallback
     const PLANS = {
+      starter: {
+        priceId: process.env.STRIPE_PRICE_STARTER || process.env.STRIPE_PRICE_BASIC,
+        creditsPerMonth: Number(process.env.STARTER_CREDITS_PER_MONTH || process.env.BASIC_CREDITS_PER_MONTH || 0) || 0,
+      },
       pro: {
         priceId: process.env.STRIPE_PRICE_PRO,
         creditsPerMonth: Number(process.env.PRO_CREDITS_PER_MONTH || 0) || 0,
+      },
+      team: {
+        priceId: process.env.STRIPE_PRICE_TEAM || process.env.STRIPE_PRICE_POWER || process.env.STRIPE_PRICE_MAX,
+        creditsPerMonth: Number(process.env.TEAM_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.MAX_CREDITS_PER_MONTH || 0) || 0,
+      },
+      max: {
+        priceId: process.env.STRIPE_PRICE_MAX || process.env.STRIPE_PRICE_POWER || process.env.STRIPE_PRICE_TEAM,
+        creditsPerMonth: Number(process.env.MAX_CREDITS_PER_MONTH || process.env.POWER_CREDITS_PER_MONTH || process.env.TEAM_CREDITS_PER_MONTH || 0) || 0,
       },
     };
 
     const body = await readJsonBody(request);
 
     const planId = String(body.planId || "").toLowerCase().trim();
-    const userId = body.userId ? String(body.userId) : null;
     const email = body.email ? String(body.email) : null;
 
     if (!planId || !PLANS[planId]) {
@@ -92,7 +109,7 @@ module.exports = async (request, context) => {
     if (!priceId) {
       return json(500, {
         ok: false,
-        error: "Missing env var STRIPE_PRICE_PRO",
+        error: `Missing Stripe price id env var for plan '${planId}'`,
       });
     }
 
@@ -126,13 +143,13 @@ module.exports = async (request, context) => {
       cancel_url: `${origin}${normalizePath(cancelPath)}?canceled=1`,
 
       customer_email: email || undefined,
-      client_reference_id: userId || undefined,
+      client_reference_id: authUserId || undefined,
 
-      metadata: { userId: userId || "", planId },
+      metadata: { userId: authUserId, planId },
 
       subscription_data: {
         metadata: {
-          userId: userId || "",
+          userId: authUserId,
           planId,
           creditsPerMonth: String(creditsPerMonth || 0),
         },

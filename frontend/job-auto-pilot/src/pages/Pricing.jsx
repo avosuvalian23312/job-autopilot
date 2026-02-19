@@ -1,135 +1,300 @@
-import React, { useState } from "react";
+// src/pages/Pricing.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { createPageUrl } from "@/utils";
+import { motion } from "framer-motion";
+import { Check, Sparkles, Rocket, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Check, Rocket } from "lucide-react";
-import { toast } from "sonner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { pagesConfig } from "@/pages.config";
 import { onboarding } from "@/lib/onboarding";
 
 const plans = [
   {
     id: "starter",
     name: "Starter",
-    price: "$9",
+    price: 9,
     credits: 50,
-    features: ["Resume generation", "Cover letter generation", "Basic support"],
+    description: "Great for getting started",
+    features: [
+      "50 credits per month",
+      "Resume generation",
+      "Cover letter generation",
+      "Basic support",
+    ],
+    popular: false,
+    cta: "Start Starter",
   },
   {
     id: "pro",
     name: "Pro",
-    price: "$24",
+    price: 24,
     credits: 150,
-    features: ["Everything in Starter", "Priority generation", "Priority support"],
+    description: "Best for active job hunters",
+    features: [
+      "150 credits per month",
+      "Everything in Starter",
+      "Priority generation",
+      "Priority support",
+    ],
     popular: true,
+    cta: "Start Pro",
   },
   {
     id: "team",
     name: "Team",
-    price: "$45",
+    price: 45,
     credits: 300,
-    features: ["Everything in Pro", "Higher monthly limit", "Team sharing"],
+    description: "Higher monthly limit for heavy usage",
+    features: [
+      "300 credits per month",
+      "Everything in Pro",
+      "Team sharing",
+      "Higher monthly limit",
+    ],
+    popular: false,
+    cta: "Start Team",
   },
 ];
 
+function getSetupPath() {
+  const Pages = pagesConfig?.Pages || {};
+  const keys = Object.keys(Pages);
+  const setupKey =
+    keys.find((k) => k.toLowerCase() === "setup") ||
+    keys.find((k) => k.toLowerCase() === "onboardingsetup") ||
+    "setup";
+  const p = `/${setupKey}`;
+  return p.startsWith("/") ? p : "/setup";
+}
+
+function getCancelPath() {
+  try {
+    const p = window.location.pathname || "/Pricing";
+    const s = window.location.search || "";
+    const safe = p.startsWith("/") ? p : "/Pricing";
+    return `${safe}${s}`;
+  } catch {
+    return "/Pricing";
+  }
+}
+
+async function postJson(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body || {}),
+  });
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  return { ok: res.ok, status: res.status, data };
+}
+
 export default function Pricing() {
-  const [selectedPlanId, setSelectedPlanId] = useState(plans[1].id);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [loadingPlan, setLoadingPlan] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) || plans[0];
-
-  const handleContinue = async () => {
-    if (isSubmitting) return;
+  const forceMode = useMemo(() => {
     try {
-      setIsSubmitting(true);
+      const qs = new URLSearchParams(window.location.search);
+      return qs.get("force") === "pricing";
+    } catch {
+      return false;
+    }
+  }, []);
 
-      await onboarding.completePricing(selectedPlan.id);
-      onboarding.clearCache();
-      await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
-      await qc.refetchQueries({ queryKey: ["onboarding:me"] });
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      const sessionId = qs.get("session_id");
+      if (!sessionId || forceMode) return;
 
-      navigate(createPageUrl("Setup"), { replace: true });
-    } catch (error) {
-      console.error(error);
-      toast.error(error?.message || "Failed to complete pricing. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+      qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+      navigate(`${getSetupPath()}?session_id=${encodeURIComponent(sessionId)}`, {
+        replace: true,
+      });
+    } catch {
+      // no-op
+    }
+  }, [forceMode, navigate, qc]);
+
+  const handleSelectPlan = async (plan) => {
+    if (loadingPlan) return;
+
+    setErrorMsg("");
+    setLoadingPlan(plan.id);
+
+    try {
+      const successPath = getSetupPath();
+      const cancelPath = getCancelPath();
+
+      // Persist selected plan in backend profile (no local storage).
+      if (typeof onboarding?.setSelectedPlan === "function") {
+        await onboarding.setSelectedPlan(plan.id);
+      }
+
+      const resp = await postJson("/api/stripe/checkout", {
+        planId: plan.id,
+        successPath,
+        cancelPath,
+      });
+
+      if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
+        const msg =
+          resp.data?.error ||
+          resp.data?.message ||
+          resp.data?.detail ||
+          `Checkout failed (HTTP ${resp.status})`;
+        setErrorMsg(msg);
+        setLoadingPlan(null);
+        return;
+      }
+
+      window.location.assign(resp.data.url);
+    } catch (e) {
+      setErrorMsg(e?.message || "Checkout failed. Try again.");
+      setLoadingPlan(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)] text-white">
-      <header className="border-b border-white/10 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25">
-            <Rocket className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="font-bold text-[15px]">Job Autopilot</div>
-            <div className="text-[11px] text-white/50">Select a plan to continue</div>
+    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+      <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
+              <Rocket className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Choose your plan</h1>
-          <p className="text-white/50 mt-3">Step 1 of 2: pricing before profile setup.</p>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Choose your plan</h1>
+          <p className="text-lg text-white/50 mb-2">Secure checkout via Stripe.</p>
+          <p className="text-sm text-white/30 mb-6">
+            Credits are granted from your active subscription plan.
+          </p>
 
-        <div className="grid md:grid-cols-3 gap-5">
-          {plans.map((plan) => {
-            const isSelected = selectedPlanId === plan.id;
-            return (
-              <button
+          {forceMode ? (
+            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
+              Test mode: opened via <span className="font-mono">?force=pricing</span>
+            </div>
+          ) : null}
+
+          {errorMsg ? (
+            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm text-red-200">
+              {errorMsg}
+            </div>
+          ) : null}
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-6 mb-12">
+          {plans.map((plan, i) => (
+            <motion.div
+              key={plan.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08 }}
+              className={`relative rounded-2xl p-8 ${
+                plan.popular
+                  ? "bg-gradient-to-b from-purple-500/10 to-transparent border-2 border-purple-500/30"
+                  : "glass-card"
+              }`}
+            >
+              {plan.popular ? (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium flex items-center gap-1.5 z-10">
+                  <Sparkles className="w-3 h-3" />
+                  Most Popular
+                </div>
+              ) : null}
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${plan.popular ? "bg-purple-600/20" : "bg-white/5"}`}>
+                  <Rocket className="w-6 h-6 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1.5 text-xs text-white/40 cursor-help">
+                          <span>{plan.credits} credits/month</span>
+                          <HelpCircle className="w-3 h-3" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">Credits are granted after successful payment events.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
+
+              <p className="text-sm text-white/40 mb-6">{plan.description}</p>
+
+              <div className="flex items-baseline gap-1 mb-6">
+                <span className="text-4xl font-bold text-white">${plan.price}</span>
+                <span className="text-white/40">/month</span>
+              </div>
+
+              <Button
                 type="button"
-                key={plan.id}
-                onClick={() => setSelectedPlanId(plan.id)}
-                className={`text-left rounded-2xl border p-6 transition-all ${
-                  isSelected
-                    ? "border-purple-500 bg-purple-500/10"
-                    : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectPlan(plan);
+                }}
+                disabled={loadingPlan === plan.id}
+                className={`w-full py-6 rounded-xl text-base font-medium mb-6 transition-all ${
+                  plan.popular
+                    ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]"
+                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
                 }`}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">{plan.name}</h2>
-                  {plan.popular ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-purple-600 text-white">Popular</span>
-                  ) : null}
-                </div>
-                <div className="text-3xl font-bold">{plan.price}</div>
-                <div className="text-sm text-white/60 mb-4">{plan.credits} credits</div>
-                <div className="space-y-2">
-                  {plan.features.map((feature) => (
-                    <div key={feature} className="flex items-center gap-2 text-sm text-white/80">
-                      <Check className="w-4 h-4 text-purple-300" />
-                      <span>{feature}</span>
-                    </div>
-                  ))}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                {loadingPlan === plan.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                    Redirecting...
+                  </>
+                ) : (
+                  plan.cta
+                )}
+              </Button>
 
-        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="text-sm text-white/60">Selected plan</div>
-            <div className="text-lg font-semibold">
-              {selectedPlan.name} - {selectedPlan.price}
-            </div>
-          </div>
-          <Button
-            onClick={handleContinue}
-            disabled={isSubmitting}
-            className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl px-6"
-          >
-            {isSubmitting ? "Saving..." : "Continue to setup"}
-          </Button>
+              <ul className="space-y-3">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex items-start gap-3 text-sm text-white/60">
+                    <Check className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          ))}
         </div>
-      </main>
+      </div>
     </div>
   );
 }
