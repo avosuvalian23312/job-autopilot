@@ -7,6 +7,7 @@ const {
   setOnboarding,
   grantCredits,
   findUserIdByStripeRefs,
+  readProfile,
 } = require("../lib/billingStore.cjs");
 
 function withHeaders(extra = {}) {
@@ -231,10 +232,65 @@ module.exports = async (request, context) => {
         });
       }
 
-      if (!userId) return json(200, { ok: true, ignored: true });
+      if (!userId) {
+        // Fallback: recover user from Checkout Session tied to this subscription.
+        try {
+          const sessList = await stripe.checkout.sessions.list({
+            subscription: subId,
+            limit: 1,
+          });
+          const s = Array.isArray(sessList?.data) ? sessList.data[0] : null;
+          userId =
+            s?.metadata?.userId ||
+            s?.client_reference_id ||
+            null;
+        } catch (err) {
+          context?.log?.("invoice.paid checkout session lookup failed", err?.message);
+        }
+      }
 
+      // Do NOT acknowledge success if we cannot map invoice -> user.
+      // Returning non-2xx lets Stripe retry later.
+      if (!userId) {
+        return json(500, {
+          ok: false,
+          error: "invoice.paid could not resolve userId",
+          invoiceId: invoice.id || null,
+          subscriptionId: subId || null,
+        });
+      }
+
+      // Do NOT acknowledge success if credits cannot be resolved.
+      if (creditsPerMonth <= 0) {
+        return json(500, {
+          ok: false,
+          error: "invoice.paid resolved creditsPerMonth <= 0",
+          invoiceId: invoice.id || null,
+          subscriptionId: subId || null,
+          planId: planId || null,
+          priceId: priceId || null,
+        });
+      }
+
+      const grantReason = `sub_paid:${planId}:${invoice.id}`;
       const first = await once(userId, `invoice:${invoice.id}`);
-      if (!first) return json(200, { ok: true, duplicate: true });
+      if (!first) {
+        // Self-heal: older runs may have marked invoice as processed without writing grant.
+        const p = await readProfile(userId);
+        const alreadyGranted =
+          Array.isArray(p?.creditsLedger) &&
+          p.creditsLedger.some(
+            (e) =>
+              e &&
+              e.type === "grant" &&
+              e.reason === grantReason &&
+              Number(e.delta || 0) > 0
+          );
+
+        if (alreadyGranted) {
+          return json(200, { ok: true, duplicate: true });
+        }
+      }
 
       await setPlan(userId, {
         planId,
@@ -244,9 +300,7 @@ module.exports = async (request, context) => {
       });
       await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
 
-      if (creditsPerMonth > 0) {
-        await grantCredits(userId, creditsPerMonth, `sub_paid:${planId}:${invoice.id}`);
-      }
+      await grantCredits(userId, creditsPerMonth, grantReason);
 
       return json(200, { ok: true });
     }
