@@ -39,6 +39,7 @@ import {
   GraduationCap as EduIcon,
   Award,
   Coins,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1540,14 +1541,17 @@ export default function NewJob() {
 
         {insufficientCredits && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+            <div className="error-backdrop-enter absolute inset-0 bg-black/80 backdrop-blur-md" />
             <div
               className={[
-                "relative z-10 w-full max-w-2xl rounded-3xl border p-8 text-center",
+                "error-modal-enter relative z-10 w-full max-w-2xl rounded-3xl border p-8 text-center",
                 "border-rose-400/35 bg-[linear-gradient(180deg,rgba(244,63,94,0.22),rgba(15,23,42,0.85))]",
                 "shadow-[0_30px_90px_rgba(0,0,0,0.6)]",
               ].join(" ")}
             >
+              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-rose-300/40 bg-rose-500/25 shadow-[0_0_0_1px_rgba(251,113,133,0.25),0_20px_40px_rgba(0,0,0,0.35)]">
+                <AlertTriangle className="error-icon-pulse h-10 w-10 text-rose-100" />
+              </div>
               <h2 className="text-4xl md:text-5xl font-black tracking-tight text-rose-100">
                 Not Enough Credits
               </h2>
