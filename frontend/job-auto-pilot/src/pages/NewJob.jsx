@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 
 export default function NewJob() {
+  const PACKET_CREDIT_COST = 5;
   const navigate = useNavigate();
   const [selectedResume, setSelectedResume] = useState("");
   const [aiMode, setAiMode] = useState("standard");
@@ -66,6 +67,7 @@ export default function NewJob() {
   // ✅ Generate loading overlay (same UX as Packet)
   const [isGeneratingPacket, setIsGeneratingPacket] = useState(false);
   const [currentCredits, setCurrentCredits] = useState(null);
+  const [insufficientCredits, setInsufficientCredits] = useState(null);
 
   // ✅ Show phase text while generating (so user sees progress immediately)
   const [generatePhase, setGeneratePhase] = useState("Generating packet…");
@@ -103,7 +105,10 @@ export default function NewJob() {
         (typeof data?.raw === "string" ? data.raw : "") ||
         text ||
         `Request failed (${res.status})`;
-      throw new Error(msg);
+      const error = new Error(msg);
+      error.status = res.status;
+      error.data = data;
+      throw error;
     }
 
     return data;
@@ -1137,6 +1142,18 @@ export default function NewJob() {
         return;
       }
 
+      if (
+        typeof currentCredits === "number" &&
+        currentCredits < PACKET_CREDIT_COST
+      ) {
+        setInsufficientCredits({
+          needed: PACKET_CREDIT_COST,
+          balance: currentCredits,
+        });
+        toast.error("Not enough credits to generate this packet.");
+        return;
+      }
+
       // ✅ show loading phase immediately on click
       setGeneratePhase("Starting packet generation…");
       setIsGeneratingPacket(true);
@@ -1256,6 +1273,22 @@ export default function NewJob() {
     } catch (e) {
       console.error(e);
       if (toastId) toast.dismiss(toastId);
+
+      const isInsufficient =
+        e?.status === 402 ||
+        String(e?.message || "").toLowerCase().includes("insufficient credits");
+
+      if (isInsufficient) {
+        const needed = Number(e?.data?.needed || PACKET_CREDIT_COST);
+        const balance = Number(
+          e?.data?.balance ?? currentCredits ?? 0
+        );
+        setInsufficientCredits({
+          needed: Number.isFinite(needed) ? needed : PACKET_CREDIT_COST,
+          balance: Number.isFinite(balance) ? balance : 0,
+        });
+      }
+
       toast.error(e?.message || "Failed to generate packet.");
     } finally {
       setIsGeneratingPacket(false);
@@ -1490,6 +1523,54 @@ export default function NewJob() {
               <span className="text-white/85 text-sm font-medium">
                 {generatePhase || "Generating packet…"}
               </span>
+            </div>
+          </div>
+        )}
+
+        {insufficientCredits && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+            <div
+              className={[
+                "relative z-10 w-full max-w-2xl rounded-3xl border p-8 text-center",
+                "border-rose-400/35 bg-[linear-gradient(180deg,rgba(244,63,94,0.22),rgba(15,23,42,0.85))]",
+                "shadow-[0_30px_90px_rgba(0,0,0,0.6)]",
+              ].join(" ")}
+            >
+              <h2 className="text-4xl md:text-5xl font-black tracking-tight text-rose-100">
+                Not Enough Credits
+              </h2>
+              <p className="mt-4 text-lg text-rose-100/90">
+                You need {insufficientCredits.needed} credits to generate a
+                packet, but you currently have {insufficientCredits.balance}.
+              </p>
+              <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={() => {
+                    setInsufficientCredits(null);
+                    navigate(createPageUrl("Credits"));
+                  }}
+                  className={[
+                    "h-12 px-7 rounded-2xl text-base font-bold",
+                    "bg-gradient-to-r from-rose-400 to-orange-300 text-slate-950",
+                    "hover:from-rose-300 hover:to-orange-200",
+                    hoverLift,
+                    pressFx,
+                  ].join(" ")}
+                >
+                  Buy More Credits
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setInsufficientCredits(null)}
+                  className={[
+                    "h-12 px-7 rounded-2xl text-base",
+                    "bg-black/25 border-white/20 text-white/90 hover:bg-white/10",
+                  ].join(" ")}
+                >
+                  Back
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -2447,11 +2528,18 @@ export default function NewJob() {
                     )}
                   </Button>
                   <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
-                    <span>Uses 5 credits</span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-purple-200">
+                    <span>Uses {PACKET_CREDIT_COST} credits</span>
+                    <button
+                      type="button"
+                      onClick={() => navigate(createPageUrl("Credits"))}
+                      className="group relative inline-flex items-center gap-1 rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-purple-200 transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
+                    >
                       <Coins className="w-3.5 h-3.5 text-purple-300" />
                       {currentCredits === null ? "--" : currentCredits} available
-                    </span>
+                      <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100">
+                        Open Credits page
+                      </span>
+                    </button>
                   </p>
                 </div>
               </div>
