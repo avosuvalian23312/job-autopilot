@@ -10,6 +10,7 @@ import {
   User,
   FileText,
   CreditCard,
+  Calendar,
   Mail,
   Link as LinkIcon,
   Phone,
@@ -29,6 +30,34 @@ import {
 import { toast } from "sonner";
 
 const STORAGE_KEY = "jobautopilot_profile_v1";
+
+function formatDateShort(dateLike) {
+  const d = new Date(dateLike);
+  if (!Number.isFinite(d.getTime())) return "-";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function planLabel(plan) {
+  const p = String(plan || "free").toLowerCase();
+  if (p === "starter") return "Starter";
+  if (p === "pro") return "Pro";
+  if (p === "team" || p === "max" || p === "power") return "Team";
+  return "Free";
+}
+
+function renewsOnLabelFromPeriod(monthlyPeriod) {
+  const m = String(monthlyPeriod || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return "-";
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return "-";
+  const renew = new Date(Date.UTC(year, month, 1));
+  return renew.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 /**
  * ✅ SWA auth (NO JWT):
@@ -177,6 +206,13 @@ export default function Settings() {
 
   // Snapshot for dirty-checking
   const [initialLoaded, setInitialLoaded] = useState(null);
+
+  // Billing/Credits (live backend values)
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingLoaded, setBillingLoaded] = useState(false);
+  const [billingError, setBillingError] = useState("");
+  const [creditsMe, setCreditsMe] = useState(null);
+  const [billingProfile, setBillingProfile] = useState(null);
 
   // ✅ Make ALL inputs white text (including browser autofill)
   const inputBase =
@@ -388,6 +424,62 @@ export default function Settings() {
     };
   }, [tab, authLoaded, authLoading]);
 
+  // Load billing + credits from backend when either tab is opened
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (tab !== "billing" && tab !== "credits") return;
+
+      setBillingLoading(true);
+      setBillingError("");
+
+      try {
+        const [creditsResp, profileResp] = await Promise.all([
+          apiFetch("/api/credits/me", { method: "GET" }),
+          apiFetch("/api/profile/me", { method: "GET" }),
+        ]);
+
+        if (cancelled) return;
+
+        if (creditsResp.ok) {
+          setCreditsMe(creditsResp.data || null);
+        } else {
+          setCreditsMe(null);
+        }
+
+        if (profileResp.ok && profileResp.data?.ok) {
+          setBillingProfile(profileResp.data?.profile || null);
+        } else {
+          setBillingProfile(null);
+        }
+
+        if (!creditsResp.ok && !profileResp.ok) {
+          const msg =
+            creditsResp.data?.error ||
+            profileResp.data?.error ||
+            "Failed to load billing details.";
+          setBillingError(String(msg));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setBillingError(e?.message || "Failed to load billing details.");
+          setCreditsMe(null);
+          setBillingProfile(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setBillingLoading(false);
+          setBillingLoaded(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
   const isDirty = useMemo(() => {
     const base = initialLoaded || {};
     return (
@@ -399,6 +491,77 @@ export default function Settings() {
       (portfolio || "") !== (base.portfolio || "")
     );
   }, [initialLoaded, fullName, email, phone, location, linkedin, portfolio]);
+
+  const billingPlanId = useMemo(() => {
+    const raw =
+      creditsMe?.plan ||
+      billingProfile?.plan?.planId ||
+      (typeof billingProfile?.plan === "string" ? billingProfile.plan : "free");
+    return String(raw || "free").toLowerCase();
+  }, [creditsMe, billingProfile]);
+
+  const billingPlanStatus = String(billingProfile?.plan?.status || "active");
+  const stripeCustomerId = String(billingProfile?.plan?.stripeCustomerId || "");
+  const stripeSubscriptionId = String(
+    billingProfile?.plan?.stripeSubscriptionId || ""
+  );
+  const paymentConnected = !!stripeCustomerId || !!stripeSubscriptionId;
+
+  const creditsBalance =
+    Number(creditsMe?.credits?.balance ?? billingProfile?.credits?.balance ?? 0) ||
+    0;
+  const monthlyAllowance = Number(creditsMe?.credits?.monthlyAllowance || 0) || 0;
+  const monthlyUsed = Number(creditsMe?.credits?.monthlyUsed || 0) || 0;
+  const monthlyRemaining = Number(creditsMe?.credits?.monthlyRemaining || 0) || 0;
+  const monthlyPeriod = String(creditsMe?.credits?.monthlyPeriod || "");
+  const renewsOnLabel = renewsOnLabelFromPeriod(monthlyPeriod);
+
+  const billingHistory = useMemo(() => {
+    const ledger = Array.isArray(billingProfile?.creditsLedger)
+      ? billingProfile.creditsLedger
+      : [];
+    return ledger
+      .filter((entry) => {
+        const r = String(entry?.reason || "");
+        return entry?.type === "grant" && r.startsWith("sub_paid:");
+      })
+      .slice(0, 8)
+      .map((entry, i) => {
+        const reason = String(entry?.reason || "");
+        const planFromReason = reason.split(":")[1] || billingPlanId || "free";
+        const amount = Number(entry?.delta || 0) || 0;
+        return {
+          id: entry?.id || `bill-${i}`,
+          date: formatDateShort(entry?.ts),
+          plan: planLabel(planFromReason),
+          amount,
+        };
+      });
+  }, [billingProfile, billingPlanId]);
+
+  const creditsActivity = useMemo(() => {
+    const ledger = Array.isArray(billingProfile?.creditsLedger)
+      ? billingProfile.creditsLedger
+      : [];
+    return ledger.slice(0, 8).map((entry, i) => {
+      const delta = Number(entry?.delta || 0) || 0;
+      const reason = String(entry?.reason || "");
+      return {
+        id: entry?.id || `credit-${i}`,
+        date: formatDateShort(entry?.ts),
+        delta,
+        reason: reason || (entry?.type === "grant" ? "grant" : "usage"),
+      };
+    });
+  }, [billingProfile]);
+
+  const openPricing = () => {
+    navigate(`${createPageUrl("Pricing")}?force=pricing`);
+  };
+
+  const openCreditsPage = () => {
+    navigate(createPageUrl("Credits"));
+  };
 
   const saveProfile = async () => {
     if (saving) return;
@@ -509,7 +672,7 @@ export default function Settings() {
         <div className="absolute -bottom-72 left-1/3 w-[760px] h-[420px] rounded-full bg-fuchsia-500/5 blur-3xl" />
       </div>
 
-      <AppNav currentPage="Settings" />
+      <AppNav currentPage="AppSettings" />
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-8">
         {/* Header */}
@@ -873,27 +1036,48 @@ export default function Settings() {
               <FadeIn show={stage >= 1} delay={0}>
                 <Section
                   title="Billing"
-                  subtitle="Manage your plan and payment method."
+                  subtitle="Live plan and payment status from your account."
                   icon={CreditCard}
                 >
+                  {billingError ? (
+                    <div className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                      {billingError}
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
                       <div className="text-xs text-white/40">Current plan</div>
                       <div className="text-lg font-semibold text-white mt-1">
-                        Credits-based
+                        {billingLoading && !billingLoaded
+                          ? "Loading..."
+                          : planLabel(billingPlanId)}
                       </div>
                       <div className="text-sm text-white/40 mt-2">
-                        Credits are used when generating cover letters and bullet points.
+                        Status: {billingPlanStatus || "active"}.
+                        {monthlyAllowance > 0
+                          ? ` ${monthlyAllowance} credits / month.`
+                          : " Free plan with limited credits."}
+                      </div>
+                      <div className="text-sm text-white/40 mt-2 flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-white/40" />
+                        Renews on: {renewsOnLabel}
                       </div>
                     </div>
 
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
                       <div className="text-xs text-white/40">Payment method</div>
                       <div className="text-lg font-semibold text-white mt-1">
-                        Not connected
+                        {paymentConnected ? "Stripe connected" : "Not connected"}
                       </div>
-                      <div className="text-sm text-white/40 mt-2">
-                        Stripe integration placeholder.
+                      <div className="text-sm text-white/40 mt-2 break-all">
+                        {stripeCustomerId
+                          ? `Customer: ${stripeCustomerId}`
+                          : "Customer: -"}
+                      </div>
+                      <div className="text-sm text-white/40 mt-1 break-all">
+                        {stripeSubscriptionId
+                          ? `Subscription: ${stripeSubscriptionId}`
+                          : "Subscription: -"}
                       </div>
                     </div>
                   </div>
@@ -903,16 +1087,16 @@ export default function Settings() {
                       type="button"
                       variant="ghost"
                       className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
-                      onClick={() => toast.message("Billing UI placeholder (wire to Stripe).")}
+                      onClick={openCreditsPage}
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
-                      Manage billing
+                      Open Credits & Billing
                     </Button>
 
                     <Button
                       type="button"
                       className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold"
-                      onClick={() => toast.message("Upgrade UI placeholder.")}
+                      onClick={openPricing}
                     >
                       Upgrade
                       <ArrowRight className="w-4 h-4 ml-2" />
@@ -924,12 +1108,39 @@ export default function Settings() {
               <FadeIn show={stage >= 2} delay={80}>
                 <Section
                   title="Invoices"
-                  subtitle="Download invoices and view history (placeholder)."
+                  subtitle="Recent subscription credit events from your billing ledger."
                   icon={FileText}
                 >
-                  <div className="text-sm text-white/50">
-                    Coming soon: invoice history, downloadable receipts, and billing email settings.
-                  </div>
+                  {billingLoading && !billingLoaded ? (
+                    <div className="space-y-2">
+                      <SoftSkeleton className="h-14 rounded-xl" />
+                      <SoftSkeleton className="h-14 rounded-xl" />
+                    </div>
+                  ) : billingHistory.length === 0 ? (
+                    <div className="text-sm text-white/50">
+                      No subscription billing events yet. Upgrade on Pricing to
+                      start recurring credits.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {billingHistory.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm text-white font-medium">
+                              {item.plan} plan credit
+                            </div>
+                            <div className="text-xs text-white/45">{item.date}</div>
+                          </div>
+                          <div className="text-sm font-semibold text-emerald-300">
+                            +{item.amount} credits
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Section>
               </FadeIn>
             </TabsContent>
@@ -939,25 +1150,54 @@ export default function Settings() {
               <FadeIn show={stage >= 1} delay={0}>
                 <Section
                   title="Credits"
-                  subtitle="Buy and manage credits (filler for now)."
+                  subtitle="Live balance and usage synced from your account."
                   icon={Coins}
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {billingError ? (
+                    <div className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                      {billingError}
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
                       <div className="text-xs text-white/40">Current balance</div>
-                      <div className="text-3xl font-bold text-white mt-1">87</div>
+                      <div className="text-3xl font-bold text-white mt-1">
+                        {billingLoading && !billingLoaded ? "-" : creditsBalance}
+                      </div>
                       <div className="text-sm text-white/40 mt-2">
-                        Used for document generation.
+                        Available now.
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 md:col-span-2">
-                      <div className="text-xs text-white/40">How credits work</div>
-                      <ul className="text-sm text-white/50 mt-3 space-y-2 list-disc pl-5">
-                        <li>Generating a cover letter might cost 2–5 credits.</li>
-                        <li>Generating bullets might cost 1–3 credits.</li>
-                        <li>Exact pricing will be added when Stripe is wired.</li>
-                      </ul>
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                      <div className="text-xs text-white/40">Monthly allowance</div>
+                      <div className="text-3xl font-bold text-white mt-1">
+                        {billingLoading && !billingLoaded ? "-" : monthlyAllowance}
+                      </div>
+                      <div className="text-sm text-white/40 mt-2">
+                        Plan: {planLabel(billingPlanId)}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                      <div className="text-xs text-white/40">Used this period</div>
+                      <div className="text-3xl font-bold text-white mt-1">
+                        {billingLoading && !billingLoaded ? "-" : monthlyUsed}
+                      </div>
+                      <div className="text-sm text-white/40 mt-2">
+                        Period: {monthlyPeriod || "-"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                      <div className="text-xs text-white/40">Remaining</div>
+                      <div className="text-3xl font-bold text-white mt-1">
+                        {billingLoading && !billingLoaded ? "-" : monthlyRemaining}
+                      </div>
+                      <div className="text-sm text-white/40 mt-2">
+                        Renews: {renewsOnLabel}
+                      </div>
                     </div>
                   </div>
                 </Section>
@@ -965,40 +1205,62 @@ export default function Settings() {
 
               <FadeIn show={stage >= 2} delay={80}>
                 <Section
-                  title="Buy credits"
-                  subtitle="Checkout placeholder buttons (no real payment yet)."
+                  title="Credit Activity"
+                  subtitle="Recent grant/spend events from your credits ledger."
                   icon={CreditCard}
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {[
-                      { name: "Starter", credits: 50, price: "$9" },
-                      { name: "Pro", credits: 200, price: "$29" },
-                      { name: "Business", credits: 500, price: "$59" },
-                    ].map((p) => (
-                      <div
-                        key={p.name}
-                        className="rounded-2xl border border-white/10 bg-black/20 p-5"
-                      >
-                        <div className="text-white font-semibold">{p.name}</div>
-                        <div className="text-2xl font-bold text-white mt-2">
-                          {p.credits} <span className="text-sm font-medium text-white/50">credits</span>
-                        </div>
-                        <div className="text-sm text-white/40 mt-1">{p.price} / one-time</div>
-
-                        <Button
-                          type="button"
-                          className="mt-4 w-full bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 font-semibold"
-                          onClick={() => toast.message(`Checkout placeholder: ${p.name}`)}
+                  {billingLoading && !billingLoaded ? (
+                    <div className="space-y-2">
+                      <SoftSkeleton className="h-14 rounded-xl" />
+                      <SoftSkeleton className="h-14 rounded-xl" />
+                    </div>
+                  ) : creditsActivity.length === 0 ? (
+                    <div className="text-sm text-white/50">
+                      No credit activity yet. Generate packets or upgrade your
+                      plan to see events here.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {creditsActivity.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 flex items-center justify-between gap-3"
                         >
-                          Buy {p.name}
-                          <ArrowRight className="w-4 h-4 ml-2" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
+                          <div className="min-w-0">
+                            <div className="text-sm text-white font-medium truncate">
+                              {item.reason}
+                            </div>
+                            <div className="text-xs text-white/45">{item.date}</div>
+                          </div>
+                          <div
+                            className={`text-sm font-semibold ${
+                              item.delta >= 0 ? "text-emerald-300" : "text-white/80"
+                            }`}
+                          >
+                            {item.delta >= 0 ? `+${item.delta}` : item.delta}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                  <div className="text-xs text-white/30 mt-4">
-                    Next: wire these buttons to Stripe + your credits ledger API.
+                  <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                    <Button
+                      type="button"
+                      className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold"
+                      onClick={openPricing}
+                    >
+                      Upgrade Plan
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
+                      onClick={openCreditsPage}
+                    >
+                      Open Full Credits Page
+                    </Button>
                   </div>
                 </Section>
               </FadeIn>
@@ -1078,7 +1340,7 @@ export default function Settings() {
               <FadeIn show={stage >= 1} delay={0}>
                 <Section
                   title="Help Center"
-                  subtitle="Quick answers and tips (filler content)."
+                  subtitle="Quick answers and troubleshooting tips."
                   icon={HelpCircle}
                 >
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1092,7 +1354,7 @@ export default function Settings() {
                     />
                     <FAQItem
                       q="How do credits work?"
-                      a="Credits are consumed when generating documents. Exact pricing will show here once Stripe + ledger logic is connected."
+                      a="Credits are consumed when generating packets and documents. You can see your live balance, monthly allowance, and recent credit activity in the Credits tab."
                     />
                     <FAQItem
                       q="How do I change my default resume?"
@@ -1134,3 +1396,4 @@ export default function Settings() {
     </div>
   );
 }
+
