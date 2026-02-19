@@ -170,6 +170,32 @@ async function listLedger(userId, limit = 50) {
   return arr.slice(0, Math.max(1, Math.min(200, Number(limit) || 50)));
 }
 
+async function findUserIdByStripeRefs({ stripeCustomerId = null, stripeSubscriptionId = null } = {}) {
+  const subId = stripeSubscriptionId ? String(stripeSubscriptionId) : null;
+  const custId = stripeCustomerId ? String(stripeCustomerId) : null;
+  if (!subId && !custId) return null;
+
+  const parameters = [];
+  const clauses = [];
+
+  if (subId) {
+    clauses.push("c.plan.stripeSubscriptionId = @subId");
+    parameters.push({ name: "@subId", value: subId });
+  }
+  if (custId) {
+    clauses.push("c.plan.stripeCustomerId = @custId");
+    parameters.push({ name: "@custId", value: custId });
+  }
+
+  const query = {
+    query: `SELECT TOP 1 c.userId FROM c WHERE ${clauses.join(" OR ")}`,
+    parameters,
+  };
+
+  const { resources } = await profilesContainer.items.query(query).fetchAll();
+  return resources?.[0]?.userId || null;
+}
+
 // Idempotency: record Stripe event id once per user
 async function markEventOnce(userId, stripeEventId) {
   if (!userId || !stripeEventId) return false;
@@ -198,5 +224,6 @@ module.exports = {
   grantCredits,
   spendCredits,
   listLedger,
+  findUserIdByStripeRefs,
   markEventOnce,
 };

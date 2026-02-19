@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,6 +137,7 @@ export default function Setup() {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
   // Preferences
   const [selectedRoles, setSelectedRoles] = useState([]);
@@ -272,13 +274,10 @@ export default function Setup() {
       }
 
       // ✅ Mark setup done in CLOUD (Cosmos)
-      try {
-        await completeSetupCloud(preferences);
-      } catch (e) {
-        console.error("Setup onboarding (cloud) failed:", e);
-        // Don’t block the user from proceeding if the write fails,
-        // but you should check /api/profile endpoints if this happens.
-      }
+      await completeSetupCloud(preferences);
+      onboarding.clearCache();
+      await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+      await qc.refetchQueries({ queryKey: ["onboarding:me"] });
 
       toast.success("Resume uploaded and saved to your account.");
       navigate(createPageUrl("AppHome"), { replace: true });

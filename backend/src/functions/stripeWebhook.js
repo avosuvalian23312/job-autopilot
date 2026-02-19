@@ -1,7 +1,13 @@
 "use strict";
 
 const Stripe = require("stripe");
-const { markEventOnce, setPlan, setOnboarding, grantCredits } = require("../lib/billingStore.cjs");
+const {
+  markEventOnce,
+  setPlan,
+  setOnboarding,
+  grantCredits,
+  findUserIdByStripeRefs,
+} = require("../lib/billingStore.cjs");
 
 function withHeaders(extra = {}) {
   return {
@@ -162,6 +168,16 @@ module.exports = async (request, context) => {
       return null;
     }
 
+    function resolvePlanById(planId) {
+      if (!planId) return null;
+      const cfg = planMap()[String(planId).toLowerCase()] || null;
+      if (!cfg) return null;
+      return {
+        planId: String(planId).toLowerCase(),
+        creditsPerMonth: Number(cfg.creditsPerMonth || 0) || 0,
+      };
+    }
+
     // 1) checkout.session.completed -> activate plan + store stripe IDs
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -197,14 +213,23 @@ module.exports = async (request, context) => {
       const subscription = await stripe.subscriptions.retrieve(subId);
       const meta = subscription?.metadata || {};
 
-      const userId = meta.userId || null;
+      let userId = meta.userId || null;
       const priceId = subscription?.items?.data?.[0]?.price?.id || null;
       const byPrice = resolvePlanByPriceId(priceId);
       const planId = (byPrice && byPrice.planId) || meta.planId || null;
+      const byPlan = resolvePlanById(planId);
       const creditsPerMonth =
         (byPrice && Number(byPrice.creditsPerMonth || 0)) ||
         Number(meta.creditsPerMonth || 0) ||
+        (byPlan && Number(byPlan.creditsPerMonth || 0)) ||
         0;
+
+      if (!userId) {
+        userId = await findUserIdByStripeRefs({
+          stripeCustomerId: invoice.customer || subscription.customer || null,
+          stripeSubscriptionId: subId || subscription.id || null,
+        });
+      }
 
       if (!userId) return json(200, { ok: true, ignored: true });
 
