@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
@@ -71,12 +71,8 @@ function computeOnboardingStep({ isAuthenticated, authUserId, profile }) {
   }
 
   const onboarding = profile?.onboarding || {};
+  const pricingDone = !!onboarding.pricingDone;
   const setupDone = !!onboarding.setupDone;
-
-  // ✅ IMPORTANT FIX:
-  // If setupDone is true but pricingDone is false (inconsistent state),
-  // treat pricing as effectively done so the user can proceed.
-  const pricingDone = !!onboarding.pricingDone || setupDone;
 
   if (!pricingDone) return { step: "pricing", pricingDone, setupDone, mismatch: false };
   if (!setupDone) return { step: "setup", pricingDone, setupDone, mismatch: false };
@@ -146,11 +142,6 @@ function AppRoutes() {
     }
   }, [location.search]);
 
-  const stripeBypassActive = useMemo(() => {
-    // If Stripe just returned, temporarily allow Setup while Cosmos catches up
-    return !!stripeSessionId;
-  }, [stripeSessionId]);
-
   // Cloud onboarding truth:
   // - /.auth/me -> auth userId
   // - /api/profile/me -> onboarding flags stored in Cosmos
@@ -201,43 +192,7 @@ function AppRoutes() {
     });
   }, [isAuthenticated, onboardingQuery.isLoading, onboardingQuery.isError, onboardingQuery.data]);
 
-  // ✅ Stripe bypass (URL only)
-  const effectiveOnboarding = useMemo(() => {
-    if (stripeBypassActive && onboarding.step === "pricing") {
-      return { ...onboarding, step: "setup" };
-    }
-    return onboarding;
-  }, [stripeBypassActive, onboarding]);
-
-  // ✅ Auto-heal inconsistent Cosmos state once:
-  // setupDone:true but pricingDone:false -> set pricingDone:true
-  const healedRef = useRef(false);
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    if (loadingAuth) return;
-    if (onboardingQuery.isLoading || onboardingQuery.isError) return;
-
-    const p = onboardingQuery.data?.profile;
-    const ob = p?.onboarding || {};
-    const needsHeal = !!ob.setupDone && !ob.pricingDone;
-
-    if (!needsHeal) return;
-    if (healedRef.current) return;
-    healedRef.current = true;
-
-    (async () => {
-      try {
-        await fetchJson("/api/profile", {
-          method: "POST",
-          body: { onboarding: { pricingDone: true } },
-        });
-      } catch {
-        // ignore heal failure; computeOnboardingStep already treats setupDone as pricing done
-      } finally {
-        if (typeof onboardingQuery.refetch === "function") onboardingQuery.refetch();
-      }
-    })();
-  }, [isAuthenticated, loadingAuth, onboardingQuery.isLoading, onboardingQuery.isError, onboardingQuery.data, onboardingQuery]);
+  const effectiveOnboarding = onboarding;
 
   // Optional: if Stripe returned with session_id, trigger a one-time refetch
   useEffect(() => {
