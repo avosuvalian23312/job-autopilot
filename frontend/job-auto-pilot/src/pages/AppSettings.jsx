@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import AppNav from "@/components/app/AppNav";
 import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,14 @@ function renewsOnLabelFromPeriod(monthlyPeriod) {
   return renew.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function statusLabel(value) {
+  return String(value || "inactive")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /**
  * ✅ SWA auth (NO JWT):
  * Call your /api/* endpoints normally. SWA uses cookies and injects identity headers server-side.
@@ -84,18 +93,20 @@ async function apiFetch(path, { method = "GET", body } = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
-function FadeIn({ show, delay = 0, className = "", children }) {
+function FadeIn({ show = true, delay = 0, className = "", children }) {
   return (
-    <div
-      className={[
-        "transition-all duration-500 will-change-transform",
-        show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none",
-        className,
-      ].join(" ")}
-      style={{ transitionDelay: `${delay}ms` }}
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={show ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+      transition={{
+        duration: 0.3,
+        delay: Math.max(0, Number(delay || 0)) / 1000,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className={className}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -175,9 +186,8 @@ export default function Settings() {
 
   const [tab, setTab] = useState("profile");
 
-  // tab animation staging
-  const [stage, setStage] = useState(0);
-  const stageTimers = useRef({ t1: null, t2: null });
+  // ladder animation gating (always "on", delays handle sequencing)
+  const stage = 2;
 
   // global loading/saving
   const [saving, setSaving] = useState(false);
@@ -213,6 +223,7 @@ export default function Settings() {
   const [billingError, setBillingError] = useState("");
   const [creditsMe, setCreditsMe] = useState(null);
   const [billingProfile, setBillingProfile] = useState(null);
+  const [stripeBilling, setStripeBilling] = useState(null);
   const [portalLoading, setPortalLoading] = useState(false);
 
   // ✅ Make ALL inputs white text (including browser autofill)
@@ -242,21 +253,6 @@ export default function Settings() {
       // ignore
     }
   };
-
-  // Staged animation whenever tab changes or initial load completes
-  useEffect(() => {
-    if (stageTimers.current.t1) clearTimeout(stageTimers.current.t1);
-    if (stageTimers.current.t2) clearTimeout(stageTimers.current.t2);
-
-    setStage(0);
-    stageTimers.current.t1 = setTimeout(() => setStage(1), 90);
-    stageTimers.current.t2 = setTimeout(() => setStage(2), 220);
-
-    return () => {
-      if (stageTimers.current.t1) clearTimeout(stageTimers.current.t1);
-      if (stageTimers.current.t2) clearTimeout(stageTimers.current.t2);
-    };
-  }, [tab, loading]);
 
   // ✅ Load from Cosmos via GET /api/settings (fallback to local cache)
   useEffect(() => {
@@ -436,9 +432,10 @@ export default function Settings() {
       setBillingError("");
 
       try {
-        const [creditsResp, profileResp] = await Promise.all([
+        const [creditsResp, profileResp, stripeResp] = await Promise.all([
           apiFetch("/api/credits/me", { method: "GET" }),
           apiFetch("/api/profile/me", { method: "GET" }),
+          apiFetch("/api/stripe/billing-summary", { method: "GET" }),
         ]);
 
         if (cancelled) return;
@@ -455,10 +452,17 @@ export default function Settings() {
           setBillingProfile(null);
         }
 
-        if (!creditsResp.ok && !profileResp.ok) {
+        if (stripeResp.ok && stripeResp.data?.ok) {
+          setStripeBilling(stripeResp.data || null);
+        } else {
+          setStripeBilling(null);
+        }
+
+        if (!creditsResp.ok && !profileResp.ok && !stripeResp.ok) {
           const msg =
             creditsResp.data?.error ||
             profileResp.data?.error ||
+            stripeResp.data?.error ||
             "Failed to load billing details.";
           setBillingError(String(msg));
         }
@@ -467,6 +471,7 @@ export default function Settings() {
           setBillingError(e?.message || "Failed to load billing details.");
           setCreditsMe(null);
           setBillingProfile(null);
+          setStripeBilling(null);
         }
       } finally {
         if (!cancelled) {
@@ -501,12 +506,46 @@ export default function Settings() {
     return String(raw || "free").toLowerCase();
   }, [creditsMe, billingProfile]);
 
-  const billingPlanStatus = String(billingProfile?.plan?.status || "active");
-  const stripeCustomerId = String(billingProfile?.plan?.stripeCustomerId || "");
-  const stripeSubscriptionId = String(
-    billingProfile?.plan?.stripeSubscriptionId || ""
+  const billingPlanStatus = String(
+    stripeBilling?.subscriptionStatus || billingProfile?.plan?.status || "inactive"
   );
-  const paymentConnected = !!stripeCustomerId || !!stripeSubscriptionId;
+  const stripeCustomerId = String(
+    stripeBilling?.customerId || billingProfile?.plan?.stripeCustomerId || ""
+  );
+  const stripeSubscriptionId = String(
+    stripeBilling?.subscriptionId || billingProfile?.plan?.stripeSubscriptionId || ""
+  );
+  const paymentConnected =
+    !!stripeBilling?.connected || !!stripeCustomerId || !!stripeSubscriptionId;
+  const stripePaymentCard = stripeBilling?.paymentMethod || null;
+  const stripePaymentMethodLabel = stripePaymentCard
+    ? `${String(stripePaymentCard.brand || "CARD").toUpperCase()} •••• ${
+        stripePaymentCard.last4 || "----"
+      }`
+    : paymentConnected
+    ? "No default card found"
+    : "No card on file";
+  const stripePaymentExp =
+    stripePaymentCard?.expMonth && stripePaymentCard?.expYear
+      ? `${String(stripePaymentCard.expMonth).padStart(2, "0")}/${String(
+          stripePaymentCard.expYear
+        ).slice(-2)}`
+      : "-";
+  const stripeSubStatus = String(
+    stripeBilling?.subscriptionStatus || billingPlanStatus || "inactive"
+  );
+  const stripePeriodEndLabel = formatDateShort(stripeBilling?.currentPeriodEnd);
+  const stripeCardBrand = String(stripePaymentCard?.brand || "Stripe").toUpperCase();
+  const stripeCardLast4 = String(stripePaymentCard?.last4 || "----");
+  const stripeCardMeta = [stripePaymentCard?.funding, stripePaymentCard?.country]
+    .filter(Boolean)
+    .join(" • ");
+  const stripePaymentMethodDisplay = stripePaymentCard
+    ? `${stripeCardBrand} **** ${stripeCardLast4}`
+    : stripePaymentMethodLabel;
+  const stripeCardMetaDisplay = stripeCardMeta
+    ? stripeCardMeta.replaceAll("•", "|")
+    : "";
 
   const creditsBalance =
     Number(creditsMe?.credits?.balance ?? billingProfile?.credits?.balance ?? 0) ||
@@ -693,48 +732,66 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)] relative overflow-hidden">
+    <div className="settings-page min-h-screen bg-[hsl(240,10%,4%)] relative overflow-hidden">
       {/* subtle background accents */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-44 left-1/2 -translate-x-1/2 w-[900px] h-[420px] rounded-full bg-purple-600/10 blur-3xl" />
-        <div className="absolute -bottom-72 left-1/3 w-[760px] h-[420px] rounded-full bg-fuchsia-500/5 blur-3xl" />
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[960px] h-[430px] rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="absolute top-40 -left-24 w-[520px] h-[320px] rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="absolute -bottom-72 left-1/3 w-[760px] h-[420px] rounded-full bg-fuchsia-500/8 blur-3xl" />
       </div>
 
       <AppNav currentPage="AppSettings" />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white">Settings</h1>
-            <p className="text-white/40 mt-1">
-              Manage your profile, resume data, and billing
-            </p>
-          </div>
+        <FadeIn show={stage >= 1} delay={0}>
+          <div className="mb-6 rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent backdrop-blur-xl p-5 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">Settings</h1>
+                <p className="text-white/45 mt-1">
+                  Manage your profile, resume data, billing, and account security.
+                </p>
+              </div>
 
-          <div className="flex items-center gap-2">
-            {tab === "profile" && (
-              <Button
-                type="button"
-                onClick={saveProfile}
-                disabled={!isDirty || saving || loading}
-                className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-5 py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? "Saving..." : loading ? "Loading..." : "Save changes"}
-              </Button>
-            )}
+              <div className="flex items-center gap-2">
+                {tab === "profile" && (
+                  <Button
+                    type="button"
+                    onClick={saveProfile}
+                    disabled={!isDirty || saving || loading}
+                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-5 py-5 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {saving ? "Saving..." : loading ? "Loading..." : "Save changes"}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs font-medium text-white/80">
+                Plan: {planLabel(billingPlanId)}
+              </span>
+              <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs font-medium text-white/80">
+                Credits: {billingLoading && !billingLoaded ? "-" : creditsBalance}
+              </span>
+              <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs font-medium text-white/80">
+                Billing: {statusLabel(stripeSubStatus)}
+              </span>
+            </div>
           </div>
-        </div>
+        </FadeIn>
 
         {/* Tabs */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl">
+        <FadeIn show={stage >= 1} delay={70}>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
           <Tabs value={tab} onValueChange={setTab}>
             <div className="px-4 sm:px-6 pt-4">
-              <TabsList className="bg-transparent p-0 gap-1 sm:gap-2 flex flex-wrap">
+              <TabsList className="bg-transparent p-0 gap-2 sm:gap-2.5 flex flex-wrap">
                 <TabsTrigger
                   value="profile"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <User className="w-4 h-4 mr-2" />
                   Profile
@@ -742,7 +799,7 @@ export default function Settings() {
 
                 <TabsTrigger
                   value="resume"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Resume
@@ -750,7 +807,7 @@ export default function Settings() {
 
                 <TabsTrigger
                   value="billing"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <CreditCard className="w-4 h-4 mr-2" />
                   Billing
@@ -758,7 +815,7 @@ export default function Settings() {
 
                 <TabsTrigger
                   value="credits"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <Coins className="w-4 h-4 mr-2" />
                   Credits
@@ -766,7 +823,7 @@ export default function Settings() {
 
                 <TabsTrigger
                   value="security"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <Lock className="w-4 h-4 mr-2" />
                   Security
@@ -774,7 +831,7 @@ export default function Settings() {
 
                 <TabsTrigger
                   value="help"
-                  className="rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-white/[0.04] data-[state=active]:text-white data-[state=active]:shadow-none text-white/60 hover:text-white/80"
+                  className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
                   <HelpCircle className="w-4 h-4 mr-2" />
                   Help
@@ -1081,7 +1138,7 @@ export default function Settings() {
                           : planLabel(billingPlanId)}
                       </div>
                       <div className="text-sm text-white/40 mt-2">
-                        Status: {billingPlanStatus || "active"}.
+                        Status: {statusLabel(billingPlanStatus)}.
                         {monthlyAllowance > 0
                           ? ` ${monthlyAllowance} credits / month.`
                           : " Free plan with limited credits."}
@@ -1092,20 +1149,75 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
-                      <div className="text-xs text-white/40">Payment method</div>
-                      <div className="text-lg font-semibold text-white mt-1">
-                        {paymentConnected ? "Stripe connected" : "Not connected"}
-                      </div>
-                      <div className="text-sm text-white/40 mt-2 break-all">
-                        {stripeCustomerId
-                          ? `Customer: ${stripeCustomerId}`
-                          : "Customer: -"}
-                      </div>
-                      <div className="text-sm text-white/40 mt-1 break-all">
-                        {stripeSubscriptionId
-                          ? `Subscription: ${stripeSubscriptionId}`
-                          : "Subscription: -"}
+                    <div className="stripe-payment-card relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-indigo-950/60 to-slate-900/95 p-5">
+                      <div className="stripe-payment-shine" aria-hidden />
+                      <div className="relative z-10">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs uppercase tracking-[0.18em] text-white/50">
+                            Payment Method
+                          </div>
+                          <div
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                              paymentConnected
+                                ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                                : "border-rose-400/40 bg-rose-500/10 text-rose-200"
+                            }`}
+                          >
+                            {paymentConnected ? "Connected" : "Missing"}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-end justify-between gap-3">
+                          <div className="font-mono text-lg sm:text-xl tracking-[0.2em] text-white/95">
+                            {paymentConnected
+                              ? `**** **** **** ${stripeCardLast4}`
+                              : "No card on file"}
+                          </div>
+                          <div className="text-sm font-semibold text-white/75">
+                            {stripeCardBrand}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-white/65">
+                          <div>
+                            <div className="uppercase tracking-[0.1em] text-white/40">
+                              Expires
+                            </div>
+                            <div className="mt-1 text-sm text-white/90">
+                              {stripePaymentExp}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="uppercase tracking-[0.1em] text-white/40">
+                              Subscription
+                            </div>
+                            <div className="mt-1 text-sm text-white/90">
+                              {statusLabel(stripeSubStatus)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-white/10 pt-3 text-xs text-white/50">
+                          <div>{stripePaymentMethodDisplay}</div>
+                          <div className="mt-1">
+                            {stripeCardMetaDisplay || "Card metadata unavailable"}
+                          </div>
+                          <div className="mt-1 break-all">
+                            {stripeCustomerId
+                              ? `Customer: ${stripeCustomerId}`
+                              : "Customer: -"}
+                          </div>
+                          <div className="mt-1 break-all">
+                            {stripeSubscriptionId
+                              ? `Subscription: ${stripeSubscriptionId}`
+                              : "Subscription: -"}
+                          </div>
+                          <div className="mt-1">
+                            {stripePeriodEndLabel !== "-"
+                              ? `Current period ends ${stripePeriodEndLabel}`
+                              : "No active renewal date"}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1421,8 +1533,10 @@ export default function Settings() {
             </TabsContent>
           </Tabs>
         </div>
+        </FadeIn>
       </div>
     </div>
   );
 }
+
 

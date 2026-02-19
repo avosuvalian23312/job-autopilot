@@ -369,3 +369,61 @@ input:focus, textarea:focus {
   width: 300px;
   height: 300px;
 }
+
+.settings-page button:not(:disabled),
+.settings-page [role="tab"] {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+  will-change: transform;
+}
+
+.settings-page button:not(:disabled):hover,
+.settings-page [role="tab"]:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+}
+
+.settings-page button:not(:disabled):active,
+.settings-page [role="tab"]:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.settings-page .settings-tab-trigger[data-state="active"] {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.settings-page .stripe-payment-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 35px rgba(0, 0, 0, 0.33);
+}
+
+.settings-page .stripe-payment-shine {
+  position: absolute;
+  top: -70%;
+  left: -35%;
+  width: 36%;
+  height: 240%;
+  transform: rotate(24deg);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.42),
+    rgba(255, 255, 255, 0)
+  );
+  filter: blur(5px);
+  opacity: 0.75;
+  pointer-events: none;
+  animation: settingsStripeShine 2.6s linear infinite;
+}
+
+@keyframes settingsStripeShine {
+  0% {
+    transform: translateX(-220%) rotate(24deg);
+  }
+  100% {
+    transform: translateX(540%) rotate(24deg);
+  }
+}

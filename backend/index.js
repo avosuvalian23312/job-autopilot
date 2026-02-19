@@ -367,6 +367,13 @@ app.http("stripePortal", {
   handler: lazy("./src/functions/stripePortal.js", "stripePortal"),
 });
 
+app.http("stripeBillingSummary", {
+  methods: ["GET", "OPTIONS"],
+  route: "stripe/billing-summary",
+  authLevel: "anonymous",
+  handler: lazy("./src/functions/stripeBillingSummary.js", "stripeBillingSummary"),
+});
+
 app.http("stripeWebhook", {
   methods: ["POST"],
   route: "stripe/webhook",
