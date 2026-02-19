@@ -189,7 +189,16 @@ module.exports = async (request, context) => {
       if (!userId) return json(200, { ok: true, ignored: true });
 
       const first = await once(userId, `checkout:${session.id}`);
-      if (!first) return json(200, { ok: true, duplicate: true });
+      if (!first) {
+        return json(200, {
+          ok: true,
+          type: event.type,
+          duplicate: true,
+          userId,
+          planId,
+          checkoutSessionId: session.id || null,
+        });
+      }
 
       if (session.mode === "subscription") {
         await setPlan(userId, {
@@ -201,11 +210,17 @@ module.exports = async (request, context) => {
         await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
       }
 
-      return json(200, { ok: true });
+      return json(200, {
+        ok: true,
+        type: event.type,
+        userId,
+        planId,
+        checkoutSessionId: session.id || null,
+      });
     }
 
     // 2) invoice.paid -> grant monthly credits (initial + renewals)
-    if (event.type === "invoice.paid") {
+    if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded") {
       const invoice = event.data.object;
       const subId = invoice.subscription;
 
@@ -288,7 +303,16 @@ module.exports = async (request, context) => {
           );
 
         if (alreadyGranted) {
-          return json(200, { ok: true, duplicate: true });
+          return json(200, {
+            ok: true,
+            type: event.type,
+            duplicate: true,
+            userId,
+            planId,
+            creditsPerMonth,
+            invoiceId: invoice.id || null,
+            grantReason,
+          });
         }
       }
 
@@ -300,9 +324,18 @@ module.exports = async (request, context) => {
       });
       await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
 
-      await grantCredits(userId, creditsPerMonth, grantReason);
+      const grant = await grantCredits(userId, creditsPerMonth, grantReason);
 
-      return json(200, { ok: true });
+      return json(200, {
+        ok: true,
+        type: event.type,
+        userId,
+        planId,
+        creditsPerMonth,
+        invoiceId: invoice.id || null,
+        grantReason,
+        balanceAfter: Number(grant?.balance || 0) || 0,
+      });
     }
 
     // 3) customer.subscription.deleted -> downgrade to free
@@ -314,7 +347,15 @@ module.exports = async (request, context) => {
       if (!userId) return json(200, { ok: true, ignored: true });
 
       const first = await once(userId, `sub_deleted:${sub.id}`);
-      if (!first) return json(200, { ok: true, duplicate: true });
+      if (!first) {
+        return json(200, {
+          ok: true,
+          type: event.type,
+          duplicate: true,
+          userId,
+          subscriptionId: sub.id || null,
+        });
+      }
 
       await setPlan(userId, {
         planId: "free",
@@ -323,7 +364,12 @@ module.exports = async (request, context) => {
         stripeSubscriptionId: sub.id || null,
       });
 
-      return json(200, { ok: true });
+      return json(200, {
+        ok: true,
+        type: event.type,
+        userId,
+        subscriptionId: sub.id || null,
+      });
     }
 
     return json(200, { ok: true, ignored: true, type: event.type });
