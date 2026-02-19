@@ -213,6 +213,7 @@ export default function Settings() {
   const [billingError, setBillingError] = useState("");
   const [creditsMe, setCreditsMe] = useState(null);
   const [billingProfile, setBillingProfile] = useState(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   // ✅ Make ALL inputs white text (including browser autofill)
   const inputBase =
@@ -561,6 +562,33 @@ export default function Settings() {
 
   const openCreditsPage = () => {
     navigate(createPageUrl("Credits"));
+  };
+
+  const openStripePortal = async () => {
+    if (portalLoading) return;
+    setPortalLoading(true);
+    try {
+      const resp = await apiFetch("/api/stripe/portal", {
+        method: "POST",
+        body: { returnPath: createPageUrl("AppSettings") },
+      });
+
+      if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
+        const msg =
+          resp.data?.error || `Failed to open billing portal (HTTP ${resp.status})`;
+        throw new Error(msg);
+      }
+
+      window.location.assign(resp.data.url);
+    } catch (e) {
+      const msg = e?.message || "Could not open billing portal.";
+      toast.error(msg);
+      if (String(msg).toLowerCase().includes("no stripe billing profile")) {
+        navigate(`${createPageUrl("Pricing")}?force=pricing`);
+      }
+    } finally {
+      setPortalLoading(false);
+    }
   };
 
   const saveProfile = async () => {
@@ -1087,10 +1115,11 @@ export default function Settings() {
                       type="button"
                       variant="ghost"
                       className="border border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-xl py-5 px-5"
-                      onClick={openCreditsPage}
+                      onClick={openStripePortal}
+                      disabled={portalLoading}
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
-                      Open Credits & Billing
+                      {portalLoading ? "Opening portal..." : "Manage Billing Portal"}
                     </Button>
 
                     <Button

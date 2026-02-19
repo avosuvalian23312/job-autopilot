@@ -360,6 +360,13 @@ app.http("stripeCheckout", {
   handler: lazy("./src/functions/stripeCheckout.js", "stripeCheckout"),
 });
 
+app.http("stripePortal", {
+  methods: ["POST", "OPTIONS"],
+  route: "stripe/portal",
+  authLevel: "anonymous",
+  handler: lazy("./src/functions/stripePortal.js", "stripePortal"),
+});
+
 app.http("stripeWebhook", {
   methods: ["POST"],
   route: "stripe/webhook",
