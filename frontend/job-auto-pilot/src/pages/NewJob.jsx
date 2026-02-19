@@ -922,6 +922,17 @@ export default function NewJob() {
       toast.error("Please enter a job description");
       return;
     }
+    if (
+      typeof currentCredits === "number" &&
+      currentCredits < PACKET_CREDIT_COST
+    ) {
+      setInsufficientCredits({
+        needed: PACKET_CREDIT_COST,
+        balance: currentCredits,
+      });
+      toast.error("Not enough credits to generate this packet.");
+      return;
+    }
 
     setIsAnalyzing(true);
 
@@ -2529,17 +2540,26 @@ export default function NewJob() {
                   </Button>
                   <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
                     <span>Uses {PACKET_CREDIT_COST} credits</span>
-                    <button
-                      type="button"
-                      onClick={() => navigate(createPageUrl("Credits"))}
-                      className="group relative inline-flex items-center gap-1 rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-purple-200 transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
-                    >
-                      <Coins className="w-3.5 h-3.5 text-purple-300" />
-                      {currentCredits === null ? "--" : currentCredits} available
-                      <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100">
+                    <span className="group relative inline-flex">
+                      <button
+                        type="button"
+                        onClick={() => navigate(createPageUrl("Credits"))}
+                        className="shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))] px-2 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)] transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
+                      >
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06)_40%,rgba(255,255,255,0)_75%)]"
+                        />
+                        <span aria-hidden className="shine-loop-overlay" />
+                        <Coins className="relative z-10 w-3.5 h-3.5 text-purple-100" />
+                        <span className="relative z-10">
+                          {currentCredits === null ? "--" : currentCredits} available
+                        </span>
+                      </button>
+                      <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
                         Open Credits page
                       </span>
-                    </button>
+                    </span>
                   </p>
                 </div>
               </div>

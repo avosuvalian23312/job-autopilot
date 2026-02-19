@@ -5,6 +5,7 @@ import { createPageUrl } from "@/utils";
 import AppNav from "@/components/app/AppNav";
 import { Button } from "@/components/ui/button";
 import {
+  Award,
   ArrowRight,
   BarChart3,
   Briefcase,
@@ -15,6 +16,8 @@ import {
   RefreshCw,
   Sparkles,
   Target,
+  Trophy,
+  Zap,
 } from "lucide-react";
 
 const STATUS_ORDER = ["generated", "applied", "interview", "offer", "rejected"];
@@ -65,19 +68,32 @@ function statValue(v, loading) {
   return loading ? "-" : v;
 }
 
-function StatCard({ icon: Icon, label, value, sub }) {
+function StatCard({ icon: Icon, label, value, sub, featured = false }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))] p-5 shadow-[0_12px_34px_rgba(0,0,0,0.26)] backdrop-blur-sm">
+    <div
+      className={[
+        "relative overflow-hidden rounded-2xl border p-5 shadow-[0_12px_34px_rgba(0,0,0,0.26)] backdrop-blur-sm",
+        "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_44px_rgba(0,0,0,0.35)]",
+        featured
+          ? "shine-loop-container border-cyan-300/20 bg-[linear-gradient(150deg,rgba(34,211,238,0.16),rgba(255,255,255,0.03))]"
+          : "border-white/10 bg-[linear-gradient(150deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))]",
+      ].join(" ")}
+    >
+      {featured && <span aria-hidden className="shine-loop-overlay opacity-70" />}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0))]"
+      />
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.14em] text-white/45">{label}</div>
-          <div className="mt-2 text-3xl font-semibold">{value}</div>
+          <div className="relative z-10 mt-2 text-3xl font-semibold">{value}</div>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-          <Icon className="h-5 w-5 text-white/80" />
+        <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <Icon className={`h-5 w-5 ${featured ? "text-cyan-100" : "text-white/80"}`} />
         </div>
       </div>
-      <div className="mt-3 text-sm text-white/55">{sub}</div>
+      <div className="relative z-10 mt-3 text-sm text-white/55">{sub}</div>
     </div>
   );
 }
@@ -139,6 +155,41 @@ export default function AppHome() {
     [jobs]
   );
 
+  const interactiveButtonFx =
+    "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.30)] active:scale-[0.98]";
+  const interactiveLinkFx =
+    "transition-all duration-200 hover:-translate-y-0.5 hover:text-white";
+
+  const achievements = useMemo(
+    () => [
+      {
+        title: "Resume Uploaded",
+        detail: "Add at least one resume asset",
+        unlocked: stats.totalResumes > 0,
+        Icon: FileText,
+      },
+      {
+        title: "First Packet",
+        detail: "Generate your first job packet",
+        unlocked: stats.totalJobs > 0,
+        Icon: Zap,
+      },
+      {
+        title: "Interview Ready",
+        detail: "Move one job to interview stage",
+        unlocked: stats.interviews > 0,
+        Icon: Trophy,
+      },
+      {
+        title: "Credit Stack",
+        detail: "Keep 100+ credits available",
+        unlocked: credits >= 100,
+        Icon: Award,
+      },
+    ],
+    [credits, stats.interviews, stats.totalJobs, stats.totalResumes]
+  );
+
   return (
     <div className="min-h-screen bg-[#060b14] text-white">
       <div className="pointer-events-none fixed inset-0 -z-0">
@@ -150,40 +201,132 @@ export default function AppHome() {
       <AppNav currentPage="AppHome" credits={credits} />
 
       <main className="relative z-10 min-h-[calc(100vh-64px)] w-full px-4 py-7 sm:px-6 lg:px-10 xl:px-14">
-        <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-          <div className="rounded-3xl border border-white/12 bg-[linear-gradient(130deg,rgba(14,24,40,0.96),rgba(8,12,24,0.84))] p-7 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-sm">
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid gap-4 xl:grid-cols-[1.65fr_1fr]"
+        >
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[linear-gradient(130deg,rgba(14,24,40,0.96),rgba(8,12,24,0.84))] p-7 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0))]" />
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-100">
               <Sparkles className="h-3.5 w-3.5" />
               AppHome
             </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Professional Pipeline Workspace</h1>
-            <p className="mt-2 max-w-2xl text-white/65">Manage job packets, resume assets, and credits in one full-screen command view.</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button onClick={() => navigate(createPageUrl("NewJob"))} className="bg-cyan-400 text-slate-950 hover:bg-cyan-300 font-semibold">
-                <Plus className="mr-2 h-4 w-4" />
-                New Packet
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">
+              Professional Pipeline Workspace
+            </h1>
+            <p className="mt-2 max-w-2xl text-white/65">
+              Manage job packets, resume assets, and credits in one full-screen
+              command view.
+            </p>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() => navigate(createPageUrl("NewJob"))}
+                className={`shine-loop-container relative isolate h-12 px-6 text-base font-bold text-slate-950 bg-gradient-to-r from-cyan-300 via-cyan-400 to-sky-300 ring-2 ring-cyan-100/55 shadow-[0_14px_36px_rgba(6,182,212,0.35)] hover:from-cyan-200 hover:via-cyan-300 hover:to-sky-200 ${interactiveButtonFx}`}
+              >
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.35),rgba(255,255,255,0)_60%)]"
+                />
+                <span aria-hidden className="shine-loop-overlay opacity-80" />
+                <Plus className="relative z-10 mr-2 h-4 w-4" />
+                <span className="relative z-10">Create New Packet</span>
               </Button>
-              <Button onClick={() => navigate(createPageUrl("Analytics"))} variant="outline" className="border-white/15 bg-white/5 hover:bg-white/10 text-white">
+
+              <Button
+                onClick={() => navigate(createPageUrl("Analytics"))}
+                variant="outline"
+                className={`border-white/15 bg-white/5 hover:bg-white/10 text-white ${interactiveButtonFx}`}
+              >
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Analytics
               </Button>
-              <Button onClick={() => { if (!refreshing) { setRefreshing(true); load(); } }} variant="outline" className="border-white/15 bg-white/5 hover:bg-white/10 text-white">
-                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+
+              <Button
+                onClick={() => {
+                  if (!refreshing) {
+                    setRefreshing(true);
+                    load();
+                  }
+                }}
+                variant="outline"
+                className={`border-white/15 bg-white/5 hover:bg-white/10 text-white ${interactiveButtonFx}`}
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                />
                 Refresh
               </Button>
             </div>
+
+            <p className="mt-3 text-xs text-cyan-100/80">
+              Start here: create a packet first, then track status in Applications.
+            </p>
           </div>
 
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[linear-gradient(150deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03))] p-6 shadow-[0_16px_46px_rgba(0,0,0,0.3)] backdrop-blur-sm">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0))]" />
-            <div className="text-sm text-white/55">Current plan</div>
-            <div className="mt-1 text-xl font-semibold uppercase">{plan}</div>
-            <div className="mt-5 text-sm text-white/55">Available credits</div>
-            <div className="mt-1 text-4xl font-semibold">{statValue(credits, loading)}</div>
-            <Link to={createPageUrl("Credits")} className="mt-5 inline-flex items-center gap-1 text-sm text-cyan-200 hover:text-cyan-100">
-              Open credits page
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+          <div className="space-y-4">
+            <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[linear-gradient(150deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03))] p-6 shadow-[0_16px_46px_rgba(0,0,0,0.3)] backdrop-blur-sm">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0))]" />
+              <div className="text-sm text-white/55">Current plan</div>
+              <div className="mt-1 text-xl font-semibold uppercase">{plan}</div>
+              <div className="mt-5 text-sm text-white/55">Available credits</div>
+              <div className="mt-1 text-4xl font-semibold">{statValue(credits, loading)}</div>
+              <Link
+                to={createPageUrl("Credits")}
+                className={`mt-5 inline-flex items-center gap-1 text-sm text-cyan-200 hover:text-cyan-100 ${interactiveLinkFx}`}
+              >
+                Open credits page
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))] p-5 shadow-[0_12px_34px_rgba(0,0,0,0.26)]">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold tracking-wide text-white/85">
+                  Achievements
+                </div>
+                <Trophy className="h-4 w-4 text-amber-200" />
+              </div>
+
+              <div className="space-y-2.5">
+                {achievements.map((item) => (
+                  <div
+                    key={item.title}
+                    className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                      item.unlocked
+                        ? "border-emerald-300/25 bg-emerald-500/10"
+                        : "border-white/10 bg-black/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                          item.unlocked
+                            ? "bg-emerald-400/20 text-emerald-100"
+                            : "bg-white/10 text-white/65"
+                        }`}
+                      >
+                        <item.Icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-white/90">
+                          {item.title}
+                        </div>
+                        <div className="text-xs text-white/55">{item.detail}</div>
+                      </div>
+                    </div>
+                    <div
+                      className={`text-xs font-semibold ${
+                        item.unlocked ? "text-emerald-200" : "text-white/45"
+                      }`}
+                    >
+                      {item.unlocked ? "Unlocked" : "Locked"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </motion.section>
 
@@ -191,7 +334,13 @@ export default function AppHome() {
           <StatCard icon={Briefcase} label="Applications" value={statValue(stats.totalJobs, loading)} sub="All tracked applications" />
           <StatCard icon={FileText} label="Resumes" value={statValue(stats.totalResumes, loading)} sub="Resume assets in your library" />
           <StatCard icon={Target} label="Interviews" value={statValue(stats.interviews, loading)} sub={`${stats.offers} offers in pipeline`} />
-          <StatCard icon={Coins} label="Credits" value={statValue(credits, loading)} sub="5 credits per packet generation" />
+          <StatCard
+            icon={Coins}
+            label="Credits"
+            value={statValue(credits, loading)}
+            sub="5 credits per packet generation"
+            featured
+          />
         </section>
 
         <section className="mt-4 grid gap-4 xl:grid-cols-[1.9fr_1fr]">
@@ -221,7 +370,12 @@ export default function AppHome() {
           <div className="rounded-3xl border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6 shadow-[0_12px_34px_rgba(0,0,0,0.26)]">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-lg font-semibold">Recent</div>
-              <Link to={createPageUrl("Applications")} className="text-sm text-cyan-200 hover:text-cyan-100">View all</Link>
+              <Link
+                to={createPageUrl("Applications")}
+                className={`text-sm text-cyan-200 hover:text-cyan-100 ${interactiveLinkFx}`}
+              >
+                View all
+              </Link>
             </div>
             {recentJobs.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-8 text-center text-sm text-white/65">
@@ -243,11 +397,17 @@ export default function AppHome() {
               </div>
             )}
             <div className="mt-4 space-y-2">
-              <Button className="w-full justify-start bg-white/5 hover:bg-white/10 border border-white/10 text-white" onClick={() => navigate(createPageUrl("NewJob"))}>
+              <Button
+                className={`w-full justify-start bg-white/5 hover:bg-white/10 border border-white/10 text-white ${interactiveButtonFx}`}
+                onClick={() => navigate(createPageUrl("NewJob"))}
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Generate new packet
               </Button>
-              <Button className="w-full justify-start bg-white/5 hover:bg-white/10 border border-white/10 text-white" onClick={() => navigate(createPageUrl("Applications"))}>
+              <Button
+                className={`w-full justify-start bg-white/5 hover:bg-white/10 border border-white/10 text-white ${interactiveButtonFx}`}
+                onClick={() => navigate(createPageUrl("Applications"))}
+              >
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 Update statuses
               </Button>

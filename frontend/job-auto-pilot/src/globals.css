@@ -206,6 +206,32 @@ input:focus, textarea:focus {
   }
 }
 
+.shine-loop-container {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.shine-loop-overlay {
+  position: absolute;
+  top: -65%;
+  left: -60%;
+  width: 45%;
+  height: 240%;
+  transform: rotate(25deg);
+  pointer-events: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0)
+  );
+  filter: blur(3px);
+  animation: shine 5.5s ease-in-out infinite;
+  z-index: 1;
+}
+
 @keyframes borderPulse {
   0%, 100% {
     opacity: 0.6;
