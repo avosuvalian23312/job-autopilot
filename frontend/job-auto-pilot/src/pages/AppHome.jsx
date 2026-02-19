@@ -67,13 +67,13 @@ function statValue(v, loading) {
 
 function StatCard({ icon: Icon, label, value, sub }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))] p-5 shadow-[0_12px_34px_rgba(0,0,0,0.26)] backdrop-blur-sm">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.14em] text-white/45">{label}</div>
           <div className="mt-2 text-3xl font-semibold">{value}</div>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/20">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <Icon className="h-5 w-5 text-white/80" />
         </div>
       </div>
@@ -144,13 +144,14 @@ export default function AppHome() {
       <div className="pointer-events-none fixed inset-0 -z-0">
         <div className="absolute -left-24 top-12 h-72 w-72 rounded-full bg-cyan-500/20 blur-[110px]" />
         <div className="absolute right-[-8%] top-[-10%] h-[26rem] w-[26rem] rounded-full bg-blue-500/20 blur-[130px]" />
+        <div className="absolute left-[28%] top-[24%] h-56 w-56 rounded-full bg-violet-500/10 blur-[120px]" />
       </div>
 
       <AppNav currentPage="AppHome" credits={credits} />
 
       <main className="relative z-10 min-h-[calc(100vh-64px)] w-full px-4 py-7 sm:px-6 lg:px-10 xl:px-14">
         <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-          <div className="rounded-3xl border border-white/10 bg-[linear-gradient(130deg,rgba(12,20,34,0.95),rgba(8,12,24,0.80))] p-7">
+          <div className="rounded-3xl border border-white/12 bg-[linear-gradient(130deg,rgba(14,24,40,0.96),rgba(8,12,24,0.84))] p-7 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-sm">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-100">
               <Sparkles className="h-3.5 w-3.5" />
               AppHome
@@ -173,7 +174,8 @@ export default function AppHome() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[linear-gradient(150deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03))] p-6 shadow-[0_16px_46px_rgba(0,0,0,0.3)] backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0))]" />
             <div className="text-sm text-white/55">Current plan</div>
             <div className="mt-1 text-xl font-semibold uppercase">{plan}</div>
             <div className="mt-5 text-sm text-white/55">Available credits</div>
@@ -193,7 +195,7 @@ export default function AppHome() {
         </section>
 
         <section className="mt-4 grid gap-4 xl:grid-cols-[1.9fr_1fr]">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+          <div className="rounded-3xl border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6 shadow-[0_12px_34px_rgba(0,0,0,0.26)]">
             <div className="mb-4 text-lg font-semibold">Pipeline Status</div>
             <div className="space-y-3">
               {STATUS_ORDER.map((status) => {
@@ -216,7 +218,7 @@ export default function AppHome() {
             {error ? <div className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</div> : null}
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+          <div className="rounded-3xl border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6 shadow-[0_12px_34px_rgba(0,0,0,0.26)]">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-lg font-semibold">Recent</div>
               <Link to={createPageUrl("Applications")} className="text-sm text-cyan-200 hover:text-cyan-100">View all</Link>

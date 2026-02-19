@@ -126,13 +126,21 @@ export default function AppNav({ currentPage, credits }) {
         <div className="flex items-center gap-3">
           <Link
             to={createPageUrl("Credits")}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600/10 border border-purple-500/20 hover:bg-purple-600/20 transition-all cursor-pointer"
+            className="group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-lg border border-purple-300/30 bg-[linear-gradient(160deg,rgba(139,92,246,0.26),rgba(76,29,149,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_24px_rgba(88,28,135,0.22)] hover:border-purple-200/40 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_10px_28px_rgba(88,28,135,0.32)] transition-all cursor-pointer"
           >
-            <Coins className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-semibold text-purple-400">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_36%,rgba(255,255,255,0)_72%)]"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -left-14 top-[-45%] h-[190%] w-10 rotate-[20deg] bg-white/35 blur-[8px] transition-transform duration-700 ease-out group-hover:translate-x-36"
+            />
+            <Coins className="relative z-10 w-4 h-4 text-purple-100" />
+            <span className="relative z-10 text-sm font-semibold text-purple-100">
               {displayCredits}
             </span>
-            <span className="text-xs text-white/30 hidden sm:inline">
+            <span className="relative z-10 text-xs text-purple-100/65 hidden sm:inline">
               credits
             </span>
           </Link>
