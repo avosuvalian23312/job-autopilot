@@ -15,7 +15,6 @@ import {
   Rocket,
   Loader2,
   Sparkles,
-  GraduationCap,
   Check,
   Edit2,
   Globe,
@@ -48,7 +47,6 @@ export default function NewJob() {
   const navigate = useNavigate();
   const [selectedResume, setSelectedResume] = useState("");
   const [aiMode, setAiMode] = useState("standard");
-  const [studentMode, setStudentMode] = useState(false);
   const [jobDescription, setJobDescription] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -715,7 +713,6 @@ export default function NewJob() {
     jobTitle,
     company,
     keywords,
-    studentMode: sm,
   }) => {
     const role = String(jobTitle || "this role").trim() || "this role";
     const org = String(company || "the company").trim() || "the company";
@@ -724,16 +721,12 @@ export default function NewJob() {
     ).slice(0, 6);
 
     const skillHint = ks.length ? ` (${ks.join(", ")})` : "";
-    const studentHint = sm
-      ? "projects, labs, and skills"
-      : "experience, ownership, and measurable outcomes";
-
     return {
       estimatedSeconds: 15,
       resumePreview: {
         bullets: [
           `Tailored bullets to ${role} at ${org}${skillHint}, emphasizing ATS coverage + impact.`,
-          `Reordered highlights to surface the most relevant ${studentHint} first for recruiter scan.`,
+          "Reordered highlights to surface the strongest relevant outcomes first for recruiter scan.",
         ],
       },
       coverLetterPreview: {
@@ -746,9 +739,7 @@ export default function NewJob() {
                 .slice(0, 4)
                 .join(", ")}.`
             : "Ensure top keywords appear in Skills + Experience sections.",
-          sm
-            ? "Add 1–2 quantified project outcomes (latency, uptime, automation, tickets)."
-            : "Add 1–2 quantified wins (time saved, incidents reduced, SLA improved).",
+          "Add 1–2 quantified wins (time saved, incidents reduced, SLA improved).",
         ],
       },
     };
@@ -760,7 +751,6 @@ export default function NewJob() {
     keywords,
     jobDescription: jd,
     aiMode: mode,
-    studentMode: sm,
   }) => {
     setPreviewLoading(true);
     try {
@@ -772,7 +762,6 @@ export default function NewJob() {
           keywords,
           jobDescription: jd,
           aiMode: mode,
-          studentMode: sm,
         }),
       });
 
@@ -805,9 +794,7 @@ export default function NewJob() {
       });
     } catch (e) {
       console.error(e);
-      setPreviewData(
-        buildPreviewFallback({ jobTitle, company, keywords, studentMode: sm })
-      );
+      setPreviewData(buildPreviewFallback({ jobTitle, company, keywords }));
     } finally {
       setPreviewLoading(false);
     }
@@ -1091,7 +1078,6 @@ export default function NewJob() {
         keywords: nextExtracted.keywords,
         jobDescription,
         aiMode,
-        studentMode,
       });
     } catch (e) {
       console.error(e);
@@ -1124,7 +1110,6 @@ export default function NewJob() {
         keywords: nextExtracted.keywords,
         jobDescription,
         aiMode,
-        studentMode,
       });
 
       toast.error("AI extract failed — used fallback extraction.");
@@ -1191,9 +1176,6 @@ export default function NewJob() {
 
           // backend accepts STANDARD/ELITE but lowercases it anyway
           aiMode: AI_MODE_BACKEND[aiMode] || "STANDARD",
-
-          // ✅ must be inside the JSON body
-          studentMode: !!studentMode,
         }),
       });
 
@@ -1327,10 +1309,10 @@ export default function NewJob() {
     "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
   const hoverLift =
-    "transition-transform duration-200 will-change-transform hover:scale-[1.012] hover:-translate-y-[1px]";
+    "transition-all duration-200 will-change-transform hover:-translate-y-[1px] hover:shadow-[0_14px_34px_rgba(0,0,0,0.4)]";
   const pressFx = "active:scale-[0.99]";
   const glowHover =
-    "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.22),0_18px_60px_rgba(0,0,0,0.55),0_0_40px_rgba(34,211,238,0.10)]";
+    "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.2),0_16px_48px_rgba(0,0,0,0.5),0_0_28px_rgba(34,211,238,0.08)]";
 
   const pill =
     "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
@@ -1525,7 +1507,7 @@ export default function NewJob() {
         </div>
       </header>
 
-      <div className="w-full px-6 py-8 min-h-[calc(100vh-4rem)] relative">
+      <div className="w-full px-4 sm:px-6 py-4 sm:py-5 min-h-[calc(100vh-4rem)] relative">
         {/* ✅ Generate loading overlay (same UX as Packet) */}
         {isGeneratingPacket && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -1660,10 +1642,6 @@ export default function NewJob() {
                     AI mode:{" "}
                     <span className="font-semibold text-white/85">
                       {aiMode === "elite" ? "Elite" : "Standard"}
-                    </span>{" "}
-                    • Student mode:{" "}
-                    <span className="font-semibold text-white/85">
-                      {studentMode ? "On" : "Off"}
                     </span>
                   </div>
                 </div>
@@ -2177,12 +2155,6 @@ export default function NewJob() {
                           {aiMode === "elite" ? "Elite" : "Standard"}
                         </span>
                       </p>
-                      <p className="text-sm text-white/60 mt-1">
-                        Student mode:{" "}
-                        <span className="font-semibold text-white/85">
-                          {studentMode ? "On" : "Off"}
-                        </span>
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -2244,327 +2216,252 @@ export default function NewJob() {
             }
             aria-busy={isAnalyzing}
           >
-            <div className="max-w-[1180px] mx-auto">
-              <div className="mb-5 text-center">
-                <h1 className="text-5xl font-bold mb-2 text-white tracking-tight">
-                  Create a new job packet
+            <div className="max-w-[1320px] mx-auto">
+              <div className="mb-4 text-center">
+                <h1 className="text-3xl md:text-4xl font-bold mb-1 text-white tracking-tight">
+                  Create a New Job Packet
                 </h1>
-                <p className="text-lg text-white/70">
-                  Paste a job description — we’ll extract details automatically
+                <p className="text-sm md:text-base text-white/70">
+                  Fast extraction, clean confirmation, and production-ready packet output.
                 </p>
               </div>
 
               <div
                 className={[
-                  "rounded-2xl p-7",
+                  "rounded-2xl p-4 md:p-5 max-h-[calc(100vh-11rem)]",
+                  "overflow-auto lg:overflow-hidden",
                   surface,
                   edge,
                   brandRing,
                   ambient,
                 ].join(" ")}
               >
-                {/* Top row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {/* Resume selector */}
-                  <div
-                    className={[
-                      "rounded-2xl p-5",
-                      "bg-black/25",
-                      edge,
-                      "ring-1 ring-violet-400/12",
-                      glowHover,
-                      hoverLift,
-                      pressFx,
-                    ].join(" ")}
-                  >
-                    <label className="block text-lg font-semibold mb-2 text-white">
-                      Resume <span className="text-rose-300">*</span>
-                    </label>
-
-                    {resumesLoading ? (
-                      <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                        <p className="mb-0 text-sm text-white/60">
-                          Loading resumes…
-                        </p>
-                      </div>
-                    ) : hasResumes ? (
-                      <Select
-                        value={selectedResume}
-                        onValueChange={setSelectedResume}
-                      >
-                        <SelectTrigger
-                          className={[
-                            "h-14 text-lg rounded-2xl",
-                            "bg-black/30 border-white/10 text-white",
-                            "ring-1 ring-white/5",
-                            "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
-                            hoverLift,
-                            pressFx,
-                          ].join(" ")}
-                        >
-                          <SelectValue placeholder="Select resume" />
-                        </SelectTrigger>
-
-                        <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
-                          {resumes.map((resume) => {
-                            const star = isDefaultResume(resume);
-                            return (
-                              <SelectItem
-                                key={resume.id}
-                                value={resume.id.toString()}
-                                className={[
-                                  "text-white/90 rounded-md",
-                                  "focus:bg-violet-500/20 focus:text-white",
-                                  "data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white",
-                                  "hover:bg-violet-500/15",
-                                  "transition-transform duration-150 hover:scale-[1.01]",
-                                ].join(" ")}
-                              >
-                                <span className="flex items-center gap-2">
-                                  {star && (
-                                    <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
-                                  )}
-                                  <span className="truncate">{resume.name}</span>
-                                </span>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] text-center">
-                        <p className="mb-3 text-sm text-white/60">
-                          No resumes found
-                        </p>
-                        <Button
-                          onClick={() => navigate(createPageUrl("Resumes"))}
-                          className={[
-                            "rounded-2xl",
-                            "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                            hoverLift,
-                            pressFx,
-                          ].join(" ")}
-                        >
-                          Upload Resume
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Student mode */}
-                  <div
-                    className={[
-                      "rounded-2xl p-5 flex items-start gap-3",
-                      "bg-black/25",
-                      edge,
-                      "ring-1 ring-violet-400/12",
-                      glowHover,
-                      hoverLift,
-                      pressFx,
-                    ].join(" ")}
-                  >
-                    <button
-                      onClick={() => setStudentMode(!studentMode)}
+                <div className="grid grid-cols-1 xl:grid-cols-[1.04fr_1.26fr] gap-4 xl:h-full">
+                  <div className="space-y-4 min-h-0">
+                    <div
                       className={[
-                        "w-12 h-6 rounded-full transition-all relative",
-                        "border border-white/10",
-                        studentMode
-                          ? "bg-gradient-to-r from-violet-500/80 to-cyan-500/50"
-                          : "bg-white/10",
-                      ].join(" ")}
-                      aria-label="Toggle student mode"
-                    >
-                      <div
-                        className={[
-                          "absolute top-0.5 w-5 h-5 rounded-full bg-white",
-                          "shadow-[0_10px_25px_rgba(0,0,0,0.45)] transition-all",
-                          studentMode ? "left-6" : "left-0.5",
-                        ].join(" ")}
-                      />
-                    </button>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <GraduationCap className="w-5 h-5 text-white/75" />
-                        <span className="text-base font-medium text-white">
-                          No experience / Student mode
-                        </span>
-                      </div>
-                      <p className="text-sm text-white/60">
-                        Emphasizes projects, coursework, and skills instead of work
-                        experience.
-                      </p>
-
-                      <div className="mt-3 text-xs text-white/60 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-cyan-200" />
-                        Built for interns, freshmen, and project-based resumes.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* AI mode */}
-                <div>
-                  <label className="block text-lg font-semibold mb-1 text-white">
-                    AI Mode <span className="text-rose-300">*</span>
-                  </label>
-                  <p className="text-sm mb-3 text-white/65">
-                    Choose how AI handles your resume content.
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      onClick={() => setAiMode("standard")}
-                      className={[
-                        "p-6 rounded-2xl border-2 text-left relative",
-                        "transition-all",
-                        hoverLift,
-                        pressFx,
+                        "rounded-2xl p-4 bg-black/25",
+                        edge,
+                        "ring-1 ring-violet-400/12",
                         glowHover,
-                        aiMode === "standard"
-                          ? "border-emerald-400/35 bg-emerald-500/10 ring-1 ring-emerald-400/20"
-                          : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
                       ].join(" ")}
-                      style={{ minHeight: "200px" }}
                     >
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
-                          <Check className="w-5 h-5 text-emerald-100" />
-                        </div>
-                        <span className="font-bold text-xl text-white">
-                          Standard
-                        </span>
-                      </div>
-                      <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-100 mb-3 font-semibold border border-emerald-400/20">
-                        Recommended • Safe & ATS-friendly
-                      </span>
-                      <ul className="text-base leading-relaxed space-y-1 text-white/75">
-                        <li>• Improves clarity and impact of your existing bullets</li>
-                        <li>• Rewrites descriptions to match the job</li>
-                        <li>• Optimizes wording and keywords</li>
-                        <li className="font-semibold text-emerald-100/90">
-                          • Does NOT create fake experience
-                        </li>
-                      </ul>
-                    </button>
+                      <label className="block text-base font-semibold mb-2 text-white">
+                        Resume <span className="text-rose-300">*</span>
+                      </label>
 
-                    <button
-                      onClick={() => setAiMode("elite")}
-                      className={[
-                        "p-6 rounded-2xl border-2 text-left relative",
-                        "transition-all",
-                        hoverLift,
-                        pressFx,
-                        glowHover,
-                        aiMode === "elite"
-                          ? "border-amber-400/35 bg-amber-500/10 ring-1 ring-amber-400/20"
-                          : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
-                      ].join(" ")}
-                      style={{ minHeight: "200px" }}
-                    >
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-xl bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
-                          <Sparkles className="w-5 h-5 text-amber-100" />
+                      {resumesLoading ? (
+                        <div className="p-3 rounded-xl border border-white/10 bg-white/[0.03] text-center">
+                          <p className="mb-0 text-sm text-white/60">Loading resumes...</p>
                         </div>
-                        <span className="font-bold text-xl text-white">Elite</span>
-                      </div>
-                      <span className="inline-block text-xs px-2.5 py-1 rounded-full bg-amber-500/12 text-amber-100 mb-3 font-semibold border border-amber-400/20">
-                        Advanced • Use with discretion
-                      </span>
-                      <ul className="text-base leading-relaxed space-y-1 mb-2 text-white/75">
-                        <li>• May create or enhance experience bullets</li>
-                        <li>• Can infer responsibilities from context</li>
-                        <li>• Designed to maximize callbacks</li>
-                        <li className="font-semibold text-amber-100/90">
-                          • Higher risk if verified by employer
-                        </li>
-                      </ul>
+                      ) : hasResumes ? (
+                        <Select value={selectedResume} onValueChange={setSelectedResume}>
+                          <SelectTrigger
+                            className={[
+                              "h-12 text-base rounded-xl",
+                              "bg-black/30 border-white/10 text-white",
+                              "ring-1 ring-white/5",
+                              "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                            ].join(" ")}
+                          >
+                            <SelectValue placeholder="Select resume" />
+                          </SelectTrigger>
 
-                      {aiMode === "elite" && (
-                        <div className="mt-3 pt-3 border-t border-amber-400/15">
-                          <p className="text-xs text-amber-100/90 flex items-start gap-2">
-                            <span className="text-amber-100 font-bold">⚠</span>
-                            <span>
-                              Elite mode may generate inferred or mock experience.
-                              Use responsibly.
-                            </span>
-                          </p>
+                          <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
+                            {resumes.map((resume) => {
+                              const star = isDefaultResume(resume);
+                              return (
+                                <SelectItem
+                                  key={resume.id}
+                                  value={resume.id.toString()}
+                                  className={[
+                                    "text-white/90 rounded-md",
+                                    "focus:bg-violet-500/20 focus:text-white",
+                                    "data-[highlighted]:bg-violet-500/20 data-[highlighted]:text-white",
+                                    "hover:bg-violet-500/15",
+                                  ].join(" ")}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    {star && (
+                                      <Star className="w-4 h-4 text-amber-200 fill-amber-200" />
+                                    )}
+                                    <span className="truncate">{resume.name}</span>
+                                  </span>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="p-3 rounded-xl border border-white/10 bg-white/[0.03] text-center">
+                          <p className="mb-2 text-sm text-white/60">No resumes found</p>
+                          <Button
+                            onClick={() => navigate(createPageUrl("Resumes"))}
+                            className={[
+                              "rounded-xl h-10",
+                              "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                              hoverLift,
+                              pressFx,
+                            ].join(" ")}
+                          >
+                            Upload Resume
+                          </Button>
                         </div>
                       )}
-                    </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-base font-semibold mb-1 text-white">
+                        AI Mode <span className="text-rose-300">*</span>
+                      </label>
+                      <p className="text-xs mb-3 text-white/65">
+                        Choose Standard for safety or Elite for aggressive optimization.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3">
+                        <button
+                          onClick={() => setAiMode("standard")}
+                          className={[
+                            "p-4 rounded-xl border text-left relative transition-all",
+                            hoverLift,
+                            pressFx,
+                            glowHover,
+                            aiMode === "standard"
+                              ? "border-emerald-400/35 bg-emerald-500/10 ring-1 ring-emerald-400/20"
+                              : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-center gap-2.5 mb-1.5">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
+                              <Check className="w-4 h-4 text-emerald-100" />
+                            </div>
+                            <span className="font-bold text-lg text-white">Standard</span>
+                          </div>
+                          <p className="text-xs text-emerald-100/90 mb-2 font-semibold">
+                            Recommended | Safe and ATS-friendly
+                          </p>
+                          <ul className="text-sm leading-relaxed space-y-0.5 text-white/75">
+                            <li>- Improves clarity and keyword match</li>
+                            <li>- Rewrites bullets without inventing background</li>
+                          </ul>
+                        </button>
+
+                        <button
+                          onClick={() => setAiMode("elite")}
+                          className={[
+                            "p-4 rounded-xl border text-left relative transition-all",
+                            hoverLift,
+                            pressFx,
+                            glowHover,
+                            aiMode === "elite"
+                              ? "border-amber-400/35 bg-amber-500/10 ring-1 ring-amber-400/20"
+                              : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-center gap-2.5 mb-1.5">
+                            <div className="w-8 h-8 rounded-lg bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
+                              <Sparkles className="w-4 h-4 text-amber-100" />
+                            </div>
+                            <span className="font-bold text-lg text-white">Elite</span>
+                          </div>
+                          <p className="text-xs text-amber-100/90 mb-2 font-semibold">
+                            Advanced | Use with discretion
+                          </p>
+                          <ul className="text-sm leading-relaxed space-y-0.5 text-white/75">
+                            <li>- Can infer missing responsibilities from context</li>
+                            <li className="font-semibold text-amber-100/95">
+                              - Higher verification risk with employers
+                            </li>
+                          </ul>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={[
+                        "rounded-xl p-4",
+                        "bg-[linear-gradient(180deg,rgba(167,139,250,0.12),rgba(34,211,238,0.06))]",
+                        "border border-white/10 ring-1 ring-violet-400/15",
+                      ].join(" ")}
+                    >
+                      <Button
+                        onClick={handleAnalyze}
+                        disabled={!selectedResume || !jobDescription.trim() || isAnalyzing}
+                        className={[
+                          "w-full h-12 rounded-xl text-lg font-bold",
+                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                          "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
+                          "disabled:opacity-40 disabled:cursor-not-allowed",
+                          "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
+                          hoverLift,
+                          pressFx,
+                        ].join(" ")}
+                      >
+                        {isAnalyzing ? (
+                          <>
+                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                            Scanning...
+                          </>
+                        ) : (
+                          "Generate Packet"
+                        )}
+                      </Button>
+
+                      <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
+                        <span>Uses {PACKET_CREDIT_COST} credits</span>
+                        <span className="group relative inline-flex">
+                          <button
+                            type="button"
+                            onClick={() => navigate(createPageUrl("Credits"))}
+                            className="shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))] px-2 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)] transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
+                          >
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06)_40%,rgba(255,255,255,0)_75%)]"
+                            />
+                            <span aria-hidden className="shine-loop-overlay" />
+                            <Coins className="relative z-10 w-3.5 h-3.5 text-purple-100" />
+                            <span className="relative z-10">
+                              {currentCredits === null ? "--" : currentCredits} available
+                            </span>
+                          </button>
+                          <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
+                            Open Credits page
+                          </span>
+                        </span>
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Job description */}
-                <div className="mt-4">
-                  <label className="block text-lg font-semibold mb-2 text-white">
-                    Job Description <span className="text-rose-300">*</span>
-                  </label>
-                  <Textarea
-                    value={jobDescription}
-                    onChange={(e) => setJobDescription(e.target.value)}
-                    placeholder=""
+                  <div
                     className={[
-                      "min-h-[220px] resize-none text-base rounded-2xl",
-                      "bg-black/30 border-white/10 text-white",
-                      "leading-relaxed",
-                      "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                      "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
-                    ].join(" ")}
-                  />
-                  <p className="text-sm mt-2 text-white/60">
-                    Paste the full job description. We’ll extract title, company,
-                    pay, and requirements.
-                  </p>
-                </div>
-
-                {/* CTA */}
-                <div className="pt-3">
-                  <Button
-                    onClick={handleAnalyze}
-                    disabled={!selectedResume || !jobDescription.trim() || isAnalyzing}
-                    className={[
-                      "w-full h-14 rounded-2xl text-xl font-bold",
-                      "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                      "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
-                      "disabled:opacity-40 disabled:cursor-not-allowed",
-                      "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
-                      hoverLift,
-                      pressFx,
+                      "rounded-2xl p-4 md:p-5 bg-black/25 min-h-0 flex flex-col",
+                      edge,
+                      "ring-1 ring-violet-400/12",
                     ].join(" ")}
                   >
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Scanning…
-                      </>
-                    ) : (
-                      "Generate Packet"
-                    )}
-                  </Button>
-                  <p className="text-center text-sm mt-2 text-white/60 flex items-center justify-center gap-2">
-                    <span>Uses {PACKET_CREDIT_COST} credits</span>
-                    <span className="group relative inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => navigate(createPageUrl("Credits"))}
-                        className="shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))] px-2 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)] transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
-                      >
-                        <span
-                          aria-hidden
-                          className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06)_40%,rgba(255,255,255,0)_75%)]"
-                        />
-                        <span aria-hidden className="shine-loop-overlay" />
-                        <Coins className="relative z-10 w-3.5 h-3.5 text-purple-100" />
-                        <span className="relative z-10">
-                          {currentCredits === null ? "--" : currentCredits} available
-                        </span>
-                      </button>
-                      <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
-                        Open Credits page
+                    <label className="block text-base font-semibold mb-2 text-white">
+                      Job Description <span className="text-rose-300">*</span>
+                    </label>
+                    <Textarea
+                      value={jobDescription}
+                      onChange={(e) => setJobDescription(e.target.value)}
+                      placeholder="Paste the full job post here. We will extract title, company, location, compensation, and requirements."
+                      className={[
+                        "flex-1 min-h-[280px] xl:min-h-0 resize-none text-sm md:text-base rounded-xl",
+                        "bg-black/30 border-white/10 text-white",
+                        "leading-relaxed",
+                        "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                        "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                      ].join(" ")}
+                    />
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-white/55">
+                      <span>Tip: Include responsibilities, requirements, and compensation if listed.</span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-white/70">
+                        {jobDescription.trim().length} chars
                       </span>
-                    </span>
-                  </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
