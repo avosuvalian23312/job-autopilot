@@ -16,7 +16,7 @@ import { onboarding } from "@/lib/onboarding";
 
 const plans = [
   {
-    id: "starter",
+    id: "free",
     name: "FREE",
     price: 0,
     originalPrice: null,
@@ -151,6 +151,25 @@ export default function Pricing() {
     setLoadingPlan(plan.id);
 
     try {
+      if (plan.id === "free") {
+        if (typeof onboarding?.completePricing === "function") {
+          await onboarding.completePricing("free");
+        } else if (typeof onboarding?.setSelectedPlan === "function") {
+          await onboarding.setSelectedPlan("free");
+        }
+
+        // Warm credits so free monthly allocation is immediately reflected.
+        await fetch("/api/credits/me", {
+          method: "GET",
+          credentials: "include",
+        }).catch(() => {});
+
+        onboarding.clearCache?.();
+        await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+        navigate(getSetupPath());
+        return;
+      }
+
       const successPath = getSetupPath();
       const cancelPath = getCancelPath();
 
@@ -346,7 +365,7 @@ export default function Pricing() {
                 ) : null}
 
                 <div className="relative z-[2] flex items-baseline gap-1">
-                  {plan.id === "starter" ? (
+                  {plan.id === "free" ? (
                     <span className="font-black tracking-tight text-[2.15rem] text-white">
                       FREE
                     </span>
