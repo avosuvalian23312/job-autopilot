@@ -27,7 +27,7 @@
               "clientSecretSettingName": "AZURE_CLIENT_SECRET"
             },
             "openIdConnectConfiguration": {
-              "wellKnownOpenIdConfiguration": "https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration"
+              "wellKnownOpenIdConfiguration": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
             }
           },
           "login": {
@@ -53,5 +53,6 @@
     ]
   }
 }
+
 
 
