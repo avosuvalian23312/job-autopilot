@@ -1292,6 +1292,8 @@ export default function NewJob() {
   };
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
+  const jdLength = jobDescription.trim().length;
+  const canAnalyze = !!selectedResume && jdLength > 0 && !isAnalyzing;
 
   // ---------------------------
   // Job Autopilot Brand System
@@ -2224,11 +2226,20 @@ export default function NewJob() {
                 <p className="text-sm md:text-base text-white/70">
                   Fast extraction, clean confirmation, and production-ready packet output.
                 </p>
+                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/70">
+                  <span className={selectedResume ? "text-emerald-200" : "text-white/50"}>
+                    Resume {selectedResume ? "ready" : "required"}
+                  </span>
+                  <span className="text-white/35">|</span>
+                  <span className={jdLength > 0 ? "text-emerald-200" : "text-white/50"}>
+                    Job description {jdLength > 0 ? "ready" : "required"}
+                  </span>
+                </div>
               </div>
 
               <div
                 className={[
-                  "rounded-2xl p-4 md:p-5 max-h-[calc(100vh-11rem)]",
+                  "rounded-2xl p-4 md:p-5 max-h-[calc(100vh-10.5rem)]",
                   "overflow-auto lg:overflow-hidden",
                   surface,
                   edge,
@@ -2386,7 +2397,7 @@ export default function NewJob() {
                     >
                       <Button
                         onClick={handleAnalyze}
-                        disabled={!selectedResume || !jobDescription.trim() || isAnalyzing}
+                        disabled={!canAnalyze}
                         className={[
                           "w-full h-12 rounded-xl text-lg font-bold",
                           "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
@@ -2430,6 +2441,11 @@ export default function NewJob() {
                           </span>
                         </span>
                       </p>
+                      {!canAnalyze && (
+                        <p className="mt-2 text-center text-xs text-amber-100/85">
+                          Select a resume and add a job description to continue.
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -2457,8 +2473,15 @@ export default function NewJob() {
                     />
                     <div className="mt-2 flex items-center justify-between gap-3 text-xs text-white/55">
                       <span>Tip: Include responsibilities, requirements, and compensation if listed.</span>
-                      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-white/70">
-                        {jobDescription.trim().length} chars
+                      <span
+                        className={[
+                          "rounded-full border px-2 py-0.5",
+                          jdLength < 80
+                            ? "border-amber-300/30 bg-amber-500/10 text-amber-100"
+                            : "border-emerald-300/25 bg-emerald-500/10 text-emerald-100",
+                        ].join(" ")}
+                      >
+                        {jdLength} chars
                       </span>
                     </div>
                   </div>

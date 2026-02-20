@@ -347,7 +347,11 @@ export default function Packet() {
   // ---------------------------
   if (isGenerating && !packetData) {
     return (
-      <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+      <div className="min-h-screen bg-[#060b14] relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-24 left-1/2 -translate-x-1/2 h-64 w-[48rem] rounded-full bg-violet-500/14 blur-3xl" />
+          <div className="absolute right-[-8%] top-[10%] h-72 w-72 rounded-full bg-cyan-500/12 blur-3xl" />
+        </div>
         <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -359,15 +363,26 @@ export default function Packet() {
           </div>
         </header>
 
-        <div className="max-w-3xl mx-auto px-4 py-16 flex flex-col justify-center min-h-[calc(100vh-4rem)]">
-          <div className="text-center">
-            <div className="w-24 h-24 rounded-full bg-purple-600/10 flex items-center justify-center mx-auto mb-8">
-              <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
+        <div className="relative z-10 max-w-3xl mx-auto px-4 py-12 flex flex-col justify-center min-h-[calc(100vh-4rem)]">
+          <div className="rounded-3xl border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03))] px-8 py-12 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl text-center">
+            <div className="w-24 h-24 rounded-full bg-violet-500/16 border border-violet-300/30 flex items-center justify-center mx-auto mb-8 shadow-[0_0_30px_rgba(168,85,247,0.25)]">
+              <Loader2 className="w-11 h-11 text-violet-100 animate-spin" />
             </div>
             <h1 className="text-4xl font-bold text-white mb-3">
-              Generating your packet…
+              Generating your packet
             </h1>
-            <p className="text-lg text-white/40">This can take a few seconds</p>
+            <p className="text-base text-white/55">This usually takes a few seconds.</p>
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
+                Resume tailoring
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
+                Cover letter generation
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
+                Packet finalization
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -378,9 +393,28 @@ export default function Packet() {
 
   const resumeButtonBusy = isResumeApiLoading || isBothApiLoading;
   const bothButtonBusy = isBothApiLoading || isResumeApiLoading;
+  const isPrepareMode = packetData?.__mode === "prepare";
+  const hasResumeDownload =
+    !!(
+      packetData?.tailoredResume?.id ||
+      localStorage.getItem("latestTailoredResumeId") ||
+      packetData?.outputs?.resume?.text ||
+      packetData?.outputs?.resumeBullets?.text
+    );
+  const hasCoverDownload =
+    !!(
+      packetData?.coverLetter?.text ||
+      localStorage.getItem("latestCoverLetterText") ||
+      packetData?.outputs?.coverLetter?.text
+    );
 
   return (
-    <div className="min-h-screen bg-[hsl(240,10%,4%)]">
+    <div className="min-h-screen bg-[#060b14] relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 h-72 w-[54rem] rounded-full bg-violet-500/14 blur-3xl" />
+        <div className="absolute left-[15%] top-[35%] h-80 w-80 rounded-full bg-cyan-500/8 blur-3xl" />
+        <div className="absolute right-[-8%] top-[24%] h-80 w-80 rounded-full bg-indigo-500/10 blur-3xl" />
+      </div>
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -392,7 +426,7 @@ export default function Packet() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-4 py-16 flex flex-col justify-center min-h-[calc(100vh-4rem)] relative">
+      <div className="relative z-10 max-w-4xl mx-auto px-4 py-10 flex flex-col justify-center min-h-[calc(100vh-4rem)]">
         {/* API-action loading overlay (blur + spinner) */}
         {isAnyApiActionLoading && (
           <div className="absolute inset-0 z-20 flex items-center justify-center">
@@ -415,63 +449,88 @@ export default function Packet() {
           }
           aria-busy={isAnyApiActionLoading}
         >
-          <div className="text-center mb-12">
-            <div className="w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-8">
-              <CheckCircle2 className="w-12 h-12 text-green-400" />
+          <div className="rounded-3xl border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))] shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl p-6 sm:p-8">
+            <div className="text-center">
+              <div className="w-24 h-24 rounded-full bg-emerald-500/14 border border-emerald-300/35 flex items-center justify-center mx-auto mb-6 shadow-[0_0_28px_rgba(16,185,129,0.28)]">
+                <CheckCircle2 className="w-12 h-12 text-emerald-300" />
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">
+                Your packet is ready
+              </h1>
+              <p className="text-base sm:text-lg text-white/55">
+                Download your tailored documents and continue your application flow.
+              </p>
             </div>
-            <h1 className="text-5xl font-bold text-white mb-4">
-              Your packet is ready
-            </h1>
-            <p className="text-xl text-white/40">
-              Download your tailored documents below
-            </p>
-          </div>
 
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
+                <div className="text-[11px] uppercase tracking-[0.13em] text-white/45">Mode</div>
+                <div className="mt-1 text-sm font-semibold text-white/90">
+                  {isPrepareMode ? "Prepare" : "Job"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
+                <div className="text-[11px] uppercase tracking-[0.13em] text-white/45">Resume</div>
+                <div className={`mt-1 text-sm font-semibold ${hasResumeDownload ? "text-emerald-200" : "text-white/55"}`}>
+                  {hasResumeDownload ? "Ready" : "Unavailable"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
+                <div className="text-[11px] uppercase tracking-[0.13em] text-white/45">Cover Letter</div>
+                <div className={`mt-1 text-sm font-semibold ${hasCoverDownload ? "text-emerald-200" : "text-white/55"}`}>
+                  {hasCoverDownload ? "Ready" : "Unavailable"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-7 space-y-4">
               <Button
-                onClick={handleDownloadResume}
-                disabled={resumeButtonBusy}
-                className="w-full py-8 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-2xl shadow-xl shadow-purple-600/20 hover:shadow-2xl hover:shadow-purple-600/30 transition-all hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-purple-600"
+                onClick={handleDownloadBoth}
+                disabled={bothButtonBusy || (!hasResumeDownload && !hasCoverDownload)}
+                className="w-full h-14 rounded-2xl bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500 text-white text-lg font-bold shadow-[0_16px_40px_rgba(79,70,229,0.35)] hover:brightness-110 transition-all hover:-translate-y-0.5 disabled:opacity-70 disabled:hover:translate-y-0"
               >
-                {resumeButtonBusy ? (
-                  <Loader2 className="w-6 h-6 mr-3 animate-spin" />
+                {bothButtonBusy ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                 ) : (
-                  <FileText className="w-6 h-6 mr-3" />
+                  <Download className="w-5 h-5 mr-2" />
                 )}
-                {resumeButtonBusy ? "Preparing…" : "Download Resume"}
+                {bothButtonBusy ? "Preparing..." : "Download Both"}
               </Button>
 
-              <Button
-                onClick={handleDownloadCoverLetter}
-                disabled={isAnyApiActionLoading}
-                className="w-full py-8 bg-purple-600 hover:bg-purple-500 text-white text-xl font-bold rounded-2xl shadow-xl shadow-purple-600/20 hover:shadow-2xl hover:shadow-purple-600/30 transition-all hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-purple-600"
-              >
-                <Download className="w-6 h-6 mr-3" />
-                Download Cover Letter
-              </Button>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Button
+                  onClick={handleDownloadResume}
+                  disabled={resumeButtonBusy || !hasResumeDownload}
+                  className="w-full h-12 bg-white/6 hover:bg-white/12 text-white border border-white/15 rounded-xl font-semibold transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
+                >
+                  {resumeButtonBusy ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4 mr-2" />
+                  )}
+                  {resumeButtonBusy ? "Preparing..." : "Download Resume"}
+                </Button>
 
-            <Button
-              onClick={handleDownloadBoth}
-              disabled={bothButtonBusy}
-              className="w-full py-8 bg-white/10 hover:bg-white/15 text-white text-xl font-bold rounded-2xl border-2 border-white/20 hover:border-white/30 transition-all hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100"
-            >
-              {bothButtonBusy ? (
-                <Loader2 className="w-6 h-6 mr-3 animate-spin" />
-              ) : (
-                <Download className="w-6 h-6 mr-3" />
-              )}
-              {bothButtonBusy ? "Preparing…" : "Download Both"}
-            </Button>
+                <Button
+                  onClick={handleDownloadCoverLetter}
+                  disabled={isAnyApiActionLoading || !hasCoverDownload}
+                  className="w-full h-12 bg-white/6 hover:bg-white/12 text-white border border-white/15 rounded-xl font-semibold transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Cover Letter
+                </Button>
+              </div>
 
-            <div className="pt-6">
+              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/60">
+                Resume downloads as PDF. Cover letter downloads as TXT for easy editing.
+              </div>
+
               <Button
                 onClick={handleReturnHome}
                 disabled={isAnyApiActionLoading}
-                className="w-full py-8 bg-white/5 hover:bg-white/10 text-white text-xl font-bold rounded-2xl transition-all hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100"
+                className="w-full h-12 bg-transparent hover:bg-white/8 text-white/90 border border-white/15 rounded-xl font-semibold transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
               >
-                <ArrowLeft className="w-5 h-5 mr-3" />
+                <ArrowLeft className="w-4 h-4 mr-2" />
                 Return to Home
               </Button>
             </div>
