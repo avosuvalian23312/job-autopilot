@@ -393,7 +393,16 @@ export default function Packet() {
 
   const resumeButtonBusy = isResumeApiLoading || isBothApiLoading;
   const bothButtonBusy = isBothApiLoading || isResumeApiLoading;
-  const isPrepareMode = packetData?.__mode === "prepare";
+  const resolvedAiModeRaw =
+    packetData?.aiMode ??
+    packetData?.jobData?.aiMode ??
+    packetData?.outputs?.aiMode ??
+    packetData?.metadata?.aiMode ??
+    "";
+  const normalizedAiMode = String(resolvedAiModeRaw || "")
+    .trim()
+    .toLowerCase();
+  const aiModeLabel = normalizedAiMode === "elite" ? "Elite" : "Standard";
   const hasResumeDownload =
     !!(
       packetData?.tailoredResume?.id ||
@@ -466,7 +475,7 @@ export default function Packet() {
               <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
                 <div className="text-[11px] uppercase tracking-[0.13em] text-white/45">Mode</div>
                 <div className="mt-1 text-sm font-semibold text-white/90">
-                  {isPrepareMode ? "Prepare" : "Job"}
+                  {aiModeLabel}
                 </div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
