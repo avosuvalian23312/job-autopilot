@@ -20,6 +20,9 @@ Any change pushed to the repo will also be reflected in the Base44 Builder.
 ```
 VITE_BASE44_APP_ID=your_app_id
 VITE_BASE44_APP_BASE_URL=your_backend_url
+VITE_SWA_AUTH_PROVIDER=microsoft
+VITE_SWA_MICROSOFT_PROVIDER=microsoft
+VITE_SWA_EMAIL_PROVIDER=microsoft
 
 e.g.
 VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6

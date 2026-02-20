@@ -60,10 +60,9 @@ export function AuthProvider({ children }) {
 
   const isAuthenticated = !!user;
 
-  // Change this if your provider is not AAD:
-  // valid examples: "aad", "github", "google", "twitter"
+  // Valid examples: "microsoft", "google", "aad", "github", "twitter"
   const getProvider = (override) =>
-    override || import.meta.env.VITE_SWA_AUTH_PROVIDER || "aad";
+    override || import.meta.env.VITE_SWA_AUTH_PROVIDER || "microsoft";
 
   const navigateToLogin = useCallback((providerOverride) => {
     const provider = getProvider(providerOverride);

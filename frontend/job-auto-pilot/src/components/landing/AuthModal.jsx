@@ -8,42 +8,48 @@ import { Input } from "@/components/ui/input";
 /**
  * Azure Static Web Apps auth (NO JWT):
  * - Redirect to /.auth/login/{provider}
- * - Use a RELATIVE post_login_redirect_uri so it returns to your app page correctly.
- * - Do NOT hit the identity.* domain directly.
+ * - Use a relative post_login_redirect_uri so it returns to your app page correctly.
+ * - Do not hit the identity.* domain directly.
  */
-function swaLogin(provider, redirectPath) {
+function swaLogin(provider, redirectPath, extraParams = {}) {
   const path =
     redirectPath ||
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
   const safe = path && path.startsWith("/") ? path : "/";
-  window.location.href = `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(
-    safe
-  )}`;
+  const query = new URLSearchParams({
+    post_login_redirect_uri: safe,
+  });
+
+  Object.entries(extraParams || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    const v = String(value).trim();
+    if (!v) return;
+    query.set(key, v);
+  });
+
+  window.location.href = `/.auth/login/${encodeURIComponent(provider)}?${query.toString()}`;
 }
 
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [step, setStep] = useState("start"); // start | email_code
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   /**
-   * ✅ IMPORTANT CHANGE
-   * Always return to "/" after login so YOUR App router decides:
-   *   first login -> /Pricing -> /Setup -> /AppHome
-   *   already onboarded -> /AppHome
-   *
-   * This avoids case-sensitivity issues (/pricing vs /Pricing) and keeps all logic centralized.
+   * Always return to "/" after login so App routing decides onboarding.
    */
   const AFTER_LOGIN_PATH = "/";
+  const MICROSOFT_PROVIDER =
+    import.meta.env.VITE_SWA_MICROSOFT_PROVIDER || "microsoft";
+  const EMAIL_PROVIDER =
+    import.meta.env.VITE_SWA_EMAIL_PROVIDER || MICROSOFT_PROVIDER;
 
-  // ✅ Your public logos (must exist in /public/logos/)
+  // Public logos (must exist in /public/logos/)
   const GOOGLE_LOGO = "/logos/google-logo-9808.png";
   const MICROSOFT_LOGO = "/logos/64px-Microsoft_logo.svg.png";
 
-  // --- Zoom / popup effect controller (triggers whenever modal opens OR a login starts) ---
+  // Zoom/popup effect controller.
   const [pulse, setPulse] = useState(0);
   const pulseTimer = useRef(null);
 
@@ -56,8 +62,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (open) {
       setErr("");
       setBusy(false);
-      setStep("start");
-      setCode("");
       setEmail("");
       triggerPulse();
     }
@@ -71,10 +75,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (busy) return;
     setErr("");
     setBusy(true);
-
     triggerPulse();
 
-    // optional callback
     try {
       onComplete?.({ provider: "google" });
     } catch {
@@ -90,10 +92,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (busy) return;
     setErr("");
     setBusy(true);
-
     triggerPulse();
 
-    // optional callback
     try {
       onComplete?.({ provider: "microsoft" });
     } catch {
@@ -101,7 +101,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
     }
 
     setTimeout(() => {
-      swaLogin("aad", AFTER_LOGIN_PATH);
+      swaLogin(MICROSOFT_PROVIDER, AFTER_LOGIN_PATH);
     }, 220);
   };
 
@@ -109,35 +109,48 @@ export default function AuthModal({ open, onClose, onComplete }) {
     if (busy) return;
     setErr("");
     setBusy(true);
-
     triggerPulse();
 
-    setTimeout(() => {
-      setErr(
-        "Email login is not enabled. Please use Google or Microsoft sign-in."
-      );
-      setStep("start");
-      setBusy(false);
-    }, 180);
-  };
+    const emailHint = String(email || "").trim();
+    const hasEmailHint = /^\S+@\S+\.\S+$/.test(emailHint);
 
-  const verifyEmail = async () => {
-    if (busy) return;
-    setErr("");
-    setBusy(true);
-
-    triggerPulse();
+    try {
+      onComplete?.({ provider: "email" });
+    } catch {
+      // ignore
+    }
 
     setTimeout(() => {
-      setErr(
-        "Email login is not enabled. Please use Google or Microsoft sign-in."
+      swaLogin(
+        EMAIL_PROVIDER,
+        AFTER_LOGIN_PATH,
+        hasEmailHint ? { login_hint: emailHint } : {}
       );
-      setStep("start");
-      setBusy(false);
-    }, 180);
+    }, 220);
   };
 
-  // --- Animations ---
+  const humanProviderName = (provider) => {
+    const value = String(provider || "").trim();
+    if (!value) return "identity provider";
+    if (value.toLowerCase() === "aad") return "Microsoft";
+    return value;
+  };
+
+  const microsoftName = humanProviderName(MICROSOFT_PROVIDER);
+  const emailName = humanProviderName(EMAIL_PROVIDER);
+  const microsoftButtonLabel =
+    microsoftName.toLowerCase() === "microsoft"
+      ? "Continue with Microsoft"
+      : `Continue with ${microsoftName}`;
+  const emailButtonLabel =
+    emailName.toLowerCase() === "microsoft"
+      ? "Continue with Email (Microsoft)"
+      : `Continue with Email (${emailName})`;
+  const emailHelpText =
+    emailName.toLowerCase() === "microsoft"
+      ? "Uses your Microsoft/Entra sign-in flow."
+      : `Uses your configured "${emailName}" identity provider.`;
+
   const overlayVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1 },
@@ -187,7 +200,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              key={`auth-modal-${pulse}`} // forces micro re-animation on pulse
+              key={`auth-modal-${pulse}`}
               variants={modalVariants}
               initial="hidden"
               animate="visible"
@@ -196,7 +209,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
               {...(pulse > 0 ? { animate: ["visible", pulseKeyframes] } : {})}
               className="bg-[#0E0E12] p-8 rounded-2xl max-w-md w-full relative border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
             >
-              {/* soft gradient glow */}
               <div className="pointer-events-none absolute inset-0 rounded-2xl">
                 <div className="absolute -top-10 -left-10 h-24 w-24 rounded-full bg-purple-500/20 blur-2xl" />
                 <div className="absolute -bottom-10 -right-10 h-24 w-24 rounded-full bg-cyan-400/10 blur-2xl" />
@@ -242,10 +254,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
                       <img
                         src={MICROSOFT_LOGO}
                         alt="Microsoft"
-                        className="h-5 h-5 w-5 object-contain"
+                        className="h-5 w-5 object-contain"
                         loading="lazy"
                       />
-                      <span>Continue with Microsoft</span>
+                      <span>{microsoftButtonLabel}</span>
                     </span>
                   </Button>
                 </div>
@@ -256,46 +268,29 @@ export default function AuthModal({ open, onClose, onComplete }) {
                   </div>
 
                   <Input
-                    placeholder="Enter your email"
+                    placeholder="you@company.com (optional)"
                     value={email}
-                    disabled={busy || step === "email_code"}
+                    disabled={busy}
                     onChange={(e) => setEmail(e.target.value)}
                   />
+                  <p className="mt-2 text-xs text-white/55">{emailHelpText}</p>
 
-                  {step === "start" && (
-                    <Button
-                      onClick={startEmail}
-                      disabled={busy}
-                      className="w-full mt-3"
-                    >
-                      <Mail className="mr-2 h-4 w-4" />
-                      Send Login Code
-                    </Button>
-                  )}
-
-                  {step === "email_code" && (
-                    <>
-                      <Input
-                        placeholder="Enter code"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                        className="mt-3"
-                      />
-                      <Button
-                        onClick={verifyEmail}
-                        className="w-full mt-3"
-                        disabled={busy}
-                      >
-                        Verify Code
-                      </Button>
-                    </>
-                  )}
+                  <Button
+                    onClick={startEmail}
+                    disabled={busy}
+                    className="w-full mt-3"
+                  >
+                    <Mail className="mr-2 h-4 w-4" />
+                    {emailButtonLabel}
+                  </Button>
                 </div>
 
                 {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
 
                 {busy && (
-                  <div className="mt-4 text-white/50 text-xs">Redirecting…</div>
+                  <div className="mt-4 text-white/50 text-xs">
+                    Redirecting to sign-in...
+                  </div>
                 )}
               </div>
             </motion.div>

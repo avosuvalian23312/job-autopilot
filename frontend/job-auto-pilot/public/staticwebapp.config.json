@@ -19,6 +19,21 @@
             "nameClaimType": "email",
             "scopes": ["openid", "profile", "email"]
           }
+        },
+        "microsoft": {
+          "registration": {
+            "clientIdSettingName": "AZURE_CLIENT_ID",
+            "clientCredential": {
+              "clientSecretSettingName": "AZURE_CLIENT_SECRET"
+            },
+            "openIdConnectConfiguration": {
+              "wellKnownOpenIdConfiguration": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+            }
+          },
+          "login": {
+            "nameClaimType": "name",
+            "scopes": ["openid", "profile", "email"]
+          }
         }
       }
     }
@@ -38,3 +53,4 @@
     ]
   }
 }
+
