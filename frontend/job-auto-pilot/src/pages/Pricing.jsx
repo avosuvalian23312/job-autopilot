@@ -17,21 +17,21 @@ import { onboarding } from "@/lib/onboarding";
 const plans = [
   {
     id: "starter",
-    name: "Starter",
-    price: 9,
+    name: "FREE",
+    price: 0,
     originalPrice: null,
     saveText: null,
-    credits: 50,
-    description: "Great for getting started",
+    credits: 10,
+    description: "Perfect for trying Job Autopilot",
     features: [
-      "50 credits per month",
+      "10 credits per month",
       "Resume generation",
       "Cover letter generation",
       "Basic support",
     ],
     popular: false,
     badges: [],
-    cta: "Start Starter",
+    cta: "Start Free",
   },
   {
     id: "pro",
@@ -43,7 +43,7 @@ const plans = [
     description: "Best for active job hunters",
     features: [
       "150 credits per month",
-      "Everything in Starter",
+      "Everything in Free",
       "Priority generation",
       "Priority support",
     ],
@@ -243,28 +243,28 @@ export default function Pricing() {
           <div className="pointer-events-none absolute left-[16%] top-20 h-72 w-72 rounded-full bg-violet-500/14 blur-3xl" />
           <div className="pointer-events-none absolute right-[12%] top-20 h-72 w-72 rounded-full bg-cyan-400/14 blur-3xl" />
           <div className="pointer-events-none absolute inset-x-[30%] bottom-[-2.5rem] h-24 rounded-full bg-indigo-400/10 blur-3xl" />
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-6 max-w-[1120px] mx-auto items-stretch">
             {plans.map((plan, i) => (
-            <motion.div
-              key={plan.id}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08, duration: 0.18, ease: "easeOut" }}
-              className={`relative rounded-3xl p-8 overflow-hidden transform-gpu transition-all duration-150 ease-out hover:scale-[1.02] hover:-translate-y-0.5 ${
-                plan.id === "pro"
-                  ? "border border-violet-300/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.16),rgba(10,10,16,0.72))] shadow-[0_20px_50px_rgba(139,92,246,0.22)]"
-                  : plan.id === "team"
-                  ? "border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(56,189,248,0.1),rgba(10,10,16,0.72))] shadow-[0_18px_44px_rgba(6,182,212,0.1)]"
-                  : "border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] opacity-[0.98] shadow-[0_16px_38px_rgba(0,0,0,0.34)]"
-              }`}
-            >
+              <motion.div
+                key={plan.id}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08, duration: 0.18, ease: "easeOut" }}
+                className={`relative h-full rounded-3xl p-8 overflow-hidden transform-gpu transition-all duration-150 ease-out hover:scale-[1.02] hover:-translate-y-0.5 ${
+                  plan.id === "pro"
+                    ? "border border-violet-300/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.16),rgba(10,10,16,0.72))] shadow-[0_20px_50px_rgba(139,92,246,0.22)]"
+                    : plan.id === "team"
+                    ? "border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(56,189,248,0.1),rgba(10,10,16,0.72))] shadow-[0_18px_44px_rgba(6,182,212,0.1)]"
+                    : "border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] opacity-[0.98] shadow-[0_16px_38px_rgba(0,0,0,0.34)]"
+                }`}
+              >
               <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0)_42%)]" />
               {plan.id === "pro" ? (
                 <div className="pointer-events-none absolute -inset-x-10 -top-20 h-56 rounded-full bg-[radial-gradient(circle_at_center,rgba(139,92,246,0.26),transparent_70%)] blur-2xl" />
               ) : null}
 
               {plan.badges?.length ? (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 flex flex-wrap justify-center gap-2">
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex flex-wrap justify-center gap-2">
                   {plan.badges.map((badge) => (
                     <span
                       key={badge}
@@ -282,7 +282,11 @@ export default function Pricing() {
                 </div>
               ) : null}
 
-              <div className="relative z-[2] flex items-center gap-3 mb-4 mt-2">
+              <div
+                className={`relative z-[2] flex items-center gap-3 mb-4 ${
+                  plan.badges?.length ? "mt-10" : "mt-2"
+                }`}
+              >
                 <div
                   className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                     plan.id === "pro"
@@ -342,16 +346,18 @@ export default function Pricing() {
                 ) : null}
 
                 <div className="relative z-[2] flex items-baseline gap-1">
-                  <span
-                    className={`font-black tracking-tight ${
-                      plan.id === "starter"
-                        ? "text-[2.35rem] text-white/95"
-                        : "text-[2.6rem] text-white"
-                    }`}
-                  >
-                    ${formatPrice(plan.price)}
-                  </span>
-                  <span className="text-white/80">/month</span>
+                  {plan.id === "starter" ? (
+                    <span className="font-black tracking-tight text-[2.15rem] text-white">
+                      FREE
+                    </span>
+                  ) : (
+                    <>
+                      <span className="font-black tracking-tight text-[2.6rem] text-white">
+                        ${formatPrice(plan.price)}
+                      </span>
+                      <span className="text-white/80">/month</span>
+                    </>
+                  )}
                 </div>
                 {plan.saveText ? (
                   <p className="text-xs text-emerald-300 font-semibold mt-1">
@@ -403,8 +409,9 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-            </motion.div>
-          ))}
+              </motion.div>
+            ))}
+          </div>
         </div>
 
         <div className="text-center">
@@ -413,7 +420,6 @@ export default function Pricing() {
           </p>
           <p className="text-xs text-white/70">No hidden fees | Cancel anytime</p>
         </div>
-      </div>
       </div>
     </div>
   );
