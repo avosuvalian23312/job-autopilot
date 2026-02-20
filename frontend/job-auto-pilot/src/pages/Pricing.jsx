@@ -190,7 +190,7 @@ export default function Pricing() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(920px_500px_at_12%_-12%,rgba(139,92,246,0.2),transparent_60%),radial-gradient(780px_500px_at_95%_5%,rgba(6,182,212,0.14),transparent_62%),linear-gradient(180deg,hsl(222,28%,8%),hsl(228,27%,7%))]">
+    <div className="min-h-screen text-white bg-[radial-gradient(920px_500px_at_12%_-12%,rgba(139,92,246,0.2),transparent_60%),radial-gradient(780px_500px_at_95%_5%,rgba(6,182,212,0.14),transparent_62%),linear-gradient(180deg,hsl(222,28%,8%),hsl(228,27%,7%))]">
       <header className="border-b border-white/5 bg-[hsl(225,24%,8%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -202,26 +202,27 @@ export default function Pricing() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
+      <div className="max-w-6xl mx-auto px-4 py-16 md:py-24 relative">
+        <div className="pointer-events-none absolute left-1/2 top-20 h-60 w-[48rem] -translate-x-1/2 rounded-full bg-violet-500/12 blur-3xl" />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
           className="text-center mb-10"
         >
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight drop-shadow-[0_2px_16px_rgba(255,255,255,0.14)]">
             Choose your plan
           </h1>
-          <p className="text-lg text-white/55 mb-2">
+          <p className="text-lg text-white/85 mb-2">
             Secure checkout via Stripe.
           </p>
-          <p className="text-sm text-white/40 mb-6">
+          <p className="text-sm text-white/70 mb-6">
             Credits are granted from your active subscription plan.
           </p>
-          <div className="mb-4 inline-flex items-center rounded-full border border-violet-300/25 bg-violet-500/10 px-4 py-1.5 text-sm text-violet-100/95">
+          <div className="mb-4 inline-flex items-center rounded-full border border-violet-300/35 bg-violet-500/14 px-4 py-1.5 text-sm text-violet-100">
             Trusted by 2,000+ job seekers
           </div>
-          <p className="text-xs text-white/45">No hidden fees • Cancel anytime</p>
+          <p className="text-xs text-white/70">No hidden fees | Cancel anytime</p>
 
           {forceMode ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
@@ -236,10 +237,14 @@ export default function Pricing() {
           ) : null}
         </motion.div>
 
-        <div className="mx-auto mb-8 h-px max-w-5xl bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+        <div className="mx-auto mb-8 h-px max-w-5xl bg-gradient-to-r from-transparent via-white/25 to-transparent" />
 
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {plans.map((plan, i) => (
+        <div className="relative mb-12">
+          <div className="pointer-events-none absolute left-[16%] top-20 h-72 w-72 rounded-full bg-violet-500/14 blur-3xl" />
+          <div className="pointer-events-none absolute right-[12%] top-20 h-72 w-72 rounded-full bg-cyan-400/14 blur-3xl" />
+          <div className="pointer-events-none absolute inset-x-[30%] bottom-[-2.5rem] h-24 rounded-full bg-indigo-400/10 blur-3xl" />
+          <div className="grid md:grid-cols-3 gap-6">
+            {plans.map((plan, i) => (
             <motion.div
               key={plan.id}
               initial={{ opacity: 0, y: 14 }}
@@ -250,9 +255,10 @@ export default function Pricing() {
                   ? "border border-violet-300/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.16),rgba(10,10,16,0.72))] shadow-[0_20px_50px_rgba(139,92,246,0.22)]"
                   : plan.id === "team"
                   ? "border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(56,189,248,0.1),rgba(10,10,16,0.72))] shadow-[0_18px_44px_rgba(6,182,212,0.1)]"
-                  : "border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] opacity-[0.95] shadow-[0_16px_38px_rgba(0,0,0,0.34)]"
+                  : "border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] opacity-[0.98] shadow-[0_16px_38px_rgba(0,0,0,0.34)]"
               }`}
             >
+              <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0)_42%)]" />
               {plan.id === "pro" ? (
                 <div className="pointer-events-none absolute -inset-x-10 -top-20 h-56 rounded-full bg-[radial-gradient(circle_at_center,rgba(139,92,246,0.26),transparent_70%)] blur-2xl" />
               ) : null}
@@ -276,7 +282,7 @@ export default function Pricing() {
                 </div>
               ) : null}
 
-              <div className="flex items-center gap-3 mb-4 mt-2">
+              <div className="relative z-[2] flex items-center gap-3 mb-4 mt-2">
                 <div
                   className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                     plan.id === "pro"
@@ -293,7 +299,7 @@ export default function Pricing() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center gap-1.5 text-xs text-white/45 cursor-help">
+                        <div className="flex items-center gap-1.5 text-xs text-white/75 cursor-help">
                           <span>{plan.credits} credits/month</span>
                           <HelpCircle className="w-3 h-3" />
                         </div>
@@ -306,11 +312,11 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <p className="text-sm text-white/50 mb-5">{plan.description}</p>
+              <p className="relative z-[2] text-sm text-white/75 mb-5">{plan.description}</p>
 
-              <div className="relative mb-4">
+              <div className="relative z-[2] mb-4">
                 {plan.limitedBadge ? (
-                  <div className="mb-1 inline-flex rounded-full border border-violet-300/35 bg-violet-500/18 px-2.5 py-0.5 text-[11px] font-semibold text-violet-100">
+                  <div className="mb-1 inline-flex rounded-full border border-violet-300/45 bg-violet-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-violet-100">
                     {plan.limitedBadge}
                   </div>
                 ) : null}
@@ -319,7 +325,7 @@ export default function Pricing() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.18 + i * 0.08, duration: 0.22, ease: "easeOut" }}
-                    className="text-lg text-white/35 line-through decoration-2 decoration-white/45"
+                    className="text-lg text-white/55 line-through decoration-2 decoration-white/60"
                   >
                     ${formatPrice(plan.originalPrice)}/month
                   </motion.p>
@@ -345,14 +351,14 @@ export default function Pricing() {
                   >
                     ${formatPrice(plan.price)}
                   </span>
-                  <span className="text-white/50">/month</span>
+                  <span className="text-white/80">/month</span>
                 </div>
                 {plan.saveText ? (
-                  <p className="text-xs text-emerald-300/95 font-semibold mt-1">
+                  <p className="text-xs text-emerald-300 font-semibold mt-1">
                     {plan.saveText}
                   </p>
                 ) : (
-                  <p className="text-xs text-white/40 font-medium mt-1">Entry plan</p>
+                  <p className="text-xs text-white/70 font-medium mt-1">Entry plan</p>
                 )}
               </div>
 
@@ -381,18 +387,18 @@ export default function Pricing() {
                   plan.cta
                 )}
               </Button>
-              <p className="text-center text-xs text-white/50 mb-1">Cancel anytime</p>
-              <p className="text-center text-[11px] text-white/35 mb-5">
-                Secure checkout via Stripe • Instant access
+              <p className="relative z-[2] text-center text-xs text-white/80 mb-1">Cancel anytime</p>
+              <p className="relative z-[2] text-center text-[11px] text-white/70 mb-5">
+                Secure checkout via Stripe | Instant access
               </p>
 
-              <ul className="space-y-3.5">
+              <ul className="relative z-[2] space-y-3.5">
                 {plan.features.map((f) => (
                   <li
                     key={f}
-                    className="flex items-start gap-3 text-sm text-white/60 text-left"
+                    className="flex items-start gap-3 text-sm text-white/85 text-left"
                   >
-                    <Check className="w-4 h-4 text-violet-300 shrink-0 mt-0.5" />
+                    <Check className="w-4 h-4 text-violet-200 shrink-0 mt-0.5" />
                     <span className="leading-relaxed">{f}</span>
                   </li>
                 ))}
@@ -405,9 +411,11 @@ export default function Pricing() {
           <p className="text-sm font-medium text-emerald-200/95 mb-1">
             30-day satisfaction guarantee
           </p>
-          <p className="text-xs text-white/45">No hidden fees • Cancel anytime</p>
+          <p className="text-xs text-white/70">No hidden fees | Cancel anytime</p>
         </div>
+      </div>
       </div>
     </div>
   );
 }
+
