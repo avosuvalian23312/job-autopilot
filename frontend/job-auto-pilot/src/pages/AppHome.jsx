@@ -190,6 +190,42 @@ export default function AppHome() {
     [credits, stats.interviews, stats.totalJobs, stats.totalResumes]
   );
 
+  const pipelineFocus = useMemo(() => {
+    if (stats.totalJobs === 0) {
+      return {
+        title: "Build your first packet",
+        detail: "Create one packet to unlock status tracking and automation workflows.",
+      };
+    }
+    if (stats.interviews === 0) {
+      return {
+        title: "Push to interview stage",
+        detail: "Use tailored bullets and cover letters to move at least one role to interview.",
+      };
+    }
+    if (stats.offers === 0) {
+      return {
+        title: "Convert interviews to offers",
+        detail: "Prioritize the most recent interview opportunities and tighten follow-ups.",
+      };
+    }
+    return {
+      title: "Maintain high pipeline velocity",
+      detail: "Keep applying while your active interviews progress toward final rounds.",
+    };
+  }, [stats.interviews, stats.offers, stats.totalJobs]);
+
+  const momentum = useMemo(() => {
+    const score = Math.min(
+      100,
+      Math.round(stats.totalJobs * 8 + stats.interviews * 18 + stats.offers * 24 + stats.totalResumes * 6)
+    );
+    return {
+      score,
+      label: score >= 70 ? "High" : score >= 40 ? "Building" : "Early",
+    };
+  }, [stats.interviews, stats.offers, stats.totalJobs, stats.totalResumes]);
+
   return (
     <div className="min-h-screen bg-[#060b14] text-white">
       <div className="pointer-events-none fixed inset-0 -z-0">
@@ -202,8 +238,9 @@ export default function AppHome() {
 
       <main className="relative z-10 min-h-[calc(100vh-64px)] w-full px-4 py-7 sm:px-6 lg:px-10 xl:px-14">
         <motion.section
-          initial={{ opacity: 0, y: 8 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="grid gap-4 xl:grid-cols-[1.65fr_1fr]"
         >
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[linear-gradient(130deg,rgba(14,24,40,0.96),rgba(8,12,24,0.84))] p-7 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-sm">
@@ -220,11 +257,11 @@ export default function AppHome() {
               command view.
             </p>
 
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => navigate(createPageUrl("NewJob"))}
-                className={`shine-loop-container relative isolate h-12 px-6 text-base font-bold text-slate-950 bg-gradient-to-r from-cyan-300 via-cyan-400 to-sky-300 ring-2 ring-cyan-100/55 shadow-[0_14px_36px_rgba(6,182,212,0.35)] hover:from-cyan-200 hover:via-cyan-300 hover:to-sky-200 ${interactiveButtonFx}`}
-              >
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={() => navigate(createPageUrl("NewJob"))}
+                  className={`apphome-primary-cta shine-loop-container relative isolate h-12 px-6 text-base font-bold text-slate-950 bg-gradient-to-r from-cyan-300 via-cyan-400 to-sky-300 ring-2 ring-cyan-100/55 shadow-[0_14px_36px_rgba(6,182,212,0.35)] hover:from-cyan-200 hover:via-cyan-300 hover:to-sky-200 ${interactiveButtonFx}`}
+                >
                 <span
                   aria-hidden
                   className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.35),rgba(255,255,255,0)_60%)]"
@@ -263,6 +300,40 @@ export default function AppHome() {
             <p className="mt-3 text-xs text-cyan-100/80">
               Start here: create a packet first, then track status in Applications.
             </p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/12 bg-white/[0.03] p-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-white/45">Pipeline</div>
+                <div className="mt-1 text-2xl font-semibold">{statValue(stats.totalJobs, loading)}</div>
+                <div className="mt-1 text-xs text-white/55">active opportunities</div>
+              </div>
+              <div className="rounded-xl border border-white/12 bg-white/[0.03] p-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-white/45">Interviews</div>
+                <div className="mt-1 text-2xl font-semibold">{statValue(stats.interviews, loading)}</div>
+                <div className="mt-1 text-xs text-white/55">roles in interview stage</div>
+              </div>
+              <div className="rounded-xl border border-white/12 bg-white/[0.03] p-3">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-white/45">Resumes</div>
+                <div className="mt-1 text-2xl font-semibold">{statValue(stats.totalResumes, loading)}</div>
+                <div className="mt-1 text-xs text-white/55">assets ready to deploy</div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-[linear-gradient(145deg,rgba(34,211,238,0.14),rgba(34,211,238,0.03))] p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-cyan-50">Execution Momentum</div>
+                <div className="inline-flex items-center rounded-full border border-cyan-200/30 px-2 py-0.5 text-xs text-cyan-100">
+                  {momentum.label}
+                </div>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-black/30">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300 transition-all duration-500"
+                  style={{ width: `${momentum.score}%` }}
+                />
+              </div>
+              <div className="mt-2 text-xs text-white/65">{pipelineFocus.title}: {pipelineFocus.detail}</div>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -272,6 +343,9 @@ export default function AppHome() {
               <div className="mt-1 text-xl font-semibold uppercase">{plan}</div>
               <div className="mt-5 text-sm text-white/55">Available credits</div>
               <div className="mt-1 text-4xl font-semibold">{statValue(credits, loading)}</div>
+              <div className="mt-3 rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs text-white/65">
+                Keep at least 20 credits to avoid blocking packet generation during peak usage.
+              </div>
               <Link
                 to={createPageUrl("Credits")}
                 className={`mt-5 inline-flex items-center gap-1 text-sm text-cyan-200 hover:text-cyan-100 ${interactiveLinkFx}`}
@@ -330,7 +404,12 @@ export default function AppHome() {
           </div>
         </motion.section>
 
-        <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        >
           <StatCard icon={Briefcase} label="Applications" value={statValue(stats.totalJobs, loading)} sub="All tracked applications" />
           <StatCard icon={FileText} label="Resumes" value={statValue(stats.totalResumes, loading)} sub="Resume assets in your library" />
           <StatCard icon={Target} label="Interviews" value={statValue(stats.interviews, loading)} sub={`${stats.offers} offers in pipeline`} />
@@ -341,9 +420,14 @@ export default function AppHome() {
             sub="5 credits per packet generation"
             featured
           />
-        </section>
+        </motion.section>
 
-        <section className="mt-4 grid gap-4 xl:grid-cols-[1.9fr_1fr]">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-4 grid gap-4 xl:grid-cols-[1.9fr_1fr]"
+        >
           <div className="rounded-3xl border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6 shadow-[0_12px_34px_rgba(0,0,0,0.26)]">
             <div className="mb-4 text-lg font-semibold">Pipeline Status</div>
             <div className="space-y-3">
@@ -413,7 +497,7 @@ export default function AppHome() {
               </Button>
             </div>
           </div>
-        </section>
+        </motion.section>
       </main>
     </div>
   );

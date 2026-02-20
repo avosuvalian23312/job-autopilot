@@ -427,3 +427,77 @@ input:focus, textarea:focus {
     transform: translateX(540%) rotate(24deg);
   }
 }
+
+.credits-pill {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.credits-pill-shine {
+  position: absolute;
+  top: -85%;
+  left: -90%;
+  width: 40%;
+  height: 280%;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.72),
+    rgba(255, 255, 255, 0)
+  );
+  filter: blur(3.5px);
+  opacity: 0.95;
+  animation: credits-pill-shine-loop 1.45s linear infinite;
+  z-index: 1;
+}
+
+.credits-pill-glow {
+  position: absolute;
+  inset: -25%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 70% 0%,
+    rgba(56, 189, 248, 0.18),
+    rgba(56, 189, 248, 0) 58%
+  );
+  z-index: 0;
+}
+
+@keyframes credits-pill-shine-loop {
+  0% {
+    transform: translateX(-220%) rotate(26deg);
+  }
+  100% {
+    transform: translateX(520%) rotate(26deg);
+  }
+}
+
+.apphome-primary-cta {
+  position: relative;
+}
+
+.apphome-primary-cta::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 0.9rem;
+  pointer-events: none;
+  border: 1px solid rgba(165, 243, 252, 0.45);
+  opacity: 0.6;
+  animation: apphome-cta-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes apphome-cta-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 0.9;
+  }
+}

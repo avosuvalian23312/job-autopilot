@@ -126,16 +126,14 @@ export default function AppNav({ currentPage, credits }) {
         <div className="flex items-center gap-3">
           <Link
             to={createPageUrl("Credits")}
-            className="shine-loop-container group relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-purple-300/30 bg-[linear-gradient(160deg,rgba(139,92,246,0.26),rgba(76,29,149,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_24px_rgba(88,28,135,0.22)] hover:border-purple-200/40 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_10px_28px_rgba(88,28,135,0.32)] transition-all cursor-pointer"
+            className="credits-pill group relative flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl border border-cyan-300/25 bg-[linear-gradient(150deg,rgba(19,34,61,0.95),rgba(54,30,94,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_26px_rgba(10,32,90,0.36)] hover:border-cyan-200/40 hover:-translate-y-0.5 transition-all cursor-pointer"
           >
             <span
               aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_36%,rgba(255,255,255,0)_72%)]"
+              className="pointer-events-none absolute inset-0 rounded-xl bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.09)_36%,rgba(255,255,255,0)_72%)]"
             />
-            <span
-              aria-hidden
-              className="shine-loop-overlay"
-            />
+            <span aria-hidden className="credits-pill-shine" />
+            <span aria-hidden className="credits-pill-glow" />
             <Coins className="relative z-10 w-4 h-4 text-purple-100" />
             <span className="relative z-10 text-sm font-semibold text-purple-100">
               {displayCredits}
