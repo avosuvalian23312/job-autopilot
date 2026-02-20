@@ -56,7 +56,8 @@ function renewsOnLabelFromPeriod(monthlyPeriod) {
   const year = Number(m[1]);
   const month = Number(m[2]);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return "-";
-  const renew = new Date(Date.UTC(year, month, 1));
+  // Use local date to avoid UTC timezone rollback (e.g. Mar 1 -> Feb 28 in US timezones).
+  const renew = new Date(year, month, 1);
   return renew.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
