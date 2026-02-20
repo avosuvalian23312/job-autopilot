@@ -18,12 +18,8 @@ import {
   Calendar,
   MapPin,
   Globe,
-  Tag,
   DollarSign,
-  Percent,
   Briefcase,
-  Clock,
-  ShieldCheck,
   X,
   ExternalLink,
 } from "lucide-react";
@@ -90,6 +86,37 @@ export default function Applications() {
 
 
   
+
+ const normalizeWebsite = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+
+    const hasScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw);
+    const candidate = raw.startsWith("//")
+      ? `https:${raw}`
+      : hasScheme
+      ? raw
+      : `https://${raw}`;
+
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const formatWebsiteLabel = (website) => {
+    if (!website) return null;
+    try {
+      const parsed = new URL(website);
+      const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname : "";
+      return `${parsed.hostname}${path}`;
+    } catch {
+      return website;
+    }
+  };
 
  const getSwaUserId = async () => {
     if (swaUserIdRef.current) return swaUserIdRef.current;
@@ -189,6 +216,10 @@ const normalizeWorkModel = (v) => {
   status = "generated";
 }
 
+  const website = normalizeWebsite(
+    job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null
+  );
+
   return {
     ...job,
     id,
@@ -197,7 +228,8 @@ const normalizeWorkModel = (v) => {
     created_date: created,
     status,
 
-    website: job?.website ?? job?.jobWebsite ?? job?.url ?? job?.link ?? null,
+    website,
+    websiteLabel: formatWebsiteLabel(website),
     location: job?.location ?? null,
     seniority:
       job?.seniority ??
@@ -306,7 +338,7 @@ workModel: normalizeWorkModel(
  const loadJobs = async () => {
   setIsLoading(true);
   try {
-    const userId = await getSwaUserId();
+    await getSwaUserId();
 
     
 
@@ -338,17 +370,6 @@ useEffect(() => {
   loadJobs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
-
-
-  const statusLabel = (s) => {
-    const v = String(s || "").toLowerCase();
-    if (v === "generated") return "Generated";
-    if (v === "applied") return "Applied";
-    if (v === "interview") return "Interview";
-    if (v === "offer") return "Offer";
-    if (v === "rejected") return "Rejected";
-    return v ? v[0].toUpperCase() + v.slice(1) : "Generated";
-  };
 
   const statusPill = (s) => {
     const v = String(s || "").toLowerCase();
@@ -406,21 +427,6 @@ useEffect(() => {
   if (max) return `Est. $${max} /yr`;
   return null;
 };
-
-  const renderConfidence = (job) => {
-    if (typeof job?.payConfidence !== "number") return null;
-    const c = job.payConfidence;
-    if (c >= 0.8) return "High confidence";
-    if (c >= 0.5) return "Medium confidence";
-    return "Low confidence";
-  };
-
-  const renderTopPay = (job) => {
-    if (typeof job?.payPercentile !== "number") return null;
-    const top = Math.round(100 - job.payPercentile);
-    return `Top ${top}% pay`;
-  };
-
   const formatDate = (d) => {
     try {
       if (!d) return null;
@@ -486,12 +492,8 @@ useEffect(() => {
 
   const pill =
     "px-3 py-1.5 rounded-full text-xs font-medium bg-white/[0.06] text-white/85 border border-white/10";
-  const pillBrand =
-    "px-3 py-1.5 rounded-full text-xs font-semibold bg-violet-500/15 text-violet-100 border border-violet-400/25";
   const pillGood =
     "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/14 text-emerald-100 border border-emerald-400/25";
-  const pillWarn =
-    "px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/14 text-amber-100 border border-amber-400/25";
 
   return (
   <div className={`min-h-screen ${pageBg} text-white`}>
@@ -673,43 +675,46 @@ useEffect(() => {
                 >
                   <div className="flex items-start justify-between gap-6">
                     {/* Left */}
-                    <button
-                      onClick={() => setSelected(app)}
-                      className="text-left flex-1 min-w-0 group"
-                    >
-                      <div className="text-white font-semibold text-lg leading-tight group-hover:text-white">
-                        {app.job_title}
-                      </div>
+                    <div className="flex-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => setSelected(app)}
+                        className="text-left w-full group"
+                      >
+                        <div className="text-white font-semibold text-lg leading-tight group-hover:text-white">
+                          {app.job_title}
+                        </div>
 
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/60">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4" />
-                          {app.company}
-                        </span>
-                        {dateStr && (
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/60">
                           <span className="inline-flex items-center gap-1.5">
-                            <Calendar className="w-4 h-4" />
-                            {dateStr}
+                            <Building2 className="w-4 h-4" />
+                            {app.company}
                           </span>
-                        )}
-                        {app.location && (
-                          <span className="inline-flex items-center gap-1.5">
-                            <MapPin className="w-4 h-4" />
-                            {app.location}
-                          </span>
-                        )}
-                        {app.website && (
-                          <span className="inline-flex items-center gap-1.5 truncate">
-                            <Globe className="w-4 h-4" />
-                            <span className="truncate max-w-[360px]">
-                              {app.website}
+                          {dateStr && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Calendar className="w-4 h-4" />
+                              {dateStr}
                             </span>
-                          </span>
-                        )}
-                      </div>
+                          )}
+                          {app.location && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="w-4 h-4" />
+                              {app.location}
+                            </span>
+                          )}
+                          {app.website && (
+                            <span className="inline-flex items-center gap-1.5 truncate">
+                              <Globe className="w-4 h-4" />
+                              <span className="truncate max-w-[360px]">
+                                {app.websiteLabel || app.website}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </button>
 
-                      {/* Pills row (ONLY: job type + pay) */}
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      {/* Pills row (ONLY: job type + pay + quick website link) */}
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         {jobType && (
                           <span
                             className={`${pill} inline-flex items-center gap-2`}
@@ -727,8 +732,24 @@ useEffect(() => {
                           <DollarSign className="w-3.5 h-3.5" />
                           {payPillText}
                         </span>
+
+                        {app.website && (
+                          <motion.a
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            href={app.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-sky-500/14 text-sky-100 border border-sky-400/25 hover:bg-sky-500/22 transition-colors"
+                            aria-label={`Open job website for ${app.company}`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Open website
+                          </motion.a>
+                        )}
                       </div>
-                    </button>
+                    </div>
 
                     {/* Right: Status dropdown (ONLY place status appears) */}
                     <div className="shrink-0">
@@ -911,7 +932,7 @@ useEffect(() => {
                       <div className="min-w-0">
                         <div className="text-xs text-white/50 mb-1">Job link</div>
                         <div className="text-sm text-white/85 truncate">
-                          {selected.website}
+                          {selected.websiteLabel || selected.website}
                         </div>
                       </div>
                       <motion.a
@@ -919,7 +940,7 @@ useEffect(() => {
                         whileTap={{ scale: 0.98 }}
                         href={selected.website}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-white/85 hover:bg-white/[0.10] hover:border-violet-400/25"
                       >
                         <ExternalLink className="w-4 h-4" />
