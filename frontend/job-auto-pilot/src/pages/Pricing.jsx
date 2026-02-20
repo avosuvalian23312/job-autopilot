@@ -13,65 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { pagesConfig } from "@/pages.config";
 import { onboarding } from "@/lib/onboarding";
-
-const plans = [
-  {
-    id: "free",
-    name: "FREE",
-    price: 0,
-    originalPrice: null,
-    saveText: null,
-    credits: 10,
-    description: "Perfect for trying Job Autopilot",
-    features: [
-      "10 credits per month",
-      "Resume generation",
-      "Cover letter generation",
-      "Basic support",
-    ],
-    popular: false,
-    badges: [],
-    cta: "Start Free",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 14.99,
-    originalPrice: 24.99,
-    saveText: "Save 40%",
-    credits: 150,
-    description: "Best for active job hunters",
-    features: [
-      "150 credits per month",
-      "Everything in Free",
-      "Priority generation",
-      "Priority support",
-    ],
-    popular: true,
-    badges: ["Most Popular"],
-    limitedBadge: "Limited Time Offer",
-    cta: "Start Pro",
-  },
-  {
-    id: "team",
-    name: "Team",
-    price: 19.99,
-    originalPrice: 34.99,
-    saveText: "Save 43%",
-    credits: 300,
-    description: "Higher monthly limit for heavy usage",
-    features: [
-      "300 credits per month",
-      "Everything in Pro",
-      "Team sharing",
-      "Higher monthly limit",
-    ],
-    popular: false,
-    badges: ["Best Value"],
-    limitedBadge: null,
-    cta: "Start Team",
-  },
-];
+import { pricingPlans } from "@/lib/pricingPlans";
 
 function getSetupPath() {
   const Pages = pagesConfig?.Pages || {};
@@ -263,7 +205,7 @@ export default function Pricing() {
           <div className="pointer-events-none absolute right-[12%] top-20 h-72 w-72 rounded-full bg-cyan-400/14 blur-3xl" />
           <div className="pointer-events-none absolute inset-x-[30%] bottom-[-2.5rem] h-24 rounded-full bg-indigo-400/10 blur-3xl" />
           <div className="grid md:grid-cols-3 gap-6 max-w-[1120px] mx-auto items-stretch">
-            {plans.map((plan, i) => (
+            {pricingPlans.map((plan, i) => (
               <motion.div
                 key={plan.id}
                 initial={{ opacity: 0, y: 14 }}
