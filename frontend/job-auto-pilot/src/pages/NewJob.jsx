@@ -9,12 +9,12 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import {
   Rocket,
   Loader2,
   Sparkles,
+  ArrowRight,
   Check,
   Edit2,
   Globe,
@@ -46,12 +46,15 @@ export default function NewJob() {
   const PACKET_CREDIT_COST = 5;
   const navigate = useNavigate();
   const [selectedResume, setSelectedResume] = useState("");
+  const [resumeSelectOpen, setResumeSelectOpen] = useState(false);
   const [aiMode, setAiMode] = useState("standard");
   const [jobDescription, setJobDescription] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [extractedData, setExtractedData] = useState(null);
   const [editMode, setEditMode] = useState(false);
+  const [attemptedAnalyze, setAttemptedAnalyze] = useState(false);
+  const [creditPulse, setCreditPulse] = useState(false);
 
   const [resumes, setResumes] = useState([]);
   const [resumesLoading, setResumesLoading] = useState(true);
@@ -73,6 +76,9 @@ export default function NewJob() {
 
   // ✅ hard lock to prevent double-click / double-run
   const generatingRef = useRef(false);
+  const resumeFieldRef = useRef(null);
+  const jdFieldRef = useRef(null);
+  const jdTextareaRef = useRef(null);
 
   // ---------------------------
   // Helpers
@@ -898,16 +904,73 @@ export default function NewJob() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!jdTextareaRef.current) return;
+    const el = jdTextareaRef.current;
+    el.style.height = "auto";
+    const maxHeight = window.innerWidth >= 1280 ? 520 : 460;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+  }, [jobDescription, showConfirm]);
+
+  const focusFirstMissingField = () => {
+    if (!selectedResume) {
+      resumeFieldRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      setResumeSelectOpen(true);
+      return;
+    }
+
+    if (!jobDescription.trim()) {
+      jdFieldRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      window.setTimeout(() => jdTextareaRef.current?.focus(), 120);
+    }
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const clip = await navigator.clipboard.readText();
+      const value = String(clip || "").trim();
+      if (!value) {
+        toast.error("Clipboard is empty.");
+        return;
+      }
+
+      setJobDescription((prev) => {
+        const current = String(prev || "").trim();
+        return current ? `${current}\n\n${value}` : value;
+      });
+      toast.success("Pasted from clipboard.");
+      window.setTimeout(() => jdTextareaRef.current?.focus(), 80);
+    } catch {
+      toast.error("Clipboard blocked. Use Ctrl/Cmd + V in the text box.");
+      jdTextareaRef.current?.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!attemptedAnalyze) return;
+    if (selectedResume && jobDescription.trim()) setAttemptedAnalyze(false);
+  }, [attemptedAnalyze, selectedResume, jobDescription]);
+
   // ---------------------------
   // Analyze + Generate
   // ---------------------------
   const handleAnalyze = async () => {
+    setAttemptedAnalyze(true);
+
     if (!selectedResume) {
       toast.error("Please select a resume");
+      focusFirstMissingField();
       return;
     }
     if (!jobDescription.trim()) {
       toast.error("Please enter a job description");
+      focusFirstMissingField();
       return;
     }
     if (
@@ -1071,6 +1134,7 @@ export default function NewJob() {
 
       setExtractedData(nextExtracted);
       setShowConfirm(true);
+      setAttemptedAnalyze(false);
 
       fetchPreviews({
         jobTitle: nextExtracted.jobTitle,
@@ -1103,6 +1167,7 @@ export default function NewJob() {
 
       setExtractedData(nextExtracted);
       setShowConfirm(true);
+      setAttemptedAnalyze(false);
 
       fetchPreviews({
         jobTitle: nextExtracted.jobTitle,
@@ -1154,6 +1219,8 @@ export default function NewJob() {
       // ✅ show loading phase immediately on click
       setGeneratePhase("Starting packet generation…");
       setIsGeneratingPacket(true);
+      setCreditPulse(true);
+      window.setTimeout(() => setCreditPulse(false), 720);
 
       // ✅ force paint so user sees overlay + button spinner instantly
       await yieldToPaint();
@@ -1292,8 +1359,20 @@ export default function NewJob() {
   };
 
   const hasResumes = useMemo(() => resumes.length > 0, [resumes]);
+  const selectedResumeData = useMemo(
+    () =>
+      resumes.find((resume) => String(resume?.id || "") === String(selectedResume)),
+    [resumes, selectedResume]
+  );
+  const selectedResumeName = String(selectedResumeData?.name || "");
   const jdLength = jobDescription.trim().length;
-  const canAnalyze = !!selectedResume && jdLength > 0 && !isAnalyzing;
+  const hasResumeSelected = !!selectedResume;
+  const hasJobDescription = jdLength > 0;
+  const meetsRecommendedJd = jdLength >= 100;
+  const isInputReady = hasResumeSelected && hasJobDescription;
+  const canAnalyze = isInputReady && !isAnalyzing;
+  const missingResume = attemptedAnalyze && !hasResumeSelected;
+  const missingJobDescription = attemptedAnalyze && !hasJobDescription;
 
   // ---------------------------
   // Job Autopilot Brand System
@@ -1311,10 +1390,12 @@ export default function NewJob() {
     "bg-gradient-to-r from-cyan-400/70 via-violet-400/55 to-indigo-400/70";
 
   const hoverLift =
-    "transition-all duration-200 will-change-transform hover:-translate-y-[1px] hover:shadow-[0_14px_34px_rgba(0,0,0,0.4)]";
+    "transition-all duration-150 ease-out will-change-transform hover:-translate-y-[1px] hover:shadow-[0_14px_34px_rgba(0,0,0,0.4)]";
   const pressFx = "active:scale-[0.99]";
   const glowHover =
-    "transition-shadow duration-200 hover:shadow-[0_0_0_1px_rgba(167,139,250,0.2),0_16px_48px_rgba(0,0,0,0.5),0_0_28px_rgba(34,211,238,0.08)]";
+    "transition-shadow duration-150 ease-out hover:shadow-[0_0_0_1px_rgba(167,139,250,0.2),0_16px_48px_rgba(0,0,0,0.5),0_0_28px_rgba(34,211,238,0.08)]";
+  const focusRing =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0";
 
   const pill =
     "px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] text-white/85 border border-white/10";
@@ -2220,26 +2301,63 @@ export default function NewJob() {
           >
             <div className="max-w-[1320px] mx-auto">
               <div className="mb-4 text-center">
-                <h1 className="text-3xl md:text-4xl font-bold mb-1 text-white tracking-tight">
-                  Create a New Job Packet
-                </h1>
-                <p className="text-sm md:text-base text-white/70">
-                  Fast extraction, clean confirmation, and production-ready packet output.
+                <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-cyan-200/75">
+                  Step 1 of 2
                 </p>
-                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/70">
-                  <span className={selectedResume ? "text-emerald-200" : "text-white/50"}>
-                    Resume {selectedResume ? "ready" : "required"}
+                <h1 className="mt-1 text-[2.15rem] md:text-5xl font-black leading-tight tracking-[-0.022em] text-white">
+                  Create a{" "}
+                  <span className="bg-gradient-to-r from-violet-100 via-cyan-100 to-emerald-100 bg-clip-text text-transparent">
+                    New Job Packet
                   </span>
-                  <span className="text-white/35">|</span>
-                  <span className={jdLength > 0 ? "text-emerald-200" : "text-white/50"}>
-                    Job description {jdLength > 0 ? "ready" : "required"}
+                </h1>
+                <p className="mt-1 text-sm md:text-base text-white/58">
+                  Fast extraction, clean confirmation, and premium packet output.
+                </p>
+
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/75">
+                  <span
+                    className={[
+                      "inline-flex items-center gap-1.5",
+                      hasResumeSelected ? "text-emerald-200" : "text-white/45",
+                    ].join(" ")}
+                  >
+                    {hasResumeSelected ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/45" />
+                    )}
+                    Resume
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-white/40" />
+                  <span
+                    className={[
+                      "inline-flex items-center gap-1.5",
+                      hasJobDescription ? "text-emerald-200" : "text-white/45",
+                    ].join(" ")}
+                  >
+                    {hasJobDescription ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/45" />
+                    )}
+                    Job Description
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-white/40" />
+                  <span
+                    className={[
+                      "inline-flex items-center gap-1.5",
+                      isInputReady ? "text-violet-100" : "text-white/45",
+                    ].join(" ")}
+                  >
+                    <Rocket className="w-3.5 h-3.5" />
+                    Generate
                   </span>
                 </div>
               </div>
 
               <div
                 className={[
-                  "rounded-2xl p-4 md:p-5 max-h-[calc(100vh-10.5rem)]",
+                  "relative rounded-2xl p-4 md:p-5 max-h-[calc(100vh-10.4rem)]",
                   "overflow-auto lg:overflow-hidden",
                   surface,
                   edge,
@@ -2247,18 +2365,26 @@ export default function NewJob() {
                   ambient,
                 ].join(" ")}
               >
-                <div className="grid grid-cols-1 xl:grid-cols-[1.04fr_1.26fr] gap-4 xl:h-full">
+                <div className="pointer-events-none absolute inset-x-[10%] top-0 h-20 rounded-full bg-violet-400/10 blur-3xl" />
+                <div className="relative z-10 grid grid-cols-1 xl:grid-cols-[1.06fr_0.94fr] gap-4 xl:h-full">
                   <div className="space-y-4 min-h-0">
                     <div
+                      ref={resumeFieldRef}
                       className={[
-                        "rounded-2xl p-4 bg-black/25",
+                        "rounded-2xl p-4 bg-slate-950/35",
                         edge,
-                        "ring-1 ring-violet-400/12",
+                        hasResumeSelected
+                          ? "ring-1 ring-emerald-400/20 border-emerald-300/25"
+                          : "ring-1 ring-violet-400/12",
+                        missingResume
+                          ? "border-rose-400/45 ring-rose-300/25"
+                          : "",
                         glowHover,
+                        "transition-all duration-150 hover:scale-[1.01]",
                       ].join(" ")}
                     >
-                      <label className="block text-base font-semibold mb-2 text-white">
-                        Resume <span className="text-rose-300">*</span>
+                      <label className="block text-[1rem] font-bold mb-2 text-white">
+                        Resume <span className="text-rose-400 font-extrabold">*</span>
                       </label>
 
                       {resumesLoading ? (
@@ -2266,16 +2392,47 @@ export default function NewJob() {
                           <p className="mb-0 text-sm text-white/60">Loading resumes...</p>
                         </div>
                       ) : hasResumes ? (
-                        <Select value={selectedResume} onValueChange={setSelectedResume}>
+                        <Select
+                          open={resumeSelectOpen}
+                          onOpenChange={setResumeSelectOpen}
+                          value={selectedResume}
+                          onValueChange={setSelectedResume}
+                        >
                           <SelectTrigger
                             className={[
-                              "h-12 text-base rounded-xl",
-                              "bg-black/30 border-white/10 text-white",
-                              "ring-1 ring-white/5",
-                              "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                              "h-[3.2rem] rounded-xl px-3",
+                              "bg-[linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))]",
+                              hasResumeSelected
+                                ? "border-emerald-300/30 ring-1 ring-emerald-300/20"
+                                : "border-white/10 ring-1 ring-white/5",
+                              "transition-all duration-150 hover:scale-[1.01]",
+                              "hover:border-cyan-300/30 hover:shadow-[0_14px_34px_rgba(0,0,0,0.4)]",
+                              focusRing,
                             ].join(" ")}
                           >
-                            <SelectValue placeholder="Select resume" />
+                            <div className="flex w-full items-center justify-between gap-3 min-w-0">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="h-8 w-8 shrink-0 rounded-lg border border-cyan-300/25 bg-cyan-500/10 flex items-center justify-center">
+                                  <FileText className="h-4 w-4 text-cyan-100" />
+                                </div>
+                                <div className="min-w-0 text-left">
+                                  <p
+                                    title={selectedResumeName || "Select resume"}
+                                    className="truncate text-sm font-semibold text-white"
+                                  >
+                                    {selectedResumeName || "Select resume"}
+                                  </p>
+                                  <p className="text-[11px] text-white/55">
+                                    {selectedResumeName
+                                      ? "Primary resume selected"
+                                      : "Choose a source resume"}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-lg border border-white/15 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/80">
+                                Change
+                              </span>
+                            </div>
                           </SelectTrigger>
 
                           <SelectContent className="bg-black border border-white/10 text-white shadow-2xl">
@@ -2311,6 +2468,7 @@ export default function NewJob() {
                             className={[
                               "rounded-xl h-10",
                               "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
+                              focusRing,
                               hoverLift,
                               pressFx,
                             ].join(" ")}
@@ -2319,69 +2477,122 @@ export default function NewJob() {
                           </Button>
                         </div>
                       )}
+
+                      {hasResumes && (
+                        <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+                          <span
+                            className={[
+                              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1",
+                              hasResumeSelected
+                                ? "border-emerald-300/30 bg-emerald-500/10 text-emerald-100"
+                                : "border-white/10 bg-white/[0.03] text-white/60",
+                            ].join(" ")}
+                          >
+                            {hasResumeSelected ? (
+                              <>
+                                Resume uploaded <Check className="h-3.5 w-3.5" />
+                              </>
+                            ) : (
+                              "Select a resume to continue"
+                            )}
+                          </span>
+                          <span className="text-white/45">Enter to open selector</span>
+                        </div>
+                      )}
+                      {missingResume && (
+                        <p className="mt-2 text-xs text-rose-200">
+                          Resume is required before generation.
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-base font-semibold mb-1 text-white">
-                        AI Mode <span className="text-rose-300">*</span>
+                      <label className="block text-[1rem] font-bold mb-1 text-white">
+                        AI Mode <span className="text-rose-400 font-extrabold">*</span>
                       </label>
-                      <p className="text-xs mb-3 text-white/65">
+                      <p className="text-xs mb-3 text-white/62">
                         Choose Standard for safety or Elite for aggressive optimization.
                       </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3">
                         <button
+                          type="button"
                           onClick={() => setAiMode("standard")}
                           className={[
-                            "p-4 rounded-xl border text-left relative transition-all",
+                            "p-4 rounded-xl border text-left relative transition-all duration-150 ease-out",
                             hoverLift,
                             pressFx,
                             glowHover,
                             aiMode === "standard"
-                              ? "border-emerald-400/35 bg-emerald-500/10 ring-1 ring-emerald-400/20"
-                              : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                              ? "newjob-selected-glow border-emerald-400/40 bg-emerald-500/10 ring-1 ring-emerald-300/30"
+                              : "border-white/10 bg-slate-950/35 ring-1 ring-white/5 hover:border-white/20",
                           ].join(" ")}
                         >
-                          <div className="flex items-center gap-2.5 mb-1.5">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
-                              <Check className="w-4 h-4 text-emerald-100" />
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-emerald-500/12 border border-emerald-400/20 flex items-center justify-center">
+                                <Check className="w-5 h-5 text-emerald-100" />
+                              </div>
+                              <div>
+                                <span className="font-bold text-xl text-white">Standard</span>
+                                <p className="text-xs text-emerald-100/85">
+                                  Safe rewrite for ATS and recruiter clarity
+                                </p>
+                              </div>
                             </div>
-                            <span className="font-bold text-lg text-white">Standard</span>
+                            {aiMode === "standard" && (
+                              <span className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
+                                Selected
+                              </span>
+                            )}
                           </div>
-                          <p className="text-xs text-emerald-100/90 mb-2 font-semibold">
-                            Recommended | Safe and ATS-friendly
+                          <p className="text-xs text-emerald-100/90 mb-2 font-semibold tracking-wide uppercase">
+                            Recommended
                           </p>
-                          <ul className="text-sm leading-relaxed space-y-0.5 text-white/75">
+                          <ul className="text-sm leading-relaxed space-y-1.5 text-white/78">
                             <li>- Improves clarity and keyword match</li>
-                            <li>- Rewrites bullets without inventing background</li>
+                            <li>- Rewrites bullets from your real experience only</li>
                           </ul>
                         </button>
 
                         <button
+                          type="button"
                           onClick={() => setAiMode("elite")}
                           className={[
-                            "p-4 rounded-xl border text-left relative transition-all",
+                            "p-4 rounded-xl border text-left relative transition-all duration-150 ease-out",
                             hoverLift,
                             pressFx,
                             glowHover,
                             aiMode === "elite"
-                              ? "border-amber-400/35 bg-amber-500/10 ring-1 ring-amber-400/20"
-                              : "border-white/10 bg-black/25 ring-1 ring-white/5 hover:border-white/15",
+                              ? "newjob-selected-glow border-amber-400/40 bg-amber-500/10 ring-1 ring-amber-300/25"
+                              : "border-white/10 bg-slate-950/35 ring-1 ring-white/5 hover:border-white/20",
                           ].join(" ")}
                         >
-                          <div className="flex items-center gap-2.5 mb-1.5">
-                            <div className="w-8 h-8 rounded-lg bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
-                              <Sparkles className="w-4 h-4 text-amber-100" />
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-amber-500/12 border border-amber-400/20 flex items-center justify-center">
+                                <Sparkles className="w-5 h-5 text-amber-100" />
+                              </div>
+                              <div>
+                                <span className="font-bold text-xl text-white">Elite</span>
+                                <p className="text-xs text-amber-100/85">
+                                  Aggressive optimization for competitive roles
+                                </p>
+                              </div>
                             </div>
-                            <span className="font-bold text-lg text-white">Elite</span>
+                            {aiMode === "elite" && (
+                              <span className="rounded-full border border-amber-300/35 bg-amber-500/16 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                                Selected
+                              </span>
+                            )}
                           </div>
-                          <p className="text-xs text-amber-100/90 mb-2 font-semibold">
-                            Advanced | Use with discretion
+                          <p className="text-xs text-amber-100/90 mb-2 font-semibold tracking-wide uppercase">
+                            Advanced
                           </p>
-                          <ul className="text-sm leading-relaxed space-y-0.5 text-white/75">
+                          <ul className="text-sm leading-relaxed space-y-1.5 text-white/78">
                             <li>- Can infer missing responsibilities from context</li>
-                            <li className="font-semibold text-amber-100/95">
-                              - Higher verification risk with employers
+                            <li className="rounded-lg border border-amber-300/25 bg-amber-500/12 px-2 py-1 font-semibold text-amber-100/95">
+                              Higher verification risk with employers
                             </li>
                           </ul>
                         </button>
@@ -2391,19 +2602,24 @@ export default function NewJob() {
                     <div
                       className={[
                         "rounded-xl p-4",
-                        "bg-[linear-gradient(180deg,rgba(167,139,250,0.12),rgba(34,211,238,0.06))]",
-                        "border border-white/10 ring-1 ring-violet-400/15",
+                        "bg-[linear-gradient(180deg,rgba(167,139,250,0.13),rgba(34,211,238,0.08))]",
+                        "border border-white/10 ring-1 ring-violet-400/20",
                       ].join(" ")}
                     >
                       <Button
                         onClick={handleAnalyze}
-                        disabled={!canAnalyze}
+                        disabled={isAnalyzing}
+                        aria-disabled={!isInputReady || isAnalyzing}
                         className={[
-                          "w-full h-12 rounded-xl text-lg font-bold",
-                          "bg-gradient-to-r from-violet-500/90 via-indigo-500/80 to-cyan-500/60",
-                          "hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500/80",
-                          "disabled:opacity-40 disabled:cursor-not-allowed",
+                          "w-full h-12 rounded-xl text-lg font-bold bg-[length:200%_100%] bg-[position:0%_50%]",
+                          "bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-400",
+                          "transition-[background-position,transform,box-shadow,opacity] duration-150 ease-out",
+                          "hover:bg-[position:100%_50%]",
                           "shadow-[0_18px_60px_rgba(0,0,0,0.55)]",
+                          !isInputReady && !isAnalyzing
+                            ? "opacity-55 saturate-75 cursor-not-allowed"
+                            : "",
+                          focusRing,
                           hoverLift,
                           pressFx,
                         ].join(" ")}
@@ -2411,8 +2627,10 @@ export default function NewJob() {
                         {isAnalyzing ? (
                           <>
                             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                            Scanning...
+                            Generating...
                           </>
+                        ) : !isInputReady ? (
+                          "Complete Required Fields"
                         ) : (
                           "Generate Packet"
                         )}
@@ -2424,7 +2642,14 @@ export default function NewJob() {
                           <button
                             type="button"
                             onClick={() => navigate(createPageUrl("Credits"))}
-                            className="shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))] px-2 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)] transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300/60"
+                            className={[
+                              "shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30",
+                              "bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))]",
+                              "px-2.5 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)]",
+                              "transition-transform duration-150 hover:scale-105",
+                              creditPulse ? "newjob-credit-use-pulse" : "",
+                              focusRing,
+                            ].join(" ")}
                           >
                             <span
                               aria-hidden
@@ -2437,53 +2662,99 @@ export default function NewJob() {
                             </span>
                           </button>
                           <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
-                            Open Credits page
+                            Each generation uses {PACKET_CREDIT_COST} credits
                           </span>
                         </span>
                       </p>
+                      <p className="mt-1 text-center text-xs text-emerald-100/85">
+                        No fabricated experience. ATS-safe output.
+                      </p>
                       {!canAnalyze && (
                         <p className="mt-2 text-center text-xs text-amber-100/85">
-                          Select a resume and add a job description to continue.
+                          Complete required fields to continue.
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div
+                    ref={jdFieldRef}
                     className={[
-                      "rounded-2xl p-4 md:p-5 bg-black/25 min-h-0 flex flex-col",
+                      "rounded-2xl p-4 md:p-5 bg-slate-950/35 min-h-0 flex flex-col",
                       edge,
-                      "ring-1 ring-violet-400/12",
+                      missingJobDescription
+                        ? "ring-1 ring-rose-300/30 border-rose-400/45"
+                        : "ring-1 ring-violet-400/12",
                     ].join(" ")}
                   >
-                    <label className="block text-base font-semibold mb-2 text-white">
-                      Job Description <span className="text-rose-300">*</span>
-                    </label>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <label className="block text-[1rem] font-bold text-white">
+                        Job Description{" "}
+                        <span className="text-rose-400 font-extrabold">*</span>
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handlePasteFromClipboard}
+                        className={[
+                          "h-8 rounded-lg border-white/20 bg-white/[0.03] px-3 text-xs text-white/80 hover:bg-white/[0.06] hover:text-white",
+                          hoverLift,
+                          pressFx,
+                          focusRing,
+                        ].join(" ")}
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />
+                        Paste from LinkedIn
+                      </Button>
+                    </div>
+                    <p className="mb-2 text-xs text-white/58">
+                      Minimum 100 characters recommended.
+                    </p>
                     <Textarea
+                      ref={jdTextareaRef}
                       value={jobDescription}
                       onChange={(e) => setJobDescription(e.target.value)}
-                      placeholder="Paste the full job post here. We will extract title, company, location, compensation, and requirements."
+                      placeholder={
+                        "Paste full job post here.\n- Responsibilities: ...\n- Requirements: ...\n- Compensation: ..."
+                      }
                       className={[
-                        "flex-1 min-h-[280px] xl:min-h-0 resize-none text-sm md:text-base rounded-xl",
-                        "bg-black/30 border-white/10 text-white",
+                        "newjob-jd-scroll flex-1 min-h-[320px] resize-none text-sm md:text-base rounded-xl overflow-y-auto",
+                        "bg-black/25 border-white/10 text-white",
                         "leading-relaxed",
                         "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                        "focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0",
+                        "transition-all duration-150",
+                        missingJobDescription
+                          ? "border-rose-400/45 ring-1 ring-rose-300/25"
+                          : "",
+                        focusRing,
                       ].join(" ")}
                     />
                     <div className="mt-2 flex items-center justify-between gap-3 text-xs text-white/55">
-                      <span>Tip: Include responsibilities, requirements, and compensation if listed.</span>
+                      <span>
+                        Tip: include responsibilities, requirements, and compensation.
+                        <span className="ml-2 text-white/40">Ctrl/Cmd + V supported</span>
+                      </span>
                       <span
                         className={[
                           "rounded-full border px-2 py-0.5",
-                          jdLength < 80
-                            ? "border-amber-300/30 bg-amber-500/10 text-amber-100"
-                            : "border-emerald-300/25 bg-emerald-500/10 text-emerald-100",
+                          meetsRecommendedJd
+                            ? "border-emerald-300/25 bg-emerald-500/10 text-emerald-100"
+                            : "border-amber-300/30 bg-amber-500/10 text-amber-100",
                         ].join(" ")}
                       >
                         {jdLength} chars
                       </span>
                     </div>
+                    {!meetsRecommendedJd && hasJobDescription && (
+                      <p className="mt-2 text-xs text-amber-100/85">
+                        Add more context for better extraction quality.
+                      </p>
+                    )}
+                    {missingJobDescription && (
+                      <p className="mt-2 text-xs text-rose-200">
+                        Job description is required before generation.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
