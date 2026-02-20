@@ -215,7 +215,7 @@ export default function Pricing() {
           <p className="text-lg text-white/55 mb-2">
             Secure checkout via Stripe.
           </p>
-          <p className="text-sm text-white/38 mb-6">
+          <p className="text-sm text-white/40 mb-6">
             Credits are granted from your active subscription plan.
           </p>
           <div className="mb-4 inline-flex items-center rounded-full border border-violet-300/25 bg-violet-500/10 px-4 py-1.5 text-sm text-violet-100/95">
@@ -293,7 +293,7 @@ export default function Pricing() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center gap-1.5 text-xs text-white/46 cursor-help">
+                        <div className="flex items-center gap-1.5 text-xs text-white/45 cursor-help">
                           <span>{plan.credits} credits/month</span>
                           <HelpCircle className="w-3 h-3" />
                         </div>
@@ -306,7 +306,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <p className="text-sm text-white/48 mb-5">{plan.description}</p>
+              <p className="text-sm text-white/50 mb-5">{plan.description}</p>
 
               <div className="relative mb-4">
                 {plan.limitedBadge ? (
@@ -381,8 +381,8 @@ export default function Pricing() {
                   plan.cta
                 )}
               </Button>
-              <p className="text-center text-xs text-white/48 mb-1">Cancel anytime</p>
-              <p className="text-center text-[11px] text-white/36 mb-5">
+              <p className="text-center text-xs text-white/50 mb-1">Cancel anytime</p>
+              <p className="text-center text-[11px] text-white/35 mb-5">
                 Secure checkout via Stripe • Instant access
               </p>
 
@@ -390,7 +390,7 @@ export default function Pricing() {
                 {plan.features.map((f) => (
                   <li
                     key={f}
-                    className="flex items-start gap-3 text-sm text-white/62 text-left"
+                    className="flex items-start gap-3 text-sm text-white/60 text-left"
                   >
                     <Check className="w-4 h-4 text-violet-300 shrink-0 mt-0.5" />
                     <span className="leading-relaxed">{f}</span>
@@ -405,7 +405,7 @@ export default function Pricing() {
           <p className="text-sm font-medium text-emerald-200/95 mb-1">
             30-day satisfaction guarantee
           </p>
-          <p className="text-xs text-white/46">No hidden fees • Cancel anytime</p>
+          <p className="text-xs text-white/45">No hidden fees • Cancel anytime</p>
         </div>
       </div>
     </div>
