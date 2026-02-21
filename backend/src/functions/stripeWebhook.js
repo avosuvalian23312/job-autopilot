@@ -350,6 +350,25 @@ module.exports = async (request, context) => {
         });
       }
 
+      const subscriptionStatus = String(subscription?.status || "").toLowerCase();
+      if (["canceled", "incomplete_expired"].includes(subscriptionStatus)) {
+        await setPlan(userId, {
+          planId: "free",
+          status: "canceled",
+          stripeCustomerId: subscription.customer || null,
+          stripeSubscriptionId: subscription.id || null,
+        });
+        return json(200, {
+          ok: true,
+          ignored: true,
+          type: event.type,
+          reason: `subscription status ${subscriptionStatus}`,
+          userId,
+          subscriptionId: subscription.id || subId || null,
+          invoiceId: invoice.id || null,
+        });
+      }
+
       // Do NOT acknowledge success if credits cannot be resolved.
       if (creditsPerMonth <= 0) {
         return json(500, {
