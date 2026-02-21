@@ -116,6 +116,11 @@ module.exports = async (request, context) => {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
       apiVersion: "2024-06-20",
     });
+    const stripeKeyMode = String(process.env.STRIPE_SECRET_KEY || "").startsWith("sk_live_")
+      ? "live"
+      : String(process.env.STRIPE_SECRET_KEY || "").startsWith("sk_test_")
+      ? "test"
+      : "unknown";
 
     const origin = getOrigin(request);
     if (!origin) {
@@ -131,7 +136,13 @@ module.exports = async (request, context) => {
 
     const normalizePath = (p) => (p.startsWith("/") ? p : `/${p}`);
 
-    context?.log?.("stripeCheckout", { planId, origin, hasEmail: !!email });
+    context?.log?.("stripeCheckout", {
+      planId,
+      priceId,
+      stripeKeyMode,
+      origin,
+      hasEmail: !!email,
+    });
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -156,7 +167,16 @@ module.exports = async (request, context) => {
       },
     });
 
-    return json(200, { ok: true, url: session.url, id: session.id });
+    return json(200, {
+      ok: true,
+      url: session.url,
+      id: session.id,
+      debug: {
+        planId,
+        priceId,
+        stripeKeyMode,
+      },
+    });
   } catch (e) {
     context?.log?.error?.("stripeCheckout failed", e);
     return json(500, { ok: false, error: e?.message || String(e) });
