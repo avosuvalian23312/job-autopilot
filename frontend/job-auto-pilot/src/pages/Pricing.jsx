@@ -15,6 +15,8 @@ import { pagesConfig } from "@/pages.config";
 import { onboarding } from "@/lib/onboarding";
 import { pricingPlans } from "@/lib/pricingPlans";
 
+const PENDING_STRIPE_SESSION_KEY = "jobautopilot_pending_stripe_session_id";
+
 function getSetupPath() {
   const Pages = pagesConfig?.Pages || {};
   const keys = Object.keys(Pages);
@@ -43,6 +45,32 @@ function getCurrentPath() {
     return p.startsWith("/") ? p : "/Pricing";
   } catch {
     return "/Pricing";
+  }
+}
+
+function readPendingStripeSessionId() {
+  try {
+    return String(window.sessionStorage.getItem(PENDING_STRIPE_SESSION_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writePendingStripeSessionId(sessionId) {
+  try {
+    const val = String(sessionId || "").trim();
+    if (!val) return;
+    window.sessionStorage.setItem(PENDING_STRIPE_SESSION_KEY, val);
+  } catch {
+    // no-op
+  }
+}
+
+function clearPendingStripeSessionId() {
+  try {
+    window.sessionStorage.removeItem(PENDING_STRIPE_SESSION_KEY);
+  } catch {
+    // no-op
   }
 }
 
@@ -87,7 +115,17 @@ export default function Pricing() {
     const confirmCheckout = async () => {
       try {
         const qs = new URLSearchParams(window.location.search);
-        const sessionId = qs.get("session_id");
+        const canceled = qs.get("canceled") === "1";
+        const sessionIdFromUrl = String(qs.get("session_id") || "").trim();
+        if (sessionIdFromUrl) {
+          writePendingStripeSessionId(sessionIdFromUrl);
+        }
+        const sessionId = sessionIdFromUrl || readPendingStripeSessionId();
+
+        if (canceled) {
+          clearPendingStripeSessionId();
+          return;
+        }
         if (!sessionId || forceMode) return;
 
         setErrorMsg("");
@@ -106,9 +144,13 @@ export default function Pricing() {
             resp.data?.detail ||
             `Checkout confirmation failed (HTTP ${resp.status})`;
           setErrorMsg(msg);
+          if ([400, 403, 404].includes(Number(resp.status))) {
+            clearPendingStripeSessionId();
+          }
           return;
         }
 
+        clearPendingStripeSessionId();
         onboarding.clearCache?.();
         await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
         await qc.refetchQueries({ queryKey: ["onboarding:me"] });
@@ -179,6 +221,9 @@ export default function Pricing() {
         return;
       }
 
+      if (resp.data?.id) {
+        writePendingStripeSessionId(resp.data.id);
+      }
       window.location.assign(resp.data.url);
     } catch (e) {
       setErrorMsg(e?.message || "Checkout failed. Try again.");

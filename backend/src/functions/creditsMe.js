@@ -41,7 +41,9 @@ function monthlySpentFromLedger(ledger, period) {
     if (periodYYYYMM(ts) !== target) continue;
 
     const type = String(entry?.type || "").toLowerCase();
+    const reason = String(entry?.reason || "");
     const delta = Number(entry?.delta || 0) || 0;
+    if (reason.startsWith("adjust_remove_free:")) continue;
     const isSpend = type === "spend" || type === "debit" || delta < 0;
     if (!isSpend) continue;
 
@@ -145,6 +147,48 @@ module.exports = async (request, context) => {
         meta: { planId: "free", period: currentPeriod },
       });
       profile.creditsLedger = ledger.slice(0, 200);
+    }
+  }
+
+  // One-time cleanup for accounts that received free + paid grant in same period.
+  if (planId !== "free") {
+    const ledger = Array.isArray(profile.creditsLedger) ? profile.creditsLedger : [];
+    const compensationReason = `adjust_remove_free:${currentPeriod}`;
+    const alreadyAdjusted = ledger.some((entry) => entry?.reason === compensationReason);
+
+    if (!alreadyAdjusted) {
+      const freeGrantDelta = ledger.reduce((sum, entry) => {
+        if (!entry || entry.type !== "grant") return sum;
+        if (String(entry.reason || "") !== `free_monthly:${currentPeriod}`) return sum;
+        const delta = Number(entry.delta || 0) || 0;
+        if (delta <= 0) return sum;
+        return sum + delta;
+      }, 0);
+
+      const hasPaidGrantThisPeriod = ledger.some((entry) => {
+        if (!entry || entry.type !== "grant") return false;
+        if (!String(entry.reason || "").startsWith("sub_paid:")) return false;
+        const ts = entry?.ts ? new Date(entry.ts) : null;
+        if (!ts || !Number.isFinite(ts.getTime())) return false;
+        return periodYYYYMM(ts) === currentPeriod;
+      });
+
+      if (freeGrantDelta > 0 && hasPaidGrantThisPeriod) {
+        const curBalance = Number(profile.credits.balance || 0) || 0;
+        const adjustDelta = Math.min(curBalance, freeGrantDelta);
+        if (adjustDelta > 0) {
+          profile.credits.balance = curBalance - adjustDelta;
+          ledger.unshift({
+            id: `led_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            ts: new Date().toISOString(),
+            type: "adjust",
+            delta: -adjustDelta,
+            reason: compensationReason,
+            meta: { planId, period: currentPeriod },
+          });
+          profile.creditsLedger = ledger.slice(0, 200);
+        }
+      }
     }
   }
 

@@ -79,7 +79,6 @@ async function uploadToSasUrl(uploadUrl, file) {
     method: "PUT",
     headers: {
       "x-ms-blob-type": "BlockBlob",
-      "x-ms-version": "2020-10-02",
       "Content-Type": file.type || "application/octet-stream",
     },
     body: file,

@@ -85,6 +85,7 @@ async function apiFetch(path, options = {}) {
 export default function Credits() {
   const [selectedPackage, setSelectedPackage] = useState(1);
   const [creditsMe, setCreditsMe] = useState(null);
+  const [stripeBilling, setStripeBilling] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
@@ -97,13 +98,15 @@ export default function Credits() {
         setLoading(true);
         setErrorMsg("");
 
-        const [creditsData, profileData] = await Promise.all([
+        const [creditsData, profileData, stripeData] = await Promise.all([
           apiFetch("/api/credits/me"),
           apiFetch("/api/profile/me"),
+          apiFetch("/api/stripe/billing-summary").catch(() => null),
         ]);
 
         if (cancelled) return;
         setCreditsMe(creditsData || null);
+        setStripeBilling(stripeData?.ok ? stripeData : null);
 
         const profile = profileData?.profile || null;
         const entries = Array.isArray(profile?.creditsLedger)
@@ -114,6 +117,7 @@ export default function Credits() {
         if (cancelled) return;
         setErrorMsg(e?.message || "Failed to load credits.");
         setCreditsMe(null);
+        setStripeBilling(null);
         setLedger([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -136,6 +140,7 @@ export default function Credits() {
   const monthlyRemaining = Number(creditsMe?.credits?.monthlyRemaining || 0) || 0;
   const monthlyPeriod = String(creditsMe?.credits?.monthlyPeriod || "");
   const plan = String(creditsMe?.plan || "free");
+  const stripePeriodEnd = String(stripeBilling?.currentPeriodEnd || "");
 
   const ledgerMonthSpend = useMemo(() => {
     if (!monthlyPeriod || !Array.isArray(ledger)) return 0;
@@ -154,10 +159,44 @@ export default function Credits() {
   }, [ledger, monthlyPeriod]);
 
   const displayMonthlyUsed = Math.max(monthlyUsed, ledgerMonthSpend);
+
+  const cycleUsedFromLedger = useMemo(() => {
+    if (plan === "free") return null;
+    const paidGrant = (Array.isArray(ledger) ? ledger : [])
+      .filter((entry) => entry?.type === "grant" && String(entry?.reason || "").startsWith("sub_paid:"))
+      .sort((a, b) => new Date(b?.ts || 0).getTime() - new Date(a?.ts || 0).getTime())[0];
+    if (!paidGrant?.ts) return null;
+    const cycleStart = new Date(paidGrant.ts).getTime();
+    if (!Number.isFinite(cycleStart)) return null;
+
+    return (Array.isArray(ledger) ? ledger : []).reduce((sum, entry) => {
+      const ts = entry?.ts ? new Date(entry.ts).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts < cycleStart) return sum;
+      const type = String(entry?.type || "").toLowerCase();
+      const reason = String(entry?.reason || "");
+      if (reason.startsWith("adjust_remove_free:")) return sum;
+      const delta = Number(entry?.delta || 0) || 0;
+      const isSpend = type === "spend" || type === "debit" || delta < 0;
+      if (!isSpend) return sum;
+      return sum + Math.abs(delta);
+    }, 0);
+  }, [ledger, plan]);
+
+  const effectiveMonthlyUsed =
+    Number.isFinite(Number(cycleUsedFromLedger)) && cycleUsedFromLedger != null
+      ? Number(cycleUsedFromLedger)
+      : displayMonthlyUsed;
+
   const displayMonthlyRemaining =
-    monthlyAllowance > 0 ? Math.max(0, monthlyAllowance - displayMonthlyUsed) : monthlyRemaining;
+    monthlyAllowance > 0 ? Math.max(0, monthlyAllowance - effectiveMonthlyUsed) : monthlyRemaining;
 
   const renewsOnLabel = useMemo(() => {
+    if (stripePeriodEnd) {
+      const d = new Date(stripePeriodEnd);
+      if (Number.isFinite(d.getTime())) {
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      }
+    }
     const m = monthlyPeriod.match(/^(\d{4})-(\d{2})$/);
     if (!m) return "-";
     const year = Number(m[1]);
@@ -169,7 +208,7 @@ export default function Credits() {
       month: "short",
       day: "numeric",
     });
-  }, [monthlyPeriod]);
+  }, [monthlyPeriod, stripePeriodEnd]);
 
   const progressPct = useMemo(() => {
     if (!monthlyAllowance) return 0;
@@ -285,7 +324,7 @@ export default function Credits() {
               </div>
               <div>
                 <div className="text-sm text-white/40">This Month</div>
-                <div className="text-3xl font-bold text-white">{loading ? "-" : displayMonthlyUsed}</div>
+                <div className="text-3xl font-bold text-white">{loading ? "-" : effectiveMonthlyUsed}</div>
               </div>
             </div>
             <div className="text-xs text-white/30 mb-3">Credits Used</div>

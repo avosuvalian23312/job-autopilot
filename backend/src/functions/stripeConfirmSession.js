@@ -152,6 +152,27 @@ async function hasGrantReason(userId, reason) {
   );
 }
 
+async function resolveInitialPaidGrantDelta(userId, monthlyGrant) {
+  const targetGrant = Number(monthlyGrant || 0) || 0;
+  if (targetGrant <= 0) return 0;
+
+  const profile = await readProfile(userId);
+  const ledger = Array.isArray(profile?.creditsLedger) ? profile.creditsLedger : [];
+
+  const hasAnyPaidGrant = ledger.some((entry) => {
+    if (!entry || entry.type !== "grant") return false;
+    if ((Number(entry.delta || 0) || 0) <= 0) return false;
+    return String(entry.reason || "").startsWith("sub_paid:");
+  });
+
+  // After the first paid grant, preserve additive monthly behavior.
+  if (hasAnyPaidGrant) return targetGrant;
+
+  const currentBalance = Number(profile?.credits?.balance || 0) || 0;
+  // First paid cycle: top-up to plan allowance (avoid free+paid stacking like 10 + 150).
+  return Math.max(0, targetGrant - currentBalance);
+}
+
 async function stripeConfirmSession(request, context) {
   try {
     if (request.method === "OPTIONS") {
@@ -269,6 +290,7 @@ async function stripeConfirmSession(request, context) {
     });
 
     let granted = false;
+    let grantedDelta = 0;
     let balanceAfter = null;
     if (creditsPerMonth > 0) {
       const invoiceId = toStr(
@@ -279,9 +301,13 @@ async function stripeConfirmSession(request, context) {
       const grantReason = `sub_paid:${planId}:${invoiceId || sessionId}`;
       const alreadyGranted = await hasGrantReason(authUserId, grantReason);
       if (!alreadyGranted) {
-        const g = await grantCredits(authUserId, creditsPerMonth, grantReason);
-        granted = true;
-        balanceAfter = Number(g?.balance || 0) || 0;
+        const delta = await resolveInitialPaidGrantDelta(authUserId, creditsPerMonth);
+        if (delta > 0) {
+          const g = await grantCredits(authUserId, delta, grantReason);
+          granted = true;
+          grantedDelta = delta;
+          balanceAfter = Number(g?.balance || 0) || 0;
+        }
       }
     }
 
@@ -296,6 +322,7 @@ async function stripeConfirmSession(request, context) {
       checkoutStatus,
       creditsPerMonth,
       creditsGrantedNow: granted,
+      creditsGrantedDelta: grantedDelta,
       balanceAfter,
     });
   } catch (e) {

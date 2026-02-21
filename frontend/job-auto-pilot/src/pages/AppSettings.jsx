@@ -573,7 +573,42 @@ export default function Settings() {
   const monthlyUsed = Number(creditsMe?.credits?.monthlyUsed || 0) || 0;
   const monthlyRemaining = Number(creditsMe?.credits?.monthlyRemaining || 0) || 0;
   const monthlyPeriod = String(creditsMe?.credits?.monthlyPeriod || "");
-  const renewsOnLabel = renewsOnLabelFromPeriod(monthlyPeriod);
+  const renewsOnLabel =
+    stripePeriodEndLabel !== "-" ? stripePeriodEndLabel : renewsOnLabelFromPeriod(monthlyPeriod);
+
+  const cycleUsedFromLedger = useMemo(() => {
+    if (billingPlanId === "free") return null;
+    const ledger = Array.isArray(billingProfile?.creditsLedger)
+      ? billingProfile.creditsLedger
+      : [];
+    const paidGrant = ledger
+      .filter((entry) => entry?.type === "grant" && String(entry?.reason || "").startsWith("sub_paid:"))
+      .sort((a, b) => new Date(b?.ts || 0).getTime() - new Date(a?.ts || 0).getTime())[0];
+    if (!paidGrant?.ts) return null;
+    const cycleStart = new Date(paidGrant.ts).getTime();
+    if (!Number.isFinite(cycleStart)) return null;
+
+    return ledger.reduce((sum, entry) => {
+      const ts = entry?.ts ? new Date(entry.ts).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts < cycleStart) return sum;
+      const type = String(entry?.type || "").toLowerCase();
+      const reason = String(entry?.reason || "");
+      if (reason.startsWith("adjust_remove_free:")) return sum;
+      const delta = Number(entry?.delta || 0) || 0;
+      const isSpend = type === "spend" || type === "debit" || delta < 0;
+      if (!isSpend) return sum;
+      return sum + Math.abs(delta);
+    }, 0);
+  }, [billingPlanId, billingProfile]);
+
+  const displayMonthlyUsed =
+    Number.isFinite(Number(cycleUsedFromLedger)) && cycleUsedFromLedger != null
+      ? Number(cycleUsedFromLedger)
+      : monthlyUsed;
+  const displayMonthlyRemaining =
+    monthlyAllowance > 0
+      ? Math.max(0, monthlyAllowance - displayMonthlyUsed)
+      : monthlyRemaining;
 
   const billingHistory = useMemo(() => {
     const ledger = Array.isArray(billingProfile?.creditsLedger)
@@ -1382,7 +1417,7 @@ export default function Settings() {
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
                       <div className="text-xs text-white/40">Used this period</div>
                       <div className="text-3xl font-bold text-white mt-1">
-                        {billingLoading && !billingLoaded ? "-" : monthlyUsed}
+                        {billingLoading && !billingLoaded ? "-" : displayMonthlyUsed}
                       </div>
                       <div className="text-sm text-white/40 mt-2">
                         Period: {monthlyPeriod || "-"}
@@ -1392,7 +1427,7 @@ export default function Settings() {
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
                       <div className="text-xs text-white/40">Remaining</div>
                       <div className="text-3xl font-bold text-white mt-1">
-                        {billingLoading && !billingLoaded ? "-" : monthlyRemaining}
+                        {billingLoading && !billingLoaded ? "-" : displayMonthlyRemaining}
                       </div>
                       <div className="text-sm text-white/40 mt-2">
                         Renews: {renewsOnLabel}

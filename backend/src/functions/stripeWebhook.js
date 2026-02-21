@@ -194,6 +194,27 @@ module.exports = async (request, context) => {
       );
     }
 
+    async function resolveInitialPaidGrantDelta(userId, monthlyGrant) {
+      const targetGrant = Number(monthlyGrant || 0) || 0;
+      if (targetGrant <= 0) return 0;
+
+      const profile = await readProfile(userId);
+      const ledger = Array.isArray(profile?.creditsLedger) ? profile.creditsLedger : [];
+
+      const hasAnyPaidGrant = ledger.some((entry) => {
+        if (!entry || entry.type !== "grant") return false;
+        if ((Number(entry.delta || 0) || 0) <= 0) return false;
+        return String(entry.reason || "").startsWith("sub_paid:");
+      });
+
+      // Preserve additive monthly behavior after first paid grant.
+      if (hasAnyPaidGrant) return targetGrant;
+
+      const currentBalance = Number(profile?.credits?.balance || 0) || 0;
+      // First paid cycle: top-up to plan allowance instead of stacking with free credits.
+      return Math.max(0, targetGrant - currentBalance);
+    }
+
     // 1) checkout.session.completed -> activate plan + store stripe IDs
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -252,7 +273,10 @@ module.exports = async (request, context) => {
             if (subCreditsPerMonth > 0) {
               const alreadyGranted = await hasGrantReason(userId, subGrantReason);
               if (!alreadyGranted) {
-                await grantCredits(userId, subCreditsPerMonth, subGrantReason);
+                const delta = await resolveInitialPaidGrantDelta(userId, subCreditsPerMonth);
+                if (delta > 0) {
+                  await grantCredits(userId, delta, subGrantReason);
+                }
               }
             }
           } catch (err) {
@@ -381,7 +405,11 @@ module.exports = async (request, context) => {
       });
       await setOnboarding(userId, { pricingDone: true, selectedPlan: planId || null });
 
-      const grant = await grantCredits(userId, creditsPerMonth, grantReason);
+      const grantDelta = await resolveInitialPaidGrantDelta(userId, creditsPerMonth);
+      const grant =
+        grantDelta > 0
+          ? await grantCredits(userId, grantDelta, grantReason)
+          : { balance: Number((await readProfile(userId))?.credits?.balance || 0) || 0 };
 
       return json(200, {
         ok: true,
@@ -389,6 +417,7 @@ module.exports = async (request, context) => {
         userId,
         planId,
         creditsPerMonth,
+        creditsGrantedDelta: grantDelta,
         invoiceId: invoice.id || null,
         grantReason,
         balanceAfter: Number(grant?.balance || 0) || 0,
