@@ -41,7 +41,7 @@
           -moz-osx-font-smoothing: grayscale;
         }
 
-        /* Fix white/light input text visibility */
+        /* d Fix white/light input text visibility */
         input[type="text"],
         input[type="email"],
         input[type="url"],
