@@ -522,8 +522,8 @@ input:focus, textarea:focus {
   pointer-events: none;
   background: radial-gradient(
     circle at 70% 0%,
-    rgba(56, 189, 248, 0.18),
-    rgba(56, 189, 248, 0) 58%
+    rgba(52, 211, 153, 0.2),
+    rgba(52, 211, 153, 0) 58%
   );
   z-index: 0;
 }

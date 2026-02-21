@@ -3,19 +3,19 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { clearAppToken } from "@/lib/appSession";
 import {
-  Rocket,
+  Zap,
   Home,
   FileText,
+  Briefcase,
   BarChart3,
   Settings,
   LogOut,
-  Coins,
 } from "lucide-react";
 
 const navItems = [
   { label: "Home", icon: Home, page: "AppHome" },
   { label: "Resumes", icon: FileText, page: "Resumes" },
-  { label: "Applications", icon: FileText, page: "Applications" },
+  { label: "Applications", icon: Briefcase, page: "Applications" },
   { label: "Analytics", icon: BarChart3, page: "Analytics" },
   { label: "Settings", icon: Settings, page: "AppSettings" },
 ];
@@ -91,29 +91,29 @@ export default function AppNav({ currentPage, credits }) {
   };
 
   return (
-    <nav className="border-b border-white/5 bg-[hsl(240,10%,4%)]/95 backdrop-blur-xl sticky top-0 z-40 shadow-lg">
+    <nav className="sticky top-0 z-40 border-b border-white/10 bg-[linear-gradient(180deg,rgba(4,9,16,0.96),rgba(4,9,16,0.92))] backdrop-blur-xl shadow-[0_10px_24px_rgba(0,0,0,0.35)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link
           to={createPageUrl("AppHome")}
           className="flex items-center gap-2.5"
         >
-          <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-            <Rocket className="w-4 h-4 text-white" />
+          <div className="grid h-9 w-9 place-items-center rounded-xl border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+            <Zap className="h-4 w-4 text-slate-950" />
           </div>
-          <span className="font-bold text-white hidden sm:block">
+          <span className="hidden font-bold text-white sm:block">
             Job Autopilot
           </span>
         </Link>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {navItems.map((item) => (
             <Link
               key={item.page}
               to={createPageUrl(item.page)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                 currentPage === item.page
-                  ? "bg-purple-600/20 text-purple-400"
-                  : "text-white/40 hover:text-white/70 hover:bg-white/5"
+                  ? "border border-emerald-300/25 bg-emerald-500/15 text-emerald-200"
+                  : "border border-transparent text-white/55 hover:text-white/85 hover:bg-white/[0.06]"
               }`}
             >
               <item.icon className="w-4 h-4" />
@@ -125,7 +125,7 @@ export default function AppNav({ currentPage, credits }) {
         <div className="flex items-center gap-3">
           <Link
             to={createPageUrl("Credits")}
-            className="credits-pill group relative flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl border border-cyan-300/25 bg-[linear-gradient(150deg,rgba(19,34,61,0.95),rgba(54,30,94,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_26px_rgba(10,32,90,0.36)] hover:border-cyan-200/40 hover:-translate-y-0.5 transition-all cursor-pointer"
+            className="credits-pill group relative flex cursor-pointer items-center gap-2.5 rounded-xl border border-emerald-300/30 bg-[linear-gradient(140deg,rgba(0,58,55,0.95),rgba(1,39,53,0.94))] px-3.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_22px_rgba(0,0,0,0.35)] transition-all hover:-translate-y-0.5 hover:border-emerald-200/40"
           >
             <span
               aria-hidden
@@ -133,11 +133,11 @@ export default function AppNav({ currentPage, credits }) {
             />
             <span aria-hidden className="credits-pill-shine" />
             <span aria-hidden className="credits-pill-glow" />
-            <Coins className="relative z-10 w-4 h-4 text-purple-100" />
-            <span className="relative z-10 text-sm font-semibold text-purple-100">
+            <Zap className="relative z-10 h-4 w-4 text-emerald-100" />
+            <span className="relative z-10 text-sm font-semibold text-emerald-100">
               {displayCredits}
             </span>
-            <span className="relative z-10 text-xs text-purple-100/65 hidden sm:inline">
+            <span className="relative z-10 hidden text-xs text-emerald-100/65 sm:inline">
               credits
             </span>
           </Link>
@@ -145,7 +145,7 @@ export default function AppNav({ currentPage, credits }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/45 transition-all hover:bg-white/[0.06] hover:text-white/80"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden md:block">Logout</span>
