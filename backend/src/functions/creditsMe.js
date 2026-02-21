@@ -1,6 +1,7 @@
 "use strict";
 
 const { getSwaUserId } = require("../lib/swaUser");
+const Stripe = require("stripe");
 
 function cors() {
   return {
@@ -102,14 +103,48 @@ module.exports = async (request, context) => {
     await profilesContainer.items.upsert(profile);
   }
 
-  const planId =
-    typeof profile.plan === "string"
-      ? profile.plan
-      : (profile.plan && profile.plan.planId) || "free";
   profile.plan =
     typeof profile.plan === "string"
       ? { planId: profile.plan, status: "active" }
       : profile.plan || { planId: "free", status: "active" };
+
+  // Reconcile plan status with Stripe on read, so canceled subscriptions
+  // immediately stop appearing as active in profile/credits APIs.
+  const stripeSubscriptionId = String(profile?.plan?.stripeSubscriptionId || "");
+  if (stripeSubscriptionId && process.env.STRIPE_SECRET_KEY) {
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+        apiVersion: "2024-06-20",
+      });
+      const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      const subStatus = String(subscription?.status || "").toLowerCase();
+      const subCustomerId =
+        (typeof subscription?.customer === "string" && subscription.customer) ||
+        String(subscription?.customer?.id || "");
+
+      if (subCustomerId) profile.plan.stripeCustomerId = subCustomerId;
+
+      if (["canceled", "incomplete_expired"].includes(subStatus)) {
+        profile.plan.planId = "free";
+        profile.plan.status = "canceled";
+      } else if (subStatus) {
+        profile.plan.status = subStatus;
+      }
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (/no such subscription/i.test(msg)) {
+        profile.plan.planId = "free";
+        profile.plan.status = "canceled";
+      } else {
+        context?.log?.("creditsMe stripe reconcile skipped", msg);
+      }
+    }
+  }
+
+  const planId =
+    typeof profile.plan === "string"
+      ? profile.plan
+      : (profile.plan && profile.plan.planId) || "free";
   profile.credits = profile.credits || {};
   const legacyBalance = Number(profile.creditsBalance);
   if (!Number.isFinite(Number(profile.credits.balance)) && Number.isFinite(legacyBalance)) {

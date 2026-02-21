@@ -69,6 +69,10 @@ function isNoSuchCustomerError(err) {
   return /no such customer/i.test(String(err?.message || ""));
 }
 
+function isNoSuchSubscriptionError(err) {
+  return /no such subscription/i.test(String(err?.message || ""));
+}
+
 async function deriveCustomerIdFromSubscription(stripe, subscriptionId, context) {
   if (!subscriptionId) return "";
   try {
@@ -113,6 +117,7 @@ async function stripeBillingSummary(request, context) {
     const stripeSubscriptionId = String(plan.stripeSubscriptionId || "");
     let subscription = null;
     let customer = null;
+    let subscriptionMissing = false;
 
     if (stripeSubscriptionId) {
       try {
@@ -124,6 +129,9 @@ async function stripeBillingSummary(request, context) {
           ],
         });
       } catch (e) {
+        if (isNoSuchSubscriptionError(e)) {
+          subscriptionMissing = true;
+        }
         context?.log?.("stripeBillingSummary: sub lookup failed", e?.message);
       }
     }
@@ -133,6 +141,33 @@ async function stripeBillingSummary(request, context) {
         typeof subscription.customer === "string"
           ? subscription.customer
           : String(subscription.customer.id || "");
+    }
+
+    const subscriptionStatus = String(subscription?.status || plan.status || "inactive").toLowerCase();
+    const reconciledPlanId =
+      subscriptionMissing || ["canceled", "incomplete_expired"].includes(subscriptionStatus)
+        ? "free"
+        : String(plan.planId || "free");
+    const reconciledStatus =
+      subscriptionMissing
+        ? "canceled"
+        : String(subscriptionStatus || plan.status || "inactive");
+
+    const reconcilePatch = {};
+    if (reconciledPlanId !== String(plan.planId || "free")) {
+      reconcilePatch.planId = reconciledPlanId;
+    }
+    if (reconciledStatus && reconciledStatus !== String(plan.status || "")) {
+      reconcilePatch.status = reconciledStatus;
+    }
+    if (stripeCustomerId && stripeCustomerId !== String(plan.stripeCustomerId || "")) {
+      reconcilePatch.stripeCustomerId = stripeCustomerId;
+    }
+    if (stripeSubscriptionId && stripeSubscriptionId !== String(plan.stripeSubscriptionId || "")) {
+      reconcilePatch.stripeSubscriptionId = stripeSubscriptionId;
+    }
+    if (Object.keys(reconcilePatch).length > 0) {
+      await setPlan(authUserId, reconcilePatch);
     }
 
     if (stripeSubscriptionId) {
@@ -324,9 +359,9 @@ async function stripeBillingSummary(request, context) {
       connected: !!stripeCustomerId,
       customerId: stripeCustomerId || null,
       subscriptionId: stripeSubscriptionId || null,
-      subscriptionStatus: String(subscription?.status || plan.status || "inactive"),
+      subscriptionStatus: String(reconciledStatus || "inactive"),
       currentPeriodEnd: toIso(subscription?.current_period_end),
-      planId: String(plan.planId || "free"),
+      planId: String(reconciledPlanId || "free"),
       paymentMethod,
       paymentMethodSource: paymentMethodSource || null,
       paymentMethodMissingReason: paymentMethod ? null : paymentMethodMissingReason,
