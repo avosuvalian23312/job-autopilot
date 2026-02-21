@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import AppNav from "@/components/app/AppNav";
+import PageLoadingOverlay from "@/components/app/PageLoadingOverlay";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -105,6 +106,7 @@ export default function Resumes() {
 
   // ✅ NEW: prevents empty-state flash while auth is happening / fetching resumes
   const [isLoading, setIsLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // preview state (NO UI changes)
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -124,12 +126,12 @@ export default function Resumes() {
       setResumes([]);
     } finally {
       setIsLoading(false);
+      setInitialLoading(false);
     }
   };
 
   useEffect(() => {
     loadResumes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const resetUploadState = () => {
@@ -815,6 +817,11 @@ export default function Resumes() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <PageLoadingOverlay
+        show={initialLoading && isLoading}
+        label="Loading resumes..."
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import React from "react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AppNav from "@/components/app/AppNav";
+import PageLoadingOverlay from "@/components/app/PageLoadingOverlay";
 import GoalProgress from "@/components/app/GoalProgress";
 import {
   BarChart,
@@ -31,6 +31,7 @@ const COLORS = ["#8b5cf6", "#06b6d4", "#f59e0b", "#10b981", "#ef4444"];
 
 export default function Analytics() {
   const [applications, setApplications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // ✅ Load real jobs/applications from your API (which reads Cosmos)
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function Analytics() {
     };
 
     const load = async () => {
+      if (!cancelled) setIsLoading(true);
       try {
         // IMPORTANT: if your list endpoint differs, change ONLY this line
         const res = await fetch("/api/jobs", { credentials: "include" });
@@ -81,6 +83,8 @@ export default function Analytics() {
       } catch (e) {
         console.error("Analytics load failed:", e);
         if (!cancelled) setApplications([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -404,6 +408,7 @@ export default function Analytics() {
           </div>
         </div>
       </motion.div>
+      <PageLoadingOverlay show={isLoading} label="Loading analytics..." />
     </div>
   );
 }

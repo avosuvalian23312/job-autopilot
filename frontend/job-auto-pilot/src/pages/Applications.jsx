@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import AppNav from "@/components/app/AppNav";
+import PageLoadingOverlay from "@/components/app/PageLoadingOverlay";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -274,6 +275,7 @@ export default function Applications() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const loadJobs = async () => {
     setIsLoading(true);
@@ -293,6 +295,7 @@ export default function Applications() {
       setApplications([]);
     } finally {
       setIsLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -584,6 +587,10 @@ export default function Applications() {
             })}
         </section>
       </main>
+      <PageLoadingOverlay
+        show={initialLoading && isLoading}
+        label="Loading applications..."
+      />
     </div>
   );
 }

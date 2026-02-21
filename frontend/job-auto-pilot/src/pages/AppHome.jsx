@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { createPageUrl } from "@/utils";
 import AppNav from "@/components/app/AppNav";
+import PageLoadingOverlay from "@/components/app/PageLoadingOverlay";
 import { Button } from "@/components/ui/button";
 import {
   Award,
@@ -527,6 +528,7 @@ export default function AppHome() {
           </div>
         </motion.section>
       </main>
+      <PageLoadingOverlay show={loading} label="Loading workspace..." />
     </div>
   );
 }
