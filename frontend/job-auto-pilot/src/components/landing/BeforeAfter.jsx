@@ -8,7 +8,7 @@ export default function BeforeAfter() {
     <section className="py-24 px-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-purple-900/5 to-transparent" />
 
-      <div className="max-w-6xl mx-auto relative z-10">
+      <div className="max-w-[1320px] mx-auto relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -23,7 +23,7 @@ export default function BeforeAfter() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-[1fr_auto_1fr] md:gap-6">
+        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-[1fr_auto_1fr] md:gap-7">
           <motion.div
             initial={{ opacity: 0, x: -24 }}
             whileInView={{ opacity: 1, x: 0 }}
@@ -33,7 +33,7 @@ export default function BeforeAfter() {
             <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-rose-200/90">
               Resume Before
             </div>
-            <div className="aspect-[16/10] w-full">
+            <div className="aspect-[16/11] w-full">
               {missingImages.before ? (
                 <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_0%_0%,rgba(244,63,94,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
                   Add
@@ -75,7 +75,7 @@ export default function BeforeAfter() {
             <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/90">
               Resume After
             </div>
-            <div className="aspect-[16/10] w-full">
+            <div className="aspect-[16/11] w-full">
               {missingImages.after ? (
                 <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_100%_0%,rgba(16,185,129,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
                   Add
