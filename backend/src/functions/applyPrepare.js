@@ -283,6 +283,30 @@ function normalizedContains(haystack, needle) {
   return h.includes(n);
 }
 
+const EDUCATION_PLACEHOLDER_RE =
+  /\b(?:your\s+school(?:\s+name)?(?:\s+here)?|school\s+name\s+here|placeholder|20xx|xxxx|tbd|to\s+be\s+determined|n\/a|not\s+provided|example\s+university|sample\s+university)\b/i;
+
+function hasEducationPlaceholder(value) {
+  const s = safeStr(value || "");
+  if (!s) return false;
+  return EDUCATION_PLACEHOLDER_RE.test(s);
+}
+
+function hasSourceEvidence(sourceText, value) {
+  const source = String(sourceText || "");
+  const raw = safeStr(value || "");
+  if (!source || !raw) return false;
+
+  if (normalizedContains(source, raw)) return true;
+
+  const fragments = raw
+    .split(/[-|,;:/()]/)
+    .map((x) => safeStr(x))
+    .filter((x) => x.length >= 4);
+
+  return fragments.some((piece) => normalizedContains(source, piece));
+}
+
 function normalizeDateText(value, maxLen = 45) {
   let s = cleanResumeField(value, maxLen);
   if (!s) return "";
@@ -612,6 +636,12 @@ QUALITY REQUIREMENTS:
 - Remove weak or redundant items.
 - Ensure tense consistency, punctuation consistency, and clean formatting.
 
+MODE INTERPRETATION:
+- MODE is either "real" or "training_sample".
+- NEVER fabricate education. If education is not supported by RESUME TEXT or PROFILE, return education as [].
+- NEVER output education placeholders such as "Your School Name Here", "20XX", "TBD", "N/A", or similar filler text.
+- Elite-mode experience generation is allowed by existing rules.
+
 No markdown. JSON only.
 `.trim();
 
@@ -715,6 +745,8 @@ JOB-TARGETING RULES:
 - Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
 - Rewrite experience bullets to highlight the strongest alignment (truthful).
 - Weave keywords naturally; never keyword-stuff.
+- If education is missing or uncertain, return education as [].
+- Never output education placeholders such as "Your School Name Here", "20XX", "TBD", or "N/A".
 
 No markdown. JSON only.
 `.trim();
@@ -806,6 +838,8 @@ ELITE OPTIMIZATION TASK:
   Ã¢â‚¬Â¢ close keyword gaps using only skills the candidate can realistically perform.
 - Ensure tense consistency, punctuation consistency, and clean formatting.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
+- If education is missing or uncertain, return education as [].
+- Never output education placeholders such as "Your School Name Here", "20XX", "TBD", or "N/A".
 
 No markdown. JSON only.
 
@@ -912,6 +946,8 @@ TASK:
 - Fix any awkward phrasing or incomplete endings.
 - Ensure keywords are woven naturally (no stuffing).
 - Ensure consistency across sections (tense, punctuation, formatting).
+- If education is missing or uncertain, return education as [].
+- Never output education placeholders such as "Your School Name Here", "20XX", "TBD", or "N/A".
 `.trim();
 
 const AUDIT_SYSTEM_ELITE_TRUTHFUL = `
@@ -996,6 +1032,8 @@ ELITE OPTIMIZATION TASK:
   Ã¢â‚¬Â¢ close keyword gaps using only skills the candidate can realistically perform.
 - Ensure tense consistency, punctuation consistency, and clean formatting.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
+- If education is missing or uncertain, return education as [].
+- Never output education placeholders such as "Your School Name Here", "20XX", "TBD", or "N/A".
 
 No markdown. JSON only.
 `.trim();
@@ -1042,7 +1080,7 @@ ${JSON.stringify(draft || {}, null, 2)}
   return safeJsonParse(content) || {};
 }
 
-function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
+function normalizeDraft(draft, { canonicalFullName, profile, userEmail, resumeText }) {
   const d = draft && typeof draft === "object" ? draft : {};
 
   const header = d.header && typeof d.header === "object" ? d.header : {};
@@ -1069,6 +1107,18 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
     ),
     projects: [],
   };
+
+  const educationEvidenceSource = [
+    String(resumeText || ""),
+    safeStr(profile?.fullName),
+    safeStr(profile?.location),
+    safeStr(profile?.email),
+    safeStr(profile?.phone),
+    safeStr(profile?.linkedin),
+    safeStr(profile?.portfolio),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   // Skills
   const skills = Array.isArray(d.skills) ? d.skills : [];
@@ -1115,14 +1165,26 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
   // Education
   const edu = Array.isArray(d.education) ? d.education : [];
   for (const e of edu.slice(0, 4)) {
-    out.education.push({
-      school: cleanResumeField(e?.school, 95),
-      degree: cleanResumeField(e?.degree, 95),
-      dates: normalizeDateText(e?.dates, 45),
-      details: uniqStrings(e?.details, { max: 3 })
-        .map((x) => clampStr(cleanBullet(x).replace(/^- /, ""), 120))
-        .filter(Boolean),
-    });
+    const school = cleanResumeField(e?.school, 95);
+    const degree = cleanResumeField(e?.degree, 95);
+    const dates = normalizeDateText(e?.dates, 45);
+    const details = uniqStrings(e?.details, { max: 3 })
+      .map((x) => clampStr(cleanBullet(x).replace(/^- /, ""), 120))
+      .filter(Boolean);
+
+    if (!school && !degree && !dates && !details.length) continue;
+
+    const hasPlaceholder = [school, degree, dates, ...details].some((v) =>
+      hasEducationPlaceholder(v)
+    );
+    if (hasPlaceholder) continue;
+
+    const hasEvidence = [school, degree, ...details].some((v) =>
+      hasSourceEvidence(educationEvidenceSource, v)
+    );
+    if (!hasEvidence) continue;
+
+    out.education.push({ school, degree, dates, details });
   }
 
   // Projects
@@ -2074,6 +2136,7 @@ async function applyPrepare(request, context) {
       canonicalFullName,
       profile,
       userEmail: user.email,
+      resumeText,
     });
 
     // Render ATS PDF (hard single-page; if truncated, rerender compact to fit more).
