@@ -1,5 +1,7 @@
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const crypto = require("crypto");
 
@@ -127,7 +129,7 @@ function newId() {
 
 async function supportCreate(request, context) {
   try {
-    const { userId, email } = getSwaUser(request);
+    const { userId, email } = getAuthenticatedUser(request) || getSwaUser(request);
     if (!userId) {
       return jsonResponse(401, { ok: false, error: "Not authenticated" });
     }
@@ -164,7 +166,7 @@ async function supportCreate(request, context) {
     await container.items.create(doc);
 
     // Optional: log for debugging
-    context?.log?.(`✅ Support ticket created: ${ticketId} (${userId})`);
+    context?.log?.(`Ã¢Å“â€¦ Support ticket created: ${ticketId} (${userId})`);
 
     return jsonResponse(200, { ok: true, ticketId });
   } catch (err) {

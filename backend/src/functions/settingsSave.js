@@ -1,5 +1,7 @@
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 
 function jsonResponse(status, payload) {
@@ -126,7 +128,7 @@ function isValidEmail(email) {
 
 async function settingsSave(request, context) {
   try {
-    const { userId } = getSwaUser(request);
+    const { userId } = getAuthenticatedUser(request) || getSwaUser(request);
     if (!userId) {
       return jsonResponse(401, { ok: false, error: "Not authenticated" });
     }

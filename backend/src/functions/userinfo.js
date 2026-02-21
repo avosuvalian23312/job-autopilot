@@ -1,9 +1,10 @@
+const { getAuthenticatedUser } = require("../lib/swaUser");
 module.exports = async (request, context) => {
   if (request.method === "OPTIONS") {
     return { status: 204, headers: cors() };
   }
 
-  const user = getSwaUser(request);
+  const user = getAuthenticatedUser(request) || getSwaUser(request);
   if (!user) {
     return json(401, { ok: false, error: "Not authenticated" });
   }

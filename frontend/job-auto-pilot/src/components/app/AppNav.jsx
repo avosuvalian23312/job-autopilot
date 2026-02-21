@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { clearAppToken } from "@/lib/appSession";
 import {
   Rocket,
   Home,
@@ -19,7 +20,7 @@ const navItems = [
   { label: "Settings", icon: Settings, page: "AppSettings" },
 ];
 
-// ✅ Azure Static Web Apps logout helper (REAL logout)
+// âœ… Azure Static Web Apps logout helper (REAL logout)
 function swaLogout(redirectPath = "/") {
   const safe =
     redirectPath && String(redirectPath).startsWith("/")
@@ -85,9 +86,7 @@ export default function AppNav({ currentPage, credits }) {
     typeof credits === "number" ? credits : liveCredits ?? 0;
 
   const handleLogout = () => {
-    // ✅ IMPORTANT:
-    // Do NOT clear localStorage/onboarding here.
-    // Logout should ONLY clear SWA auth cookie.
+    clearAppToken();
     swaLogout(createPageUrl("Landing") || "/");
   };
 

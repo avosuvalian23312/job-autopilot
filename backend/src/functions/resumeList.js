@@ -1,3 +1,4 @@
+const { getAuthenticatedUser } = require("../lib/swaUser");
 const { CosmosClient } = require("@azure/cosmos");
 
 function getSwaUser(request) {
@@ -20,7 +21,7 @@ module.exports = async function (request, context) {
   try {
     if (request.method === "OPTIONS") return { status: 204 };
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) return { status: 401, jsonBody: { ok: false } };
 
     const client = new CosmosClient(process.env.COSMOS_CONNECTION_STRING);

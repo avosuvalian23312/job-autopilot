@@ -1,6 +1,8 @@
 // backend/src/functions/resumeSave.js
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const crypto = require("crypto");
 
@@ -95,7 +97,7 @@ module.exports = async function (request, context) {
       };
     }
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
@@ -118,7 +120,7 @@ module.exports = async function (request, context) {
 
     const blobUrl = body.uploadUrl ? stripQuery(body.uploadUrl) : "";
 
-    // ✅ Optional: accept extracted text from frontend or another step
+    // Ã¢Å“â€¦ Optional: accept extracted text from frontend or another step
     const incomingText = normalizeResumeText(body.text || body.resumeText || "");
     const hasText = !!incomingText;
 
@@ -138,7 +140,7 @@ module.exports = async function (request, context) {
       contentType,
       size,
 
-      // ✅ NEW: text fields (critical for ATS tailoring)
+      // Ã¢Å“â€¦ NEW: text fields (critical for ATS tailoring)
       text: hasText ? incomingText : null,
       textHash: hasText ? sha256(incomingText) : null,
       textStatus: hasText ? "ready" : "pending", // pending until you parse it

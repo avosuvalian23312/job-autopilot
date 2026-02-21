@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { clearAppToken, getAppToken } from "@/lib/appSession";
 
 /**
  * Azure Static Web Apps auth context:
@@ -27,6 +28,20 @@ function parseClientPrincipal(data) {
   return cp;
 }
 
+function normalizeTokenUser(data) {
+  const u = data?.user;
+  if (!u?.userId) return null;
+  const email = String(u.email || "").trim() || null;
+  const provider = String(u.provider || "email").trim() || "email";
+  return {
+    userId: u.userId,
+    userDetails: email || u.userId,
+    identityProvider: provider,
+    claims: email ? [{ typ: "emails", val: email }] : [],
+    authType: "appToken",
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,15 +52,41 @@ export function AuthProvider({ children }) {
       const res = await fetch("/.auth/me", { credentials: "include" });
 
       // In local dev, /.auth/me often 404s -> treat as logged out
-      if (!res.ok) {
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const cp = parseClientPrincipal(data);
+        if (cp) {
+          setUser({ ...cp, authType: "swa" });
+          return;
+        }
+      }
+
+      const appToken = getAppToken();
+      if (!appToken) {
         setUser(null);
         return;
       }
 
-      const data = await res.json().catch(() => null);
-      const cp = parseClientPrincipal(data);
+      const who = await fetch("/api/userinfo", {
+        method: "GET",
+        credentials: "include",
+      });
 
-      setUser(cp || null);
+      if (!who.ok) {
+        clearAppToken();
+        setUser(null);
+        return;
+      }
+
+      const whoData = await who.json().catch(() => null);
+      const tokenUser = normalizeTokenUser(whoData);
+      if (!tokenUser) {
+        clearAppToken();
+        setUser(null);
+        return;
+      }
+
+      setUser(tokenUser);
     } catch (e) {
       console.error("Auth refresh failed:", e);
       setUser(null);
@@ -79,10 +120,17 @@ export function AuthProvider({ children }) {
   }, [navigateToLogin]);
 
   const logout = useCallback(async () => {
+    clearAppToken();
     const postLogout = `${window.location.origin}/`;
+    if (user?.authType === "appToken") {
+      setUser(null);
+      setLoading(false);
+      window.location.assign(postLogout);
+      return;
+    }
     const url = `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(postLogout)}`;
     window.location.assign(url);
-  }, []);
+  }, [user?.authType]);
 
   const value = useMemo(
     () => ({

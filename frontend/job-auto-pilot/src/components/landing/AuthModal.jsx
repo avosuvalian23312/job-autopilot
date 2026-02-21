@@ -4,13 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { clearAppToken, setAppToken } from "@/lib/appSession";
 
-/**
- * Azure Static Web Apps auth (NO JWT):
- * - Redirect to /.auth/login/{provider}
- * - Use a relative post_login_redirect_uri so it returns to your app page correctly.
- * - Do not hit the identity.* domain directly.
- */
 function swaLogin(provider, redirectPath, extraParams = {}) {
   const path =
     redirectPath ||
@@ -31,25 +26,40 @@ function swaLogin(provider, redirectPath, extraParams = {}) {
   window.location.href = `/.auth/login/${encodeURIComponent(provider)}?${query.toString()}`;
 }
 
+async function postJson(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
 export default function AuthModal({ open, onClose, onComplete }) {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState("start"); // start | verify
+  const [challengeToken, setChallengeToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
 
-  /**
-   * Always return to "/" after login so App routing decides onboarding.
-   */
   const AFTER_LOGIN_PATH = "/";
   const MICROSOFT_PROVIDER =
     import.meta.env.VITE_SWA_MICROSOFT_PROVIDER || "microsoft";
-  const EMAIL_PROVIDER =
-    import.meta.env.VITE_SWA_EMAIL_PROVIDER || MICROSOFT_PROVIDER;
 
-  // Public logos (must exist in /public/logos/)
   const GOOGLE_LOGO = "/logos/google-logo-9808.png";
   const MICROSOFT_LOGO = "/logos/64px-Microsoft_logo.svg.png";
 
-  // Zoom/popup effect controller.
   const [pulse, setPulse] = useState(0);
   const pulseTimer = useRef(null);
 
@@ -61,8 +71,12 @@ export default function AuthModal({ open, onClose, onComplete }) {
   useEffect(() => {
     if (open) {
       setErr("");
+      setInfo("");
       setBusy(false);
       setEmail("");
+      setCode("");
+      setStep("start");
+      setChallengeToken("");
       triggerPulse();
     }
     return () => {
@@ -74,6 +88,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const startGoogle = async () => {
     if (busy) return;
     setErr("");
+    setInfo("");
+    clearAppToken();
     setBusy(true);
     triggerPulse();
 
@@ -91,6 +107,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
   const startMicrosoft = async () => {
     if (busy) return;
     setErr("");
+    setInfo("");
+    clearAppToken();
     setBusy(true);
     triggerPulse();
 
@@ -107,49 +125,86 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
   const startEmail = async () => {
     if (busy) return;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      setErr("Enter a valid email address.");
+      return;
+    }
+
     setErr("");
+    setInfo("");
     setBusy(true);
     triggerPulse();
 
-    const emailHint = String(email || "").trim();
-    const hasEmailHint = /^\S+@\S+\.\S+$/.test(emailHint);
-
     try {
-      onComplete?.({ provider: "email" });
+      const res = await postJson("/api/verify/email-login", {
+        action: "send_code",
+        email: normalizedEmail,
+      });
+
+      if (!res.ok || !res.data?.challengeToken) {
+        setErr(res.data?.error || "Could not send login code.");
+        return;
+      }
+
+      setChallengeToken(String(res.data.challengeToken));
+      setStep("verify");
+      setInfo(
+        `Code sent to ${res.data?.maskedEmail || normalizedEmail}.`
+      );
     } catch {
-      // ignore
+      setErr("Could not send login code.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyEmailCode = async () => {
+    if (busy) return;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedCode = String(code || "").trim();
+
+    if (!normalizedCode) {
+      setErr("Enter the 6-digit code.");
+      return;
+    }
+    if (!challengeToken) {
+      setErr("Session expired. Please request a new code.");
+      setStep("start");
+      return;
     }
 
-    setTimeout(() => {
-      swaLogin(
-        EMAIL_PROVIDER,
-        AFTER_LOGIN_PATH,
-        hasEmailHint ? { login_hint: emailHint } : {}
-      );
-    }, 220);
-  };
+    setErr("");
+    setInfo("");
+    setBusy(true);
+    triggerPulse();
 
-  const humanProviderName = (provider) => {
-    const value = String(provider || "").trim();
-    if (!value) return "identity provider";
-    if (value.toLowerCase() === "aad") return "Microsoft";
-    return value;
-  };
+    try {
+      const res = await postJson("/api/verify/email-login", {
+        action: "verify_code",
+        email: normalizedEmail,
+        code: normalizedCode,
+        challengeToken,
+      });
 
-  const microsoftName = humanProviderName(MICROSOFT_PROVIDER);
-  const emailName = humanProviderName(EMAIL_PROVIDER);
-  const microsoftButtonLabel =
-    microsoftName.toLowerCase() === "microsoft"
-      ? "Continue with Microsoft"
-      : `Continue with ${microsoftName}`;
-  const emailButtonLabel =
-    emailName.toLowerCase() === "microsoft"
-      ? "Continue with Email (Microsoft)"
-      : `Continue with Email (${emailName})`;
-  const emailHelpText =
-    emailName.toLowerCase() === "microsoft"
-      ? "Uses your Microsoft/Entra sign-in flow."
-      : `Uses your configured "${emailName}" identity provider.`;
+      if (!res.ok || !res.data?.appToken) {
+        setErr(res.data?.error || "Invalid code.");
+        return;
+      }
+
+      setAppToken(String(res.data.appToken));
+      try {
+        onComplete?.({ provider: "email" });
+      } catch {
+        // ignore
+      }
+      window.location.assign(AFTER_LOGIN_PATH);
+    } catch {
+      setErr("Could not verify code.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const overlayVariants = {
     hidden: { opacity: 0 },
@@ -257,39 +312,74 @@ export default function AuthModal({ open, onClose, onComplete }) {
                         className="h-5 w-5 object-contain"
                         loading="lazy"
                       />
-                      <span>{microsoftButtonLabel}</span>
+                      <span>Continue with Microsoft</span>
                     </span>
                   </Button>
                 </div>
 
                 <div className="mt-6 border-t border-white/10 pt-6">
                   <div className="text-white/70 text-sm mb-3">
-                    Or sign in with email
+                    Or sign in with email code
                   </div>
 
                   <Input
-                    placeholder="you@company.com (optional)"
+                    placeholder="you@company.com"
                     value={email}
-                    disabled={busy}
+                    disabled={busy || step === "verify"}
                     onChange={(e) => setEmail(e.target.value)}
                   />
-                  <p className="mt-2 text-xs text-white/55">{emailHelpText}</p>
 
-                  <Button
-                    onClick={startEmail}
-                    disabled={busy}
-                    className="w-full mt-3"
-                  >
-                    <Mail className="mr-2 h-4 w-4" />
-                    {emailButtonLabel}
-                  </Button>
+                  {step === "start" && (
+                    <Button
+                      onClick={startEmail}
+                      disabled={busy}
+                      className="w-full mt-3"
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      Send Login Code
+                    </Button>
+                  )}
+
+                  {step === "verify" && (
+                    <>
+                      <Input
+                        placeholder="Enter 6-digit code"
+                        value={code}
+                        disabled={busy}
+                        onChange={(e) => setCode(e.target.value)}
+                        className="mt-3"
+                      />
+                      <Button
+                        onClick={verifyEmailCode}
+                        disabled={busy}
+                        className="w-full mt-3"
+                      >
+                        Verify Code
+                      </Button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setStep("start");
+                          setCode("");
+                          setChallengeToken("");
+                          setInfo("");
+                          setErr("");
+                        }}
+                        className="w-full mt-2 text-xs text-white/60 hover:text-white/85 disabled:opacity-50"
+                      >
+                        Use a different email
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 {err && <div className="mt-4 text-red-400 text-sm">{err}</div>}
+                {info && <div className="mt-4 text-emerald-300 text-sm">{info}</div>}
 
                 {busy && (
                   <div className="mt-4 text-white/50 text-xs">
-                    Redirecting to sign-in...
+                    {step === "verify" ? "Verifying..." : "Processing..."}
                   </div>
                 )}
               </div>

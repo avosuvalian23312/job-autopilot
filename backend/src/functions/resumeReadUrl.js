@@ -1,5 +1,7 @@
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const {
   BlobServiceClient,
@@ -49,14 +51,14 @@ function json(status, body) {
   };
 }
 
-// ✅ IMPORTANT: export ONLY the handler (index.js registers the route)
+// Ã¢Å“â€¦ IMPORTANT: export ONLY the handler (index.js registers the route)
 module.exports = async (request, context) => {
   try {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: cors() };
     }
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) return json(401, { ok: false });
 
     const body = await request.json().catch(() => ({}));

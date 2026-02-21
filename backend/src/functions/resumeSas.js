@@ -1,6 +1,8 @@
 // backend/src/functions/resumeSas.js
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const {
   BlobServiceClient,
@@ -57,7 +59,7 @@ async function resumeSas(request, context) {
   try {
     if (request.method === "OPTIONS") return { status: 204 };
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
 
     const AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;

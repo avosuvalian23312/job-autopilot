@@ -2,6 +2,7 @@
 
 
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -68,8 +69,8 @@ module.exports = async function resumeUploadUrl(request, context) {
     if (request.method === "OPTIONS") return { status: 204, headers: cors() };
     if (request.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
 
-    // ✅ v4-safe SWA auth
-    const user = getSwaUser(request);
+    // Ã¢Å“â€¦ v4-safe SWA auth
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) {
       return json(401, {
         ok: false,
@@ -80,7 +81,7 @@ module.exports = async function resumeUploadUrl(request, context) {
 
     const body = await safeJson(request);
 
-    // ✅ accept multiple possible keys to avoid frontend mismatch
+    // Ã¢Å“â€¦ accept multiple possible keys to avoid frontend mismatch
     const fileName =
       body?.fileName ||
       body?.originalName ||

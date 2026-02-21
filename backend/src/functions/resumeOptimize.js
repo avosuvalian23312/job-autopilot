@@ -1,6 +1,8 @@
 // backend/src/functions/resumeOptimize.js
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const { BlobServiceClient } = require("@azure/storage-blob");
 
@@ -66,7 +68,7 @@ function extractBulletLines(resumeText) {
     .map((l) => l.replace(/\s+/g, " ").trim());
 
   // bullet markers we accept
-  const bulletRe = /^([•·▪●◦-]|(\d+\.))\s+/;
+  const bulletRe = /^([Ã¢â‚¬Â¢Ã‚Â·Ã¢â€“ÂªÃ¢â€”ÂÃ¢â€”Â¦-]|(\d+\.))\s+/;
 
   // Keep bullets that look like real experience bullets (not headings)
   const bullets = [];
@@ -229,7 +231,7 @@ async function resumeOptimize(request, context) {
       return { status: 405, jsonBody: { ok: false, error: "Method not allowed" } };
     }
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
@@ -330,7 +332,7 @@ async function resumeOptimize(request, context) {
           ok: true,
           resumeId,
           mode: "suggestions",
-          message: "No bullet lines detected. (Upload DOCX or ensure resume has bullet markers like • or -)",
+          message: "No bullet lines detected. (Upload DOCX or ensure resume has bullet markers like Ã¢â‚¬Â¢ or -)",
           detectedBullets: 0,
         },
       };
@@ -345,7 +347,7 @@ async function resumeOptimize(request, context) {
     const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
     const apiVersion = "2024-02-15-preview";
 
-    // If no AOAI configured, return “safe fallback” (no rewriting)
+    // If no AOAI configured, return Ã¢â‚¬Å“safe fallbackÃ¢â‚¬Â (no rewriting)
     if (!endpoint || !apiKey || !deployment) {
       return {
         status: 200,
@@ -366,7 +368,7 @@ async function resumeOptimize(request, context) {
       };
     }
 
-    // --------- AI PROMPT (HARDENED FOR “wrong role/website” + “no hallucinations”) ----------
+    // --------- AI PROMPT (HARDENED FOR Ã¢â‚¬Å“wrong role/websiteÃ¢â‚¬Â + Ã¢â‚¬Å“no hallucinationsÃ¢â‚¬Â) ----------
     // IMPORTANT: We DO NOT ask it to change structure. We only rewrite bullets 1:1.
     const system = `
 You are an ATS resume bullet optimizer.
@@ -380,7 +382,7 @@ Output rules (MANDATORY):
 - Keep bullets in the EXACT same order.
 - Do NOT invent employers, titles, tools, dates, certifications, degrees, or metrics.
 - If a bullet has numbers/metrics, keep them and do not fabricate new ones.
-- Keep each bullet roughly the same length (within ±20% chars).
+- Keep each bullet roughly the same length (within Ã‚Â±20% chars).
 - Preserve tense and meaning, but improve ATS phrasing.
 - Integrate job keywords naturally (not keyword-stuffing). Only add keywords that are truly compatible with the bullet.
 - If a bullet cannot be improved without inventing, return it unchanged.
@@ -459,8 +461,8 @@ ${JSON.stringify(bulletPayload, null, 2)}
       const finalBulletText = optimized ? optimized : b.originalBullet;
 
       // Preserve the original bullet marker from the line
-      const markerMatch = b.originalLine.match(/^([•·▪●◦-]|\d+\.)\s+/);
-      const marker = markerMatch ? markerMatch[0] : "• ";
+      const markerMatch = b.originalLine.match(/^([Ã¢â‚¬Â¢Ã‚Â·Ã¢â€“ÂªÃ¢â€”ÂÃ¢â€”Â¦-]|\d+\.)\s+/);
+      const marker = markerMatch ? markerMatch[0] : "Ã¢â‚¬Â¢ ";
 
       const newLine = `${marker}${finalBulletText}`;
 
@@ -485,7 +487,7 @@ ${JSON.stringify(bulletPayload, null, 2)}
         atsKeywords,
         detectedBullets: bullets.length,
         replacements,
-        // Keep payload safe (don’t return entire resume if huge)
+        // Keep payload safe (donÃ¢â‚¬â„¢t return entire resume if huge)
         updatedTextPreview: updatedText.slice(0, 12000),
       },
     };
@@ -502,5 +504,5 @@ ${JSON.stringify(bulletPayload, null, 2)}
   }
 }
 
-// ✅ v4-friendly named export for index.js require(...).resumeOptimize
+// Ã¢Å“â€¦ v4-friendly named export for index.js require(...).resumeOptimize
 module.exports = { resumeOptimize };

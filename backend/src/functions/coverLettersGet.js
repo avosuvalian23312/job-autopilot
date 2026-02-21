@@ -1,5 +1,7 @@
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 
 function getSwaUser(request) {
@@ -43,7 +45,7 @@ async function coverLettersGet(request, context) {
       return { status: 500, jsonBody: { ok: false, error: "Missing Cosmos env vars" } };
     }
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
 
     const id = request.params?.id;

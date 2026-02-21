@@ -24,6 +24,19 @@ VITE_SWA_AUTH_PROVIDER=microsoft
 VITE_SWA_MICROSOFT_PROVIDER=microsoft
 VITE_SWA_EMAIL_PROVIDER=microsoft
 
+# Backend (SWA/Functions) auth envs:
+AZURE_CLIENT_ID=your_app_registration_client_id
+AZURE_CLIENT_SECRET=your_app_registration_client_secret
+APP_JWT_SECRET=your_long_random_secret
+
+# Email code login (required in backend envs):
+SENDGRID_API_KEY=your_sendgrid_api_key
+SENDGRID_FROM_EMAIL=no-reply@yourdomain.com
+
+# Optional for local/dev testing only:
+EMAIL_LOGIN_ALLOW_NO_EMAIL=true
+EMAIL_LOGIN_DEBUG_CODES=1
+
 e.g.
 VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
 VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app

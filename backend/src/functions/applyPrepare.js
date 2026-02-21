@@ -1,6 +1,8 @@
 // backend/src/functions/applyPrepare.js
 "use strict";
 
+const { getAuthenticatedUser } = require("../lib/swaUser");
+
 const { CosmosClient } = require("@azure/cosmos");
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { PDFDocument, StandardFonts, rgb, degrees } = require("pdf-lib");
@@ -108,11 +110,11 @@ function toWinAnsiSafe(input) {
 
   s = s.replace(/\r\n/g, "\n").replace(/\u00A0/g, " ");
   s = s
-    .replace(/[“”„]/g, '"')
-    .replace(/[’‘‚]/g, "'")
-    .replace(/[–—−]/g, "-")
-    .replace(/…/g, ".")
-    .replace(/[●•◦∙·]/g, "-");
+    .replace(/[Ã¢â‚¬Å“Ã¢â‚¬ÂÃ¢â‚¬Å¾]/g, '"')
+    .replace(/[Ã¢â‚¬â„¢Ã¢â‚¬ËœÃ¢â‚¬Å¡]/g, "'")
+    .replace(/[Ã¢â‚¬â€œÃ¢â‚¬â€Ã¢Ë†â€™]/g, "-")
+    .replace(/Ã¢â‚¬Â¦/g, ".")
+    .replace(/[Ã¢â€”ÂÃ¢â‚¬Â¢Ã¢â€”Â¦Ã¢Ë†â„¢Ã‚Â·]/g, "-");
 
   // remove sequences like "..." which look like truncation
   s = s.replace(/\.{2,}/g, ".");
@@ -406,31 +408,31 @@ MODE "standard":
 - No mock experience, no fictional companies, no fictional dates.
 
 MODE "elite":
-- You MAY generate mock experience using REAL companies that match the job’s industry.
+- You MAY generate mock experience using REAL companies that match the jobÃ¢â‚¬â„¢s industry.
   Examples:
-    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
-    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
-    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
-    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
+    Ã¢â‚¬Â¢ IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    Ã¢â‚¬Â¢ Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    Ã¢â‚¬Â¢ Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    Ã¢â‚¬Â¢ Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
 - Mock experience MUST include:
-  • a real company name,
-  • a realistic job title,
-  • a location,
-  • dates 1 to 2 years prior,
-  • strong, job-aligned bullets.
-- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+  Ã¢â‚¬Â¢ a real company name,
+  Ã¢â‚¬Â¢ a realistic job title,
+  Ã¢â‚¬Â¢ a location,
+  Ã¢â‚¬Â¢ dates 1 to 2 years prior,
+  Ã¢â‚¬Â¢ strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidateÃ¢â‚¬â„¢s demonstrated skill boundaries.
 - Mock experience MUST NOT reference that it is mock or fictional.
 - You MAY generate new enterprise-grade projects aligned to JOB DATA.
 - Projects MUST reflect real-world deliverables such as:
-  • server room and IDF or MDF organization,
-  • smart hands support for network and server teams,
-  • printer hardware repair and warranty coordination,
-  • Teams Rooms and Solstice Pod configuration and firmware updates,
-  • A or V troubleshooting and meeting room readiness,
-  • proactive floor walks and issue identification,
-  • asset lifecycle management including deployment, reuse, and disposal,
-  • SLA improvement and ticket efficiency initiatives,
-  • executive and VIP support.
+  Ã¢â‚¬Â¢ server room and IDF or MDF organization,
+  Ã¢â‚¬Â¢ smart hands support for network and server teams,
+  Ã¢â‚¬Â¢ printer hardware repair and warranty coordination,
+  Ã¢â‚¬Â¢ Teams Rooms and Solstice Pod configuration and firmware updates,
+  Ã¢â‚¬Â¢ A or V troubleshooting and meeting room readiness,
+  Ã¢â‚¬Â¢ proactive floor walks and issue identification,
+  Ã¢â‚¬Â¢ asset lifecycle management including deployment, reuse, and disposal,
+  Ã¢â‚¬Â¢ SLA improvement and ticket efficiency initiatives,
+  Ã¢â‚¬Â¢ executive and VIP support.
 - Projects MUST NOT reference that they are mock or fictional.
 
 QUALITY REQUIREMENTS:
@@ -524,7 +526,7 @@ HARD CONSTRAINTS:
 - No "..." anywhere. No incomplete phrases.
 - Bullets <= 110 characters preferred. Strong verbs. No fluff.
 - Keep output 1-page dense and recruiter-friendly.
-- Skills must be grouped into clean, professional categories (5–7 categories).
+- Skills must be grouped into clean, professional categories (5Ã¢â‚¬â€œ7 categories).
 
 TRUTHFULNESS RULES (STRICT):
 - MODE "real": use ONLY facts supported by RESUME TEXT or PROFILE. Do NOT invent employers, titles, dates, roles, tools, credentials, or metrics.
@@ -538,7 +540,7 @@ TRAINING SAMPLE RULES:
 
 JOB-TARGETING RULES:
 - Read JOB DATA and TARGET_KEYWORDS carefully.
-- Rewrite headline + summary to match the job’s domain (truthful).
+- Rewrite headline + summary to match the jobÃ¢â‚¬â„¢s domain (truthful).
 - Rewrite skills to emphasize the tools/competencies the job values most (only if supported).
 - Rewrite experience bullets to highlight the strongest alignment (truthful).
 - Weave keywords naturally; never keyword-stuff.
@@ -591,43 +593,43 @@ HARD CONSTRAINTS:
 - Keep it 1-page dense and recruiter-friendly.
 
 ELITE MODE RULES:
-- You MAY generate mock experience using REAL companies that match the job’s industry.
+- You MAY generate mock experience using REAL companies that match the jobÃ¢â‚¬â„¢s industry.
   Examples:
-    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
-    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
-    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
-    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
+    Ã¢â‚¬Â¢ IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    Ã¢â‚¬Â¢ Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    Ã¢â‚¬Â¢ Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    Ã¢â‚¬Â¢ Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
 - Mock experience MUST include:
-  • a real company name,
-  • a realistic job title,
-  • a location,
-  • dates 1 to 2 years prior,
-  • strong, job-aligned bullets.
-- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+  Ã¢â‚¬Â¢ a real company name,
+  Ã¢â‚¬Â¢ a realistic job title,
+  Ã¢â‚¬Â¢ a location,
+  Ã¢â‚¬Â¢ dates 1 to 2 years prior,
+  Ã¢â‚¬Â¢ strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidateÃ¢â‚¬â„¢s demonstrated skill boundaries.
 - Mock experience MUST NOT reference that it is mock or fictional.
 - Mock experience MUST read as real, professional employment.
 
 MOCK PROJECT RULES:
 - You MAY generate new enterprise-grade projects aligned to JOB DATA.
 - Projects MUST reflect real-world deliverables such as:
-  • server room and IDF/MDF organization,
-  • smart hands support for network and server teams,
-  • printer hardware repair and warranty coordination,
-  • Teams Rooms and Solstice Pod configuration and firmware updates,
-  • A/V troubleshooting and meeting room readiness,
-  • proactive floor walks and issue identification,
-  • asset lifecycle management including deployment, reuse, and disposal,
-  • SLA improvement and ticket efficiency initiatives,
-  • executive and VIP support.
+  Ã¢â‚¬Â¢ server room and IDF/MDF organization,
+  Ã¢â‚¬Â¢ smart hands support for network and server teams,
+  Ã¢â‚¬Â¢ printer hardware repair and warranty coordination,
+  Ã¢â‚¬Â¢ Teams Rooms and Solstice Pod configuration and firmware updates,
+  Ã¢â‚¬Â¢ A/V troubleshooting and meeting room readiness,
+  Ã¢â‚¬Â¢ proactive floor walks and issue identification,
+  Ã¢â‚¬Â¢ asset lifecycle management including deployment, reuse, and disposal,
+  Ã¢â‚¬Â¢ SLA improvement and ticket efficiency initiatives,
+  Ã¢â‚¬Â¢ executive and VIP support.
 - Projects MUST NOT reference that they are mock or fictional.
 
 ELITE OPTIMIZATION TASK:
 - Aggressively optimize for recruiter scan and ATS:
-  • strengthen headline and summary positioning,
-  • normalize skills into 5 to 7 professional categories,
-  • rewrite bullets into concise, impact-oriented language,
-  • remove weak or redundant items,
-  • close keyword gaps using only skills the candidate can realistically perform.
+  Ã¢â‚¬Â¢ strengthen headline and summary positioning,
+  Ã¢â‚¬Â¢ normalize skills into 5 to 7 professional categories,
+  Ã¢â‚¬Â¢ rewrite bullets into concise, impact-oriented language,
+  Ã¢â‚¬Â¢ remove weak or redundant items,
+  Ã¢â‚¬Â¢ close keyword gaps using only skills the candidate can realistically perform.
 - Ensure tense consistency, punctuation consistency, and clean formatting.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
 
@@ -778,43 +780,43 @@ HARD CONSTRAINTS:
 - Keep it 1-page dense and recruiter-friendly.
 
 ELITE MODE RULES:
-- You MAY generate mock experience using REAL companies that match the job’s industry.
+- You MAY generate mock experience using REAL companies that match the jobÃ¢â‚¬â„¢s industry.
   Examples:
-    • IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
-    • Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
-    • Cybersecurity: CrowdStrike, Rapid7, Optiv.
-    • Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
+    Ã¢â‚¬Â¢ IT Help Desk and Deskside Support: CDW, Insight, SHI, TEKsystems, NTT Data, Concentrix.
+    Ã¢â‚¬Â¢ Software Engineering: Atlassian, Shopify, Twilio, Datadog, Stripe, HubSpot.
+    Ã¢â‚¬Â¢ Cybersecurity: CrowdStrike, Rapid7, Optiv.
+    Ã¢â‚¬Â¢ Cloud and DevOps: Rackspace, Slalom, Accenture Cloud.
 - Mock experience MUST include:
-  • a real company name,
-  • a realistic job title,
-  • a location,
-  • dates 1 to 2 years prior,
-  • strong, job-aligned bullets.
-- Mock experience MUST NOT contradict the candidate’s demonstrated skill boundaries.
+  Ã¢â‚¬Â¢ a real company name,
+  Ã¢â‚¬Â¢ a realistic job title,
+  Ã¢â‚¬Â¢ a location,
+  Ã¢â‚¬Â¢ dates 1 to 2 years prior,
+  Ã¢â‚¬Â¢ strong, job-aligned bullets.
+- Mock experience MUST NOT contradict the candidateÃ¢â‚¬â„¢s demonstrated skill boundaries.
 - Mock experience MUST NOT reference that it is mock or fictional.
 - Mock experience MUST read as real, professional employment.
 
 MOCK PROJECT RULES:
 - You MAY generate new enterprise-grade projects aligned to JOB DATA.
 - Projects MUST reflect real-world deliverables such as:
-  • server room and IDF or MDF organization,
-  • smart hands support for network and server teams,
-  • printer hardware repair and warranty coordination,
-  • Teams Rooms and Solstice Pod configuration and firmware updates,
-  • A or V troubleshooting and meeting room readiness,
-  • proactive floor walks and issue identification,
-  • asset lifecycle management including deployment, reuse, and disposal,
-  • SLA improvement and ticket efficiency initiatives,
-  • executive and VIP support.
+  Ã¢â‚¬Â¢ server room and IDF or MDF organization,
+  Ã¢â‚¬Â¢ smart hands support for network and server teams,
+  Ã¢â‚¬Â¢ printer hardware repair and warranty coordination,
+  Ã¢â‚¬Â¢ Teams Rooms and Solstice Pod configuration and firmware updates,
+  Ã¢â‚¬Â¢ A or V troubleshooting and meeting room readiness,
+  Ã¢â‚¬Â¢ proactive floor walks and issue identification,
+  Ã¢â‚¬Â¢ asset lifecycle management including deployment, reuse, and disposal,
+  Ã¢â‚¬Â¢ SLA improvement and ticket efficiency initiatives,
+  Ã¢â‚¬Â¢ executive and VIP support.
 - Projects MUST NOT reference that they are mock or fictional.
 
 ELITE OPTIMIZATION TASK:
 - Aggressively optimize for recruiter scan and ATS:
-  • strengthen headline and summary positioning,
-  • normalize skills into 5 to 7 professional categories,
-  • rewrite bullets into concise, impact-oriented language,
-  • remove weak or redundant items,
-  • close keyword gaps using only skills the candidate can realistically perform.
+  Ã¢â‚¬Â¢ strengthen headline and summary positioning,
+  Ã¢â‚¬Â¢ normalize skills into 5 to 7 professional categories,
+  Ã¢â‚¬Â¢ rewrite bullets into concise, impact-oriented language,
+  Ã¢â‚¬Â¢ remove weak or redundant items,
+  Ã¢â‚¬Â¢ close keyword gaps using only skills the candidate can realistically perform.
 - Ensure tense consistency, punctuation consistency, and clean formatting.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
 
@@ -1195,7 +1197,7 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
     for (const role of exp.slice(0, 5)) {
       const title = safeStr(role?.title);
       const company = safeStr(role?.company);
-      const left = [title, company].filter(Boolean).join(" — ");
+      const left = [title, company].filter(Boolean).join(" Ã¢â‚¬â€ ");
 
       const loc = safeStr(role?.location);
       const dates = safeStr(role?.dates);
@@ -1229,7 +1231,7 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
     for (const e of edu.slice(0, 3)) {
       const school = safeStr(e?.school);
       const degree = safeStr(e?.degree);
-      const left = [degree, school].filter(Boolean).join(" — ");
+      const left = [degree, school].filter(Boolean).join(" Ã¢â‚¬â€ ");
       const dates = safeStr(e?.dates);
 
       drawLeftRight(left, dates, {
@@ -1397,7 +1399,7 @@ async function applyPrepare(request, context) {
       return { status: 500, jsonBody: { ok: false, error: "Missing AZURE_STORAGE_CONNECTION_STRING" } };
     }
 
-    const user = getSwaUser(request);
+    const user = getAuthenticatedUser(request) || getSwaUser(request);
     if (!user) {
       return { status: 401, jsonBody: { ok: false, error: "Not authenticated" } };
     }
@@ -1534,7 +1536,7 @@ async function applyPrepare(request, context) {
         aiMode,
       });
 
-      // ✅ FIX: accept both wrapper shapes (but our prompts now always return { final: ... })
+      // Ã¢Å“â€¦ FIX: accept both wrapper shapes (but our prompts now always return { final: ... })
       if (audited && typeof audited === "object") {
         if (audited.final && typeof audited.final === "object") {
           draft = audited.final;
