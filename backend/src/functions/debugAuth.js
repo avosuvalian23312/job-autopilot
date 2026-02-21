@@ -13,8 +13,12 @@ async function debugAuth(request, context) {
   const hasIdToken = !!getHeader(request, "x-ms-token-aad-id-token");
   const hasAccessToken = !!getHeader(request, "x-ms-token-aad-access-token");
   const hasAuthorization = !!getHeader(request, "authorization");
-  const hasXAppToken = !!getHeader(request, "x-app-token");
-  const hasAppTokenCookie = !!getCookie(request, "jobautopilot_app_token");
+  const xAppToken = String(getHeader(request, "x-app-token") || "").trim();
+  const appTokenCookie = String(getCookie(request, "jobautopilot_app_token") || "").trim();
+  const authHeader = String(getHeader(request, "authorization") || "").trim();
+  const authBearer = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  const hasXAppToken = !!xAppToken;
+  const hasAppTokenCookie = !!appTokenCookie;
   const token = getAppTokenFromRequest(request);
   const hasParsedAppToken = !!token;
 
@@ -22,27 +26,41 @@ async function debugAuth(request, context) {
   let tokenDebug = null;
 
   if (token) {
-    const decoded = jwt.decode(token, { complete: true });
-    const payload = decoded?.payload || {};
     const secret = process.env.APP_JWT_SECRET;
-    let verifyOk = false;
-    let verifyError = null;
-    try {
-      if (!secret) throw new Error("Missing APP_JWT_SECRET");
-      jwt.verify(token, secret);
-      verifyOk = true;
-    } catch (e) {
-      verifyError = e?.message || "verify_failed";
-    }
+    const candidates = [
+      { source: "x-app-token", value: xAppToken },
+      { source: "cookie", value: appTokenCookie },
+      { source: "authorization-bearer", value: authBearer },
+    ].filter((x) => !!x.value);
 
+    const checks = candidates.map((item) => {
+      const decoded = jwt.decode(item.value, { complete: true });
+      const payload = decoded?.payload || {};
+      let verifyOk = false;
+      let verifyError = null;
+      try {
+        if (!secret) throw new Error("Missing APP_JWT_SECRET");
+        jwt.verify(item.value, secret);
+        verifyOk = true;
+      } catch (e) {
+        verifyError = e?.message || "verify_failed";
+      }
+      return {
+        source: item.source,
+        verifyOk,
+        verifyError,
+        hasUserId: !!(payload?.userId || payload?.uid || payload?.sub),
+        typ: payload?.typ || null,
+        provider: payload?.provider || null,
+        hasEmail: !!payload?.email,
+        payloadKeys: Object.keys(payload || {}),
+      };
+    });
+
+    const primary = checks[0] || null;
     tokenDebug = {
-      verifyOk,
-      verifyError,
-      hasUserId: !!(payload?.userId || payload?.uid || payload?.sub),
-      typ: payload?.typ || null,
-      provider: payload?.provider || null,
-      hasEmail: !!payload?.email,
-      payloadKeys: Object.keys(payload || {}),
+      primary,
+      checks,
     };
   }
 

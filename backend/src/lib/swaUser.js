@@ -41,56 +41,69 @@ function getCookie(request, name) {
 }
 
 function getAppTokenFromRequest(request) {
-  const auth = String(getHeader(request, "authorization") || "").trim();
-  if (auth) {
-    const match = auth.match(/^Bearer\s+(.+)$/i);
-    if (match?.[1]) return String(match[1]).trim();
-  }
-
   const headerToken = String(getHeader(request, "x-app-token") || "").trim();
   if (headerToken) return headerToken;
 
   const cookieToken = String(getCookie(request, "jobautopilot_app_token") || "").trim();
   if (cookieToken) return cookieToken;
 
+  const auth = String(getHeader(request, "authorization") || "").trim();
+  if (auth) {
+    const match = auth.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) return String(match[1]).trim();
+  }
+
   return null;
 }
 
 function parseBearerPrincipal(request) {
-  const token = getAppTokenFromRequest(request);
-  if (!token) return null;
-
   const secret = process.env.APP_JWT_SECRET;
   if (!secret) return null;
 
-  try {
-    const payload = jwt.verify(token, secret);
-    const email = String(payload?.email || "").trim().toLowerCase() || null;
-    const provider = String(payload?.provider || "").trim().toLowerCase() || "";
+  const tokenCandidates = [];
+  const xAppToken = String(getHeader(request, "x-app-token") || "").trim();
+  const cookieToken = String(getCookie(request, "jobautopilot_app_token") || "").trim();
+  const auth = String(getHeader(request, "authorization") || "").trim();
+  const bearerToken = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
 
-    const derivedEmailUserId =
-      provider === "email" && email ? `email:${email}` : null;
-
-    const userId =
-      payload?.userId ||
-      payload?.uid ||
-      payload?.sub ||
-      derivedEmailUserId ||
-      null;
-    if (!userId) return null;
-
-    const normalizedProvider =
-      provider || (String(userId).startsWith("email:") ? "email" : "unknown");
-
-    return {
-      userId: String(userId),
-      userDetails: email || String(userId),
-      identityProvider: normalizedProvider,
-      claims: email ? [{ typ: "emails", val: email }] : [],
-    };
-  } catch {
-    return null;
+  if (xAppToken) tokenCandidates.push(xAppToken);
+  if (cookieToken && cookieToken !== xAppToken) tokenCandidates.push(cookieToken);
+  if (bearerToken && bearerToken !== xAppToken && bearerToken !== cookieToken) {
+    tokenCandidates.push(bearerToken);
   }
+
+  for (const token of tokenCandidates) {
+    try {
+      const payload = jwt.verify(token, secret);
+      const email = String(payload?.email || "").trim().toLowerCase() || null;
+      const provider = String(payload?.provider || "").trim().toLowerCase() || "";
+
+      const derivedEmailUserId =
+        provider === "email" && email ? `email:${email}` : null;
+
+      const userId =
+        payload?.userId ||
+        payload?.uid ||
+        payload?.sub ||
+        derivedEmailUserId ||
+        null;
+      if (!userId) continue;
+
+      const normalizedProvider =
+        provider || (String(userId).startsWith("email:") ? "email" : "unknown");
+
+      return {
+        userId: String(userId),
+        userDetails: email || String(userId),
+        identityProvider: normalizedProvider,
+        claims: email ? [{ typ: "emails", val: email }] : [],
+      };
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
 }
 
 function parseClientPrincipal(request) {
