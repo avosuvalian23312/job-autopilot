@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Rocket } from "lucide-react";
+import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 //dff
@@ -35,20 +35,20 @@ export default function Landing() {
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-              <Rocket className="w-4 h-4 text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+              <Zap className="h-4 w-4 text-slate-950" />
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm text-white/50 font-medium">
+          <nav className="hidden md:flex items-center gap-1.5 text-sm font-medium">
             <a
               href="#pricing"
               onClick={(e) => {
                 e.preventDefault();
                 document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="hover:text-white transition-colors cursor-pointer"
+              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
             >
               Pricing
             </a>
@@ -59,7 +59,7 @@ export default function Landing() {
                 e.preventDefault();
                 document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="hover:text-white transition-colors cursor-pointer"
+              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
             >
               Features
             </a>
@@ -70,14 +70,14 @@ export default function Landing() {
                 e.preventDefault();
                 document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="hover:text-white transition-colors cursor-pointer"
+              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
             >
               Reviews
             </a>
 
             <a
               onClick={() => navigate(createPageUrl("Blog"))}
-              className="hover:text-white transition-colors cursor-pointer"
+              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
             >
               Blog
             </a>

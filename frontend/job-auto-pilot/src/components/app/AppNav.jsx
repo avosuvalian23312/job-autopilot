@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { clearAppToken } from "@/lib/appSession";
+import { clearAppToken, getAppToken } from "@/lib/appSession";
 import {
   Zap,
   Home,
@@ -86,8 +86,14 @@ export default function AppNav({ currentPage, credits }) {
     typeof credits === "number" ? credits : liveCredits ?? 0;
 
   const handleLogout = () => {
+    const landingPath = createPageUrl("Landing") || "/";
+    const hadAppToken = !!getAppToken();
     clearAppToken();
-    swaLogout(createPageUrl("Landing") || "/");
+    if (hadAppToken) {
+      window.location.assign(landingPath);
+      return;
+    }
+    swaLogout(landingPath);
   };
 
   return (

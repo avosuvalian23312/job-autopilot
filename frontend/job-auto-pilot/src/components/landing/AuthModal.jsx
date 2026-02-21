@@ -241,6 +241,10 @@ export default function AuthModal({ open, onClose, onComplete }) {
     transition: { duration: 0.32, ease: "easeOut" },
   };
 
+  const authInputClass =
+    "bg-black/35 border-white/35 text-white placeholder:text-white/35 caret-white [color-scheme:dark] " +
+    "[&:-webkit-autofill]:shadow-[0_0_0px_1000px_rgba(0,0,0,0.35)_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:#fff]";
+
   return (
     <AnimatePresence>
       {open && (
@@ -333,6 +337,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
                     value={email}
                     disabled={busy || step === "verify"}
                     onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    className={authInputClass}
                   />
 
                   {step === "start" && (
@@ -353,7 +359,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
                         value={code}
                         disabled={busy}
                         onChange={(e) => setCode(e.target.value)}
-                        className="mt-3"
+                        autoComplete="one-time-code"
+                        className={`mt-3 ${authInputClass}`}
                       />
                       <Button
                         onClick={verifyEmailCode}
