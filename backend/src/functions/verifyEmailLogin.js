@@ -158,13 +158,29 @@ async function sendCodeEmail({ to, code, context }) {
   }
 
   sendgrid.setApiKey(apiKey);
-  await sendgrid.send({
-    to,
-    from,
-    subject: "Your Job Autopilot sign-in code",
-    text: `Your sign-in code is ${code}. It expires in 12 minutes.`,
-    html: `<p>Your sign-in code is <strong>${code}</strong>.</p><p>It expires in 12 minutes.</p>`,
-  });
+  try {
+    await sendgrid.send({
+      to,
+      from,
+      subject: "Your Job Autopilot sign-in code",
+      text: `Your sign-in code is ${code}. It expires in 12 minutes.`,
+      html: `<p>Your sign-in code is <strong>${code}</strong>.</p><p>It expires in 12 minutes.</p>`,
+    });
+  } catch (err) {
+    const status = err?.code || err?.response?.statusCode || null;
+    const details =
+      err?.response?.body?.errors?.map((e) => e?.message).filter(Boolean).join("; ") ||
+      "";
+
+    if (status === 401 || status === 403) {
+      throw new Error(
+        details ||
+          "Email delivery forbidden by SendGrid. Check SENDGRID_API_KEY and verify SENDGRID_FROM_EMAIL sender identity."
+      );
+    }
+
+    throw new Error(details || err?.message || "Email delivery failed");
+  }
 }
 
 module.exports = async function verifyEmailLogin(request, context) {

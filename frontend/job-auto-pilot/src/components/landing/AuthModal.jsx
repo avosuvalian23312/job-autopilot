@@ -149,8 +149,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
 
       setChallengeToken(String(res.data.challengeToken));
       setStep("verify");
+      const debugCode = String(res.data?.debugCode || "").trim();
       setInfo(
-        `Code sent to ${res.data?.maskedEmail || normalizedEmail}.`
+        debugCode
+          ? `Code sent to ${res.data?.maskedEmail || normalizedEmail}. Debug code: ${debugCode}`
+          : `Code sent to ${res.data?.maskedEmail || normalizedEmail}.`
       );
     } catch {
       setErr("Could not send login code.");
