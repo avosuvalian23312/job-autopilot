@@ -2,7 +2,7 @@
 
 const Stripe = require("stripe");
 const { getSwaUserId } = require("../lib/swaUser");
-const { readProfile } = require("../lib/billingStore.cjs");
+const { readProfile, setPlan } = require("../lib/billingStore.cjs");
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "*",
@@ -65,6 +65,24 @@ function cardSnippetFromCharge(charge) {
   };
 }
 
+function isNoSuchCustomerError(err) {
+  return /no such customer/i.test(String(err?.message || ""));
+}
+
+async function deriveCustomerIdFromSubscription(stripe, subscriptionId, context) {
+  if (!subscriptionId) return "";
+  try {
+    const sub = await stripe.subscriptions.retrieve(subscriptionId);
+    return (
+      (typeof sub?.customer === "string" && sub.customer) ||
+      String(sub?.customer?.id || "")
+    );
+  } catch (e) {
+    context?.log?.("stripeBillingSummary: derive customer from sub failed", e?.message);
+    return "";
+  }
+}
+
 async function stripeBillingSummary(request, context) {
   try {
     if (request.method === "OPTIONS") {
@@ -117,13 +135,52 @@ async function stripeBillingSummary(request, context) {
           : String(subscription.customer.id || "");
     }
 
+    if (stripeSubscriptionId) {
+      const subCustomerId = await deriveCustomerIdFromSubscription(
+        stripe,
+        stripeSubscriptionId,
+        context
+      );
+      if (subCustomerId && subCustomerId !== stripeCustomerId) {
+        stripeCustomerId = subCustomerId;
+        await setPlan(authUserId, { stripeCustomerId: subCustomerId });
+      }
+    }
+
     if (stripeCustomerId) {
       try {
         customer = await stripe.customers.retrieve(stripeCustomerId, {
           expand: ["invoice_settings.default_payment_method", "default_source"],
         });
       } catch (e) {
-        context?.log?.("stripeBillingSummary: customer lookup failed", e?.message);
+        if (isNoSuchCustomerError(e) && stripeSubscriptionId) {
+          const recoveredCustomerId = await deriveCustomerIdFromSubscription(
+            stripe,
+            stripeSubscriptionId,
+            context
+          );
+          if (recoveredCustomerId) {
+            stripeCustomerId = recoveredCustomerId;
+            await setPlan(authUserId, { stripeCustomerId: recoveredCustomerId });
+            try {
+              customer = await stripe.customers.retrieve(stripeCustomerId, {
+                expand: ["invoice_settings.default_payment_method", "default_source"],
+              });
+            } catch (retryErr) {
+              context?.log?.(
+                "stripeBillingSummary: customer retry lookup failed",
+                retryErr?.message
+              );
+            }
+          } else {
+            context?.log?.(
+              "stripeBillingSummary: stale customer id with no recoverable subscription customer",
+              e?.message
+            );
+          }
+        } else {
+          context?.log?.("stripeBillingSummary: customer lookup failed", e?.message);
+        }
       }
     }
 
