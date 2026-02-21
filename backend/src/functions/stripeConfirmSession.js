@@ -206,10 +206,7 @@ async function stripeConfirmSession(request, context) {
     if (!session) {
       return json(404, { ok: false, error: "Checkout session not found" });
     }
-
-    if (String(session.mode || "") !== "subscription") {
-      return json(400, { ok: false, error: "Session is not a subscription checkout" });
-    }
+    const sessionMode = String(session.mode || "").toLowerCase();
 
     const sessionUserId =
       toStr(session?.metadata?.userId) ||
@@ -230,6 +227,53 @@ async function stripeConfirmSession(request, context) {
         error: "Checkout is not completed yet",
         paymentStatus,
         checkoutStatus,
+      });
+    }
+
+    if (sessionMode === "payment") {
+      const purchasedCredits =
+        Number(session?.metadata?.credits || session?.metadata?.creditAmount || 0) || 0;
+      if (purchasedCredits <= 0) {
+        return json(400, {
+          ok: false,
+          error: "Missing purchased credits metadata",
+          sessionId,
+        });
+      }
+
+      const grantReason = `credits_pack:${sessionId}:${purchasedCredits}`;
+      const alreadyGranted = await hasGrantReason(authUserId, grantReason);
+
+      let granted = false;
+      let balanceAfter = null;
+      if (!alreadyGranted) {
+        const g = await grantCredits(authUserId, purchasedCredits, grantReason, {
+          checkoutType: "credits",
+          checkoutSessionId: sessionId,
+        });
+        granted = true;
+        balanceAfter = Number(g?.balance || 0) || 0;
+      }
+
+      return json(200, {
+        ok: true,
+        confirmed: true,
+        sessionId,
+        mode: "payment",
+        purchasedCredits,
+        creditsGrantedNow: granted,
+        duplicate: alreadyGranted,
+        balanceAfter,
+        paymentStatus,
+        checkoutStatus,
+      });
+    }
+
+    if (sessionMode !== "subscription") {
+      return json(400, {
+        ok: false,
+        error: "Session mode not supported for confirmation",
+        mode: sessionMode || null,
       });
     }
 

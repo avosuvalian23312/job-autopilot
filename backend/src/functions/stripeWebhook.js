@@ -215,16 +215,22 @@ module.exports = async (request, context) => {
       return Math.max(0, targetGrant - currentBalance);
     }
 
-    // 1) checkout.session.completed -> activate plan + store stripe IDs
-    if (event.type === "checkout.session.completed") {
+    // 1) checkout.session.completed (and async payment success) -> apply checkout effects
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded"
+    ) {
       const session = event.data.object;
-
-      const userId = session?.metadata?.userId || null;
+      const sessionMode = String(session?.mode || "").toLowerCase();
+      const userId =
+        session?.metadata?.userId ||
+        session?.client_reference_id ||
+        null;
       const planId = session?.metadata?.planId || null;
 
       if (!userId) return json(200, { ok: true, ignored: true });
 
-      const first = await once(userId, `checkout:${session.id}`);
+      const first = await once(userId, `checkout:${session.id}:${event.type}`);
       if (!first) {
         return json(200, {
           ok: true,
@@ -236,7 +242,7 @@ module.exports = async (request, context) => {
         });
       }
 
-      if (session.mode === "subscription") {
+      if (sessionMode === "subscription") {
         await setPlan(userId, {
           planId,
           status: "active",
@@ -285,11 +291,31 @@ module.exports = async (request, context) => {
         }
       }
 
+      if (sessionMode === "payment") {
+        const purchasedCredits =
+          Number(session?.metadata?.credits || session?.metadata?.creditAmount || 0) || 0;
+        const paymentStatus = String(session?.payment_status || "").toLowerCase();
+        const checkoutStatus = String(session?.status || "").toLowerCase();
+        const paidOrComplete = paymentStatus === "paid" || checkoutStatus === "complete";
+
+        if (purchasedCredits > 0 && paidOrComplete) {
+          const grantReason = `credits_pack:${session.id}:${purchasedCredits}`;
+          const alreadyGranted = await hasGrantReason(userId, grantReason);
+          if (!alreadyGranted) {
+            await grantCredits(userId, purchasedCredits, grantReason, {
+              checkoutType: "credits",
+              checkoutSessionId: session.id || null,
+            });
+          }
+        }
+      }
+
       return json(200, {
         ok: true,
         type: event.type,
         userId,
         planId,
+        mode: sessionMode || null,
         checkoutSessionId: session.id || null,
       });
     }

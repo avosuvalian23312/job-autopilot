@@ -8,16 +8,72 @@ import {
   Download,
   Plus,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 
 const packages = [
-  { credits: 50, price: 9, popular: false },
-  { credits: 150, price: 24, popular: true, save: "20%" },
-  { credits: 300, price: 45, popular: false, save: "25%" },
-  { credits: 500, price: 69, popular: false, save: "30%" },
+  { credits: 50, oldPrice: 9, price: 4.99, popular: false, save: "44%" },
+  { credits: 150, oldPrice: 24, price: 19.99, popular: true, save: "17%" },
+  { credits: 300, oldPrice: 45, price: 29.99, popular: false, save: "33%" },
+  { credits: 500, oldPrice: 69, price: 39.99, popular: false, save: "42%" },
 ];
+
+const PENDING_CREDITS_SESSION_KEY = "jobautopilot_pending_credits_session_id";
+
+function formatPrice(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value ?? "");
+  return n.toFixed(2);
+}
+
+function getCurrentPath() {
+  try {
+    const p = window.location.pathname || "/Credits";
+    return p.startsWith("/") ? p : "/Credits";
+  } catch {
+    return "/Credits";
+  }
+}
+
+function readPendingCreditsSessionId() {
+  try {
+    return String(window.sessionStorage.getItem(PENDING_CREDITS_SESSION_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writePendingCreditsSessionId(sessionId) {
+  try {
+    const val = String(sessionId || "").trim();
+    if (!val) return;
+    window.sessionStorage.setItem(PENDING_CREDITS_SESSION_KEY, val);
+  } catch {
+    // no-op
+  }
+}
+
+function clearPendingCreditsSessionId() {
+  try {
+    window.sessionStorage.removeItem(PENDING_CREDITS_SESSION_KEY);
+  } catch {
+    // no-op
+  }
+}
+
+function clearCheckoutQueryParams() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("session_id");
+    url.searchParams.delete("canceled");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", next);
+  } catch {
+    // no-op
+  }
+}
 
 function formatDate(dateLike) {
   const d = new Date(dateLike);
@@ -45,6 +101,7 @@ function reasonLabel(reason, type) {
     const plan = planLabel(parts[1] || "");
     return `${plan} subscription credit`;
   }
+  if (r.startsWith("credits_pack:")) return "Credits Pack Purchase";
   if (r.includes("resume")) return "Resume Generation";
   if (r.includes("cover")) return "Cover Letter";
   return type === "grant" ? "Credit Grant" : "Credit Spend";
@@ -88,7 +145,56 @@ export default function Credits() {
   const [stripeBilling, setStripeBilling] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [confirmingCheckout, setConfirmingCheckout] = useState(false);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+
+  const selectedPkg = packages[selectedPackage] || packages[0];
+
+  useEffect(() => {
+    let active = true;
+
+    const confirmCheckout = async () => {
+      try {
+        const qs = new URLSearchParams(window.location.search);
+        const canceled = qs.get("canceled") === "1";
+        const sessionIdFromUrl = String(qs.get("session_id") || "").trim();
+        if (sessionIdFromUrl) {
+          writePendingCreditsSessionId(sessionIdFromUrl);
+        }
+        const sessionId = sessionIdFromUrl || readPendingCreditsSessionId();
+
+        if (canceled) {
+          clearPendingCreditsSessionId();
+          clearCheckoutQueryParams();
+          return;
+        }
+        if (!sessionId) return;
+
+        setErrorMsg("");
+        setConfirmingCheckout(true);
+        await apiFetch("/api/stripe/confirm-session", {
+          method: "POST",
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        if (!active) return;
+        clearPendingCreditsSessionId();
+        clearCheckoutQueryParams();
+        setRefreshKey((v) => v + 1);
+      } catch (e) {
+        if (!active) return;
+        setErrorMsg(e?.message || "Failed to confirm checkout.");
+      } finally {
+        if (active) setConfirmingCheckout(false);
+      }
+    };
+
+    confirmCheckout();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,7 +238,7 @@ export default function Credits() {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [refreshKey]);
 
   const balance = Number(creditsMe?.credits?.balance || 0) || 0;
   const monthlyAllowance = Number(creditsMe?.credits?.monthlyAllowance || 0) || 0;
@@ -253,6 +359,39 @@ export default function Credits() {
       });
   }, [ledger]);
 
+  const handleBuyCredits = async () => {
+    if (purchaseLoading || confirmingCheckout) return;
+    const pkg = packages[selectedPackage];
+    if (!pkg) return;
+
+    setErrorMsg("");
+    setPurchaseLoading(true);
+    try {
+      const successPath = getCurrentPath();
+      const cancelPath = getCurrentPath();
+      const resp = await apiFetch("/api/stripe/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          checkoutType: "credits",
+          credits: pkg.credits,
+          successPath,
+          cancelPath,
+        }),
+      });
+
+      if (!resp?.url) {
+        throw new Error(resp?.error || "Checkout URL missing.");
+      }
+      if (resp?.id) {
+        writePendingCreditsSessionId(resp.id);
+      }
+      window.location.assign(resp.url);
+    } catch (e) {
+      setErrorMsg(e?.message || "Unable to start checkout.");
+      setPurchaseLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[hsl(240,10%,4%)]">
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
@@ -279,6 +418,9 @@ export default function Credits() {
         >
           <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Credits & Billing</h1>
           <p className="text-white/40">Manage your credits, purchase more, and view usage history</p>
+          {confirmingCheckout ? (
+            <p className="text-sm text-cyan-300 mt-3">Confirming checkout and applying purchased credits...</p>
+          ) : null}
           {errorMsg ? (
             <p className="text-sm text-rose-300 mt-3">{errorMsg}</p>
           ) : null}
@@ -376,8 +518,13 @@ export default function Credits() {
                 ) : null}
                 <div className="text-4xl font-bold text-white mb-2">{pkg.credits}</div>
                 <div className="text-sm text-white/40 mb-4">Credits</div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm text-white/45 line-through decoration-white/45">
+                    ${formatPrice(pkg.oldPrice)}
+                  </span>
+                </div>
                 <div className="flex items-baseline gap-1 mb-2">
-                  <span className="text-2xl font-bold text-white">${pkg.price}</span>
+                  <span className="text-2xl font-bold text-white">${formatPrice(pkg.price)}</span>
                   <span className="text-white/40 text-sm">one-time</span>
                 </div>
                 {pkg.save ? (
@@ -386,9 +533,23 @@ export default function Credits() {
               </div>
             ))}
           </div>
-          <Button className="w-full mt-6 py-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-base font-semibold premium-button">
-            <Plus className="w-5 h-5 mr-2" />
-            Purchase {packages[selectedPackage].credits} Credits for ${packages[selectedPackage].price}
+          <Button
+            type="button"
+            onClick={handleBuyCredits}
+            disabled={purchaseLoading || confirmingCheckout}
+            className="w-full mt-6 py-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white rounded-xl text-base font-semibold premium-button"
+          >
+            {purchaseLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Redirecting to checkout...
+              </>
+            ) : (
+              <>
+                <Plus className="w-5 h-5 mr-2" />
+                Purchase {selectedPkg.credits} Credits for ${formatPrice(selectedPkg.price)}
+              </>
+            )}
           </Button>
           <p className="text-xs text-white/20 text-center mt-3">Credits never expire. Secure payment via Stripe.</p>
         </motion.div>

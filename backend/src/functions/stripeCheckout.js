@@ -51,6 +51,12 @@ async function readJsonBody(request) {
   return {};
 }
 
+function toPositiveInt(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
 module.exports = async (request, context) => {
   try {
     // Preflight
@@ -93,25 +99,12 @@ module.exports = async (request, context) => {
 
     const body = await readJsonBody(request);
 
+    const checkoutType = String(body.checkoutType || body.type || "").toLowerCase().trim();
     const planId = String(body.planId || "").toLowerCase().trim();
     const email = body.email ? String(body.email) : null;
-
-    if (!planId || !PLANS[planId]) {
-      return json(400, {
-        ok: false,
-        error: "Invalid planId",
-        expected: Object.keys(PLANS),
-        got: planId || null,
-      });
-    }
-
-    const { priceId, creditsPerMonth } = PLANS[planId];
-    if (!priceId) {
-      return json(500, {
-        ok: false,
-        error: `Missing Stripe price id env var for plan '${planId}'`,
-      });
-    }
+    const creditsRequested = toPositiveInt(
+      body.credits || body.creditAmount || body.packageCredits
+    );
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
       apiVersion: "2024-06-20",
@@ -136,44 +129,149 @@ module.exports = async (request, context) => {
 
     const normalizePath = (p) => (p.startsWith("/") ? p : `/${p}`);
 
-    context?.log?.("stripeCheckout", {
-      planId,
-      priceId,
-      stripeKeyMode,
-      origin,
-      hasEmail: !!email,
-    });
+    const creditPackages = {
+      50: {
+        credits: 50,
+        amountCents: 499,
+        priceId: process.env.STRIPE_PRICE_CREDITS_50 || "",
+      },
+      150: {
+        credits: 150,
+        amountCents: 1999,
+        priceId: process.env.STRIPE_PRICE_CREDITS_150 || "",
+      },
+      300: {
+        credits: 300,
+        amountCents: 2999,
+        priceId: process.env.STRIPE_PRICE_CREDITS_300 || "",
+      },
+      500: {
+        credits: 500,
+        amountCents: 3999,
+        priceId: process.env.STRIPE_PRICE_CREDITS_500 || "",
+      },
+    };
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
+    const isCreditsCheckout = checkoutType === "credits" || creditsRequested > 0;
 
-      success_url: `${origin}${normalizePath(
-        successPath
-      )}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}${normalizePath(cancelPath)}?canceled=1`,
+    let session = null;
 
-      customer_email: email || undefined,
-      client_reference_id: authUserId || undefined,
+    if (isCreditsCheckout) {
+      const pkg = creditPackages[creditsRequested];
+      if (!pkg) {
+        return json(400, {
+          ok: false,
+          error: "Invalid credits package",
+          expected: Object.keys(creditPackages).map((k) => Number(k)),
+          got: creditsRequested || null,
+        });
+      }
 
-      metadata: { userId: authUserId, planId },
+      const lineItem = pkg.priceId
+        ? { price: pkg.priceId, quantity: 1 }
+        : {
+            price_data: {
+              currency: "usd",
+              unit_amount: pkg.amountCents,
+              product_data: {
+                name: `${pkg.credits} Credits Pack`,
+                description: `One-time purchase of ${pkg.credits} Job Autopilot credits`,
+              },
+            },
+            quantity: 1,
+          };
 
-      subscription_data: {
+      context?.log?.("stripeCheckout", {
+        checkoutType: "credits",
+        credits: pkg.credits,
+        amountCents: pkg.amountCents,
+        stripePriceId: pkg.priceId || null,
+        stripeKeyMode,
+        origin,
+      });
+
+      session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        line_items: [lineItem],
+        success_url: `${origin}${normalizePath(
+          successPath
+        )}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}${normalizePath(cancelPath)}?canceled=1`,
+        customer_email: email || undefined,
+        client_reference_id: authUserId || undefined,
         metadata: {
           userId: authUserId,
-          planId,
-          creditsPerMonth: String(creditsPerMonth || 0),
+          checkoutType: "credits",
+          credits: String(pkg.credits),
+          amountCents: String(pkg.amountCents),
         },
-      },
-    });
+        payment_intent_data: {
+          metadata: {
+            userId: authUserId,
+            checkoutType: "credits",
+            credits: String(pkg.credits),
+          },
+        },
+      });
+    } else {
+      if (!planId || !PLANS[planId]) {
+        return json(400, {
+          ok: false,
+          error: "Invalid planId",
+          expected: Object.keys(PLANS),
+          got: planId || null,
+        });
+      }
+
+      const { priceId, creditsPerMonth } = PLANS[planId];
+      if (!priceId) {
+        return json(500, {
+          ok: false,
+          error: `Missing Stripe price id env var for plan '${planId}'`,
+        });
+      }
+
+      context?.log?.("stripeCheckout", {
+        checkoutType: "subscription",
+        planId,
+        priceId,
+        stripeKeyMode,
+        origin,
+        hasEmail: !!email,
+      });
+
+      session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+
+        success_url: `${origin}${normalizePath(
+          successPath
+        )}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}${normalizePath(cancelPath)}?canceled=1`,
+
+        customer_email: email || undefined,
+        client_reference_id: authUserId || undefined,
+
+        metadata: { userId: authUserId, planId },
+
+        subscription_data: {
+          metadata: {
+            userId: authUserId,
+            planId,
+            creditsPerMonth: String(creditsPerMonth || 0),
+          },
+        },
+      });
+    }
 
     return json(200, {
       ok: true,
       url: session.url,
       id: session.id,
       debug: {
-        planId,
-        priceId,
+        checkoutType: isCreditsCheckout ? "credits" : "subscription",
+        planId: planId || null,
+        credits: isCreditsCheckout ? creditsRequested : null,
         stripeKeyMode,
       },
     });
