@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getAppToken } from "@/lib/appSession";
 
 export default function Packet() {
   const navigate = useNavigate();
@@ -27,11 +28,20 @@ export default function Packet() {
   // API helper (SWA cookies + safe JSON + status)
   // ---------------------------
   const apiFetch = async (path, options = {}) => {
+    const appToken = getAppToken();
+    const authHeaders = appToken
+      ? {
+          Authorization: `Bearer ${appToken}`,
+          "X-App-Token": appToken,
+        }
+      : {};
+
     const res = await fetch(path, {
       ...options,
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        ...authHeaders,
         ...(options.headers || {}),
       },
     });
