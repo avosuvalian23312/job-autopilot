@@ -22,8 +22,8 @@ function allowanceForPlan(plan) {
   if (plan && typeof plan === "object") {
     return allowanceForPlan(plan.planId || "free");
   }
-  if (plan === "free") return 10;
-  if (plan === "starter") return 10; // legacy alias
+  if (plan === "free") return 25;
+  if (plan === "starter") return 25; // legacy alias
   if (plan === "pro") return 150;
   if (plan === "team") return 300;
   if (plan === "power") return 300;
@@ -165,10 +165,17 @@ module.exports = async (request, context) => {
   if (planId === "free") {
     const grantReason = `free_monthly:${currentPeriod}`;
     const ledger = Array.isArray(profile.creditsLedger) ? profile.creditsLedger : [];
-    const alreadyGranted = ledger.some((entry) => entry?.reason === grantReason);
+    const targetAllowance = allowanceForPlan("free");
+    const grantedThisPeriod = ledger.reduce((sum, entry) => {
+      if (!entry || entry.type !== "grant") return sum;
+      if (String(entry.reason || "") !== grantReason) return sum;
+      const delta = Number(entry.delta || 0) || 0;
+      if (delta <= 0) return sum;
+      return sum + delta;
+    }, 0);
 
-    if (!alreadyGranted) {
-      const delta = allowanceForPlan("free");
+    if (grantedThisPeriod < targetAllowance) {
+      const delta = targetAllowance - grantedThisPeriod;
       const now = new Date().toISOString();
       const curBalance = Number(profile.credits.balance || 0) || 0;
       profile.credits.balance = curBalance + delta;

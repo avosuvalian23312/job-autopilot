@@ -180,6 +180,12 @@ export default function Setup() {
     setStep(2);
   };
 
+  const handleSkipResume = () => {
+    if (isSaving) return;
+    setStep(2);
+    toast.message("You can upload your resume later from the Resumes page.");
+  };
+
   const toggleRole = (role) => {
     setSelectedRoles((prev) =>
       prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
@@ -206,11 +212,6 @@ export default function Setup() {
     if (isSaving) return;
 
     try {
-      if (!uploadedFile) {
-        toast.error("Please upload a resume file");
-        return;
-      }
-
       setIsSaving(true);
 
       const preferences = {
@@ -221,64 +222,70 @@ export default function Setup() {
         tone,
       };
 
-      // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
-      const sasResp = await apiFetch("/api/resume/upload-url", {
-        method: "POST",
-        body: {
-          fileName: uploadedFile.name,
-          contentType: uploadedFile.type || "application/octet-stream",
-        },
-      });
+      if (uploadedFile) {
+        // 1) Ask backend for SAS upload URL (SWA auth cookie will be used)
+        const sasResp = await apiFetch("/api/resume/upload-url", {
+          method: "POST",
+          body: {
+            fileName: uploadedFile.name,
+            contentType: uploadedFile.type || "application/octet-stream",
+          },
+        });
 
-      if (!sasResp.ok || !sasResp.data?.ok) {
-        if (sasResp.status === 401) {
-          toast.error("You're not logged in. Please sign in again.");
+        if (!sasResp.ok || !sasResp.data?.ok) {
+          if (sasResp.status === 401) {
+            toast.error("You're not logged in. Please sign in again.");
+            return;
+          }
+          const msg =
+            sasResp.data?.error ||
+            `Failed to get upload URL (HTTP ${sasResp.status})`;
+          toast.error(msg);
           return;
         }
-        const msg =
-          sasResp.data?.error ||
-          `Failed to get upload URL (HTTP ${sasResp.status})`;
-        toast.error(msg);
-        return;
+
+        const { uploadUrl, blobName } = sasResp.data;
+
+        // 2) Upload directly to Blob using SAS
+        const up = await uploadToSasUrl(uploadUrl, uploadedFile);
+        if (!up.ok) {
+          toast.error(
+            `Upload failed (HTTP ${up.status}). Try PDF/DOCX and re-upload.`
+          );
+          return;
+        }
+
+        // 3) Save resume metadata into Cosmos (per-user, server derives userId)
+        const saveResp = await apiFetch("/api/resume/save", {
+          method: "POST",
+          body: {
+            blobName,
+            originalName: uploadedFile.name,
+            contentType: uploadedFile.type || "application/octet-stream",
+            size: uploadedFile.size || 0,
+          },
+        });
+
+        if (!saveResp.ok || !saveResp.data?.ok) {
+          const msg =
+            saveResp.data?.error ||
+            `Failed to save resume (HTTP ${saveResp.status})`;
+          toast.error(msg);
+          return;
+        }
       }
 
-      const { uploadUrl, blobName } = sasResp.data;
-
-      // 2) Upload directly to Blob using SAS
-      const up = await uploadToSasUrl(uploadUrl, uploadedFile);
-      if (!up.ok) {
-        toast.error(
-          `Upload failed (HTTP ${up.status}). Try PDF/DOCX and re-upload.`
-        );
-        return;
-      }
-
-      // 3) Save resume metadata into Cosmos (per-user, server derives userId)
-      const saveResp = await apiFetch("/api/resume/save", {
-        method: "POST",
-        body: {
-          blobName,
-          originalName: uploadedFile.name,
-          contentType: uploadedFile.type || "application/octet-stream",
-          size: uploadedFile.size || 0,
-        },
-      });
-
-      if (!saveResp.ok || !saveResp.data?.ok) {
-        const msg =
-          saveResp.data?.error ||
-          `Failed to save resume (HTTP ${saveResp.status})`;
-        toast.error(msg);
-        return;
-      }
-
-      // ✅ Mark setup done in CLOUD (Cosmos)
+      // Mark setup done in cloud (Cosmos)
       await completeSetupCloud(preferences);
       onboarding.clearCache();
       await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
       await qc.refetchQueries({ queryKey: ["onboarding:me"] });
 
-      toast.success("Resume uploaded and saved to your account.");
+      if (uploadedFile) {
+        toast.success("Resume uploaded and saved to your account.");
+      } else {
+        toast.success("Setup complete. You can upload a resume later.");
+      }
       navigate(createPageUrl("AppHome"), { replace: true });
     } catch (e) {
       console.error(e);
@@ -559,14 +566,24 @@ export default function Setup() {
           </Button>
 
           {step === 1 && (
-            <Button
-              onClick={handleNext}
-              disabled={isSaving}
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
-            >
-              Continue
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleSkipResume}
+                disabled={isSaving}
+                variant="ghost"
+                className="text-white/70 hover:text-white hover:bg-white/5 rounded-xl px-5 disabled:opacity-60"
+              >
+                Skip for now
+              </Button>
+              <Button
+                onClick={handleNext}
+                disabled={isSaving}
+                className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 rounded-xl px-5 disabled:opacity-60"
+              >
+                Continue
+                <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
           )}
         </div>
       </div>
