@@ -23,6 +23,10 @@ import AuthModal from "@/components/landing/AuthModal";
 export default function Landing() {
   const [authOpen, setAuthOpen] = useState(false);
   const navigate = useNavigate();
+  const navTabClass =
+    "rounded-lg border border-white/10 px-3 py-2 text-white/60 cursor-pointer " +
+    "transition-all duration-200 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_0_16px_rgba(34,211,238,0.08)] " +
+    "hover:text-white hover:bg-white/[0.06] hover:border-cyan-300/45 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.5),0_0_22px_rgba(34,211,238,0.24)]";
 
   const handleAuthComplete = () => {
     setAuthOpen(false);
@@ -48,7 +52,7 @@ export default function Landing() {
                 e.preventDefault();
                 document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
+              className={navTabClass}
             >
               Pricing
             </a>
@@ -59,7 +63,7 @@ export default function Landing() {
                 e.preventDefault();
                 document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
+              className={navTabClass}
             >
               Features
             </a>
@@ -70,14 +74,14 @@ export default function Landing() {
                 e.preventDefault();
                 document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
+              className={navTabClass}
             >
               Reviews
             </a>
 
             <a
               onClick={() => navigate(createPageUrl("Blog"))}
-              className="rounded-lg border border-white/10 px-3 py-2 text-white/60 transition-all hover:text-white hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
+              className={navTabClass}
             >
               Blog
             </a>

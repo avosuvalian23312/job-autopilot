@@ -242,8 +242,8 @@ export default function AuthModal({ open, onClose, onComplete }) {
   };
 
   const authInputClass =
-    "bg-black/35 border-white/35 text-white placeholder:text-white/35 caret-white [color-scheme:dark] " +
-    "[&:-webkit-autofill]:shadow-[0_0_0px_1000px_rgba(0,0,0,0.35)_inset] [&:-webkit-autofill]:[-webkit-text-fill-color:#fff]";
+    "bg-black/35 border-white/35 !text-white placeholder:!text-white/35 caret-white [color-scheme:dark] " +
+    "[&:-webkit-autofill]:shadow-[0_0_0px_1000px_rgba(0,0,0,0.35)_inset] [&:-webkit-autofill]:![-webkit-text-fill-color:#fff]";
 
   return (
     <AnimatePresence>
@@ -287,7 +287,7 @@ export default function AuthModal({ open, onClose, onComplete }) {
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="relative">
+              <div className="relative text-white">
                 <h2 className="text-2xl font-bold text-white mb-2">Sign in</h2>
                 <p className="text-white/70 mb-6">
                   Choose a provider to continue.
