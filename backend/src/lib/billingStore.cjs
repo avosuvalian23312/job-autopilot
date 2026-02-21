@@ -21,6 +21,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function periodYYYYMM(d = new Date()) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
 function defaultProfile(userId) {
   const ts = nowIso();
   return {
@@ -28,7 +34,7 @@ function defaultProfile(userId) {
     userId,
     onboarding: { pricingDone: false, setupDone: false },
     plan: { planId: "free", status: "active" },
-    credits: { balance: 0, updatedAt: ts },
+    credits: { balance: 0, monthlyUsed: 0, monthlyPeriod: periodYYYYMM(), updatedAt: ts },
     creditsLedger: [], // most recent first
     stripeEvents: [], // processed Stripe event ids (idempotency)
     createdAt: ts,
@@ -113,10 +119,23 @@ async function grantCredits(userId, amount, reason, meta) {
   if (delta <= 0) return getCredits(userId);
 
   const ts = nowIso();
+  const currentPeriod = periodYYYYMM(new Date(ts));
 
   const updated = await replaceWithRetry(userId, (p) => {
-    const cur = Number(p?.credits?.balance || 0) || 0;
-    p.credits = { balance: cur + delta, updatedAt: ts };
+    const credits = p?.credits && typeof p.credits === "object" ? p.credits : {};
+    const cur = Number(credits.balance || 0) || 0;
+    const monthlyUsed =
+      String(credits.monthlyPeriod || "") === currentPeriod
+        ? Number(credits.monthlyUsed || 0) || 0
+        : 0;
+
+    p.credits = {
+      ...credits,
+      balance: cur + delta,
+      monthlyPeriod: currentPeriod,
+      monthlyUsed,
+      updatedAt: ts,
+    };
 
     pushLedger(p, {
       id: `led_${ts}_${Math.random().toString(16).slice(2)}`,
@@ -138,16 +157,29 @@ async function spendCredits(userId, amount, reason, meta) {
   if (delta <= 0) return getCredits(userId);
 
   const ts = nowIso();
+  const currentPeriod = periodYYYYMM(new Date(ts));
 
   const updated = await replaceWithRetry(userId, (p) => {
-    const cur = Number(p?.credits?.balance || 0) || 0;
+    const credits = p?.credits && typeof p.credits === "object" ? p.credits : {};
+    const cur = Number(credits.balance || 0) || 0;
     if (cur < delta) {
       const err = new Error("Insufficient credits");
       err.code = "INSUFFICIENT_CREDITS";
       throw err;
     }
 
-    p.credits = { balance: cur - delta, updatedAt: ts };
+    const monthlyUsedBase =
+      String(credits.monthlyPeriod || "") === currentPeriod
+        ? Number(credits.monthlyUsed || 0) || 0
+        : 0;
+
+    p.credits = {
+      ...credits,
+      balance: cur - delta,
+      monthlyPeriod: currentPeriod,
+      monthlyUsed: monthlyUsedBase + delta,
+      updatedAt: ts,
+    };
 
     pushLedger(p, {
       id: `led_${ts}_${Math.random().toString(16).slice(2)}`,

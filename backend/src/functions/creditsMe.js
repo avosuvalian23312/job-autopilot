@@ -30,6 +30,26 @@ function allowanceForPlan(plan) {
   return 10;
 }
 
+function monthlySpentFromLedger(ledger, period) {
+  const target = String(period || "");
+  if (!target || !Array.isArray(ledger)) return 0;
+
+  let total = 0;
+  for (const entry of ledger) {
+    const ts = entry?.ts ? new Date(entry.ts) : null;
+    if (!ts || !Number.isFinite(ts.getTime())) continue;
+    if (periodYYYYMM(ts) !== target) continue;
+
+    const type = String(entry?.type || "").toLowerCase();
+    const delta = Number(entry?.delta || 0) || 0;
+    const isSpend = type === "spend" || type === "debit" || delta < 0;
+    if (!isSpend) continue;
+
+    total += Math.abs(delta);
+  }
+  return total;
+}
+
 module.exports = async (request, context) => {
   if (request.method === "OPTIONS") return { status: 204, headers: cors() };
 
@@ -89,6 +109,14 @@ module.exports = async (request, context) => {
       ? { planId: profile.plan, status: "active" }
       : profile.plan || { planId: "free", status: "active" };
   profile.credits = profile.credits || {};
+  const legacyBalance = Number(profile.creditsBalance);
+  if (!Number.isFinite(Number(profile.credits.balance)) && Number.isFinite(legacyBalance)) {
+    profile.credits.balance = legacyBalance;
+  }
+  if (!Number.isFinite(Number(profile.credits.balance))) {
+    profile.credits.balance = 0;
+  }
+
   const currentPeriod = periodYYYYMM();
   if (profile.credits.monthlyPeriod !== currentPeriod) {
     profile.credits.monthlyPeriod = currentPeriod;
@@ -119,6 +147,10 @@ module.exports = async (request, context) => {
       profile.creditsLedger = ledger.slice(0, 200);
     }
   }
+
+  const ledgerSpend = monthlySpentFromLedger(profile.creditsLedger, currentPeriod);
+  const currentUsed = Number(profile.credits.monthlyUsed || 0) || 0;
+  profile.credits.monthlyUsed = Math.max(currentUsed, ledgerSpend);
 
   profile.updatedAt = new Date().toISOString();
   await profilesContainer.items.upsert(profile);

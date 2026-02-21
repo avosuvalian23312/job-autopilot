@@ -357,15 +357,15 @@ export default function Applications() {
     <div className="min-h-screen bg-[radial-gradient(900px_520px_at_0%_-10%,rgba(6,182,212,0.10),transparent_60%),radial-gradient(900px_620px_at_100%_0%,rgba(16,185,129,0.07),transparent_62%),linear-gradient(180deg,#03060d_0%,#04070f_100%)] text-white">
       <AppNav currentPage="Applications" />
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-6">
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {STATUS_ORDER.map((status) => {
             const meta = STATUS_META[status];
             const Icon = meta.icon;
             return (
               <div
                 key={status}
-                className={`rounded-2xl border p-4 ${meta.summaryBox} shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_14px_30px_rgba(0,0,0,0.35)]`}
+                className={`rounded-2xl border p-3 ${meta.summaryBox} shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_14px_30px_rgba(0,0,0,0.35)]`}
               >
                 <div className="flex items-start gap-3">
                   <div
@@ -374,10 +374,10 @@ export default function Applications() {
                     <Icon className="h-4 w-4" />
                   </div>
                   <div>
-                    <div className="text-3xl leading-none font-bold tabular-nums">
+                    <div className="text-2xl leading-none font-bold tabular-nums">
                       {counts[status]}
                     </div>
-                    <div className="mt-1 text-sm text-white/75">{meta.summaryLabel}</div>
+                    <div className="mt-1 text-xs text-white/75">{meta.summaryLabel}</div>
                   </div>
                 </div>
               </div>
@@ -385,29 +385,29 @@ export default function Applications() {
           })}
         </section>
 
-        <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight">Applications</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight">Applications</h1>
             <p className="mt-1 text-white/65">
               Track and manage your job application pipeline
             </p>
           </div>
-          <div className="rounded-2xl border border-cyan-400/35 bg-cyan-500/10 px-5 py-3 text-cyan-200 shadow-[0_10px_25px_rgba(0,0,0,0.28)]">
-            <span className="text-4xl font-black leading-none tabular-nums">
+           <div className="rounded-2xl border border-cyan-400/35 bg-cyan-500/10 px-4 py-2.5 text-cyan-200 shadow-[0_10px_25px_rgba(0,0,0,0.28)]">
+            <span className="text-3xl font-black leading-none tabular-nums">
               {counts.total}
             </span>
-            <span className="ml-2 text-base font-medium leading-none align-baseline text-cyan-100/80">
+            <span className="ml-2 text-sm font-medium leading-none align-baseline text-cyan-100/80">
               total applications tracked
             </span>
           </div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-2">
+        <section className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setStatusFilter("all")}
             className={[
-              "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
+              "rounded-xl border px-3.5 py-1.5 text-sm font-semibold transition-colors",
               statusFilter === "all"
                 ? "border-cyan-300/35 bg-cyan-500/25 text-cyan-100"
                 : "border-white/10 bg-white/[0.05] text-white/75 hover:bg-white/[0.09]",
@@ -427,7 +427,7 @@ export default function Applications() {
                 type="button"
                 onClick={() => setStatusFilter(status)}
                 className={[
-                  "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
+                   "rounded-xl border px-3.5 py-1.5 text-sm font-semibold transition-colors",
                   statusFilter === status
                     ? meta.chipActive
                     : "border-white/10 bg-white/[0.05] text-white/75 hover:bg-white/[0.09]",
@@ -442,19 +442,19 @@ export default function Applications() {
           })}
         </section>
 
-        <section className="grid gap-3 md:grid-cols-[1fr_220px]">
+        <section className="grid gap-2.5 md:grid-cols-[1fr_210px]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
             <Input
               placeholder="Search by role or company..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-12 rounded-xl border-white/10 bg-[#040912] pl-11 text-white placeholder:text-white/35 focus-visible:ring-cyan-300/35"
+              className="h-10 rounded-xl border-white/10 bg-[#040912] pl-11 text-white placeholder:text-white/35 focus-visible:ring-cyan-300/35"
             />
           </div>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-12 rounded-xl border-white/10 bg-[#040912] text-white">
+            <SelectTrigger className="h-10 rounded-xl border-white/10 bg-[#040912] text-white">
               {statusFilter === "all" ? "All Status" : STATUS_META[statusFilter]?.label}
             </SelectTrigger>
             <SelectContent className="border-white/10 bg-[#070d19] text-white">
@@ -468,12 +468,12 @@ export default function Applications() {
           </Select>
         </section>
 
-        <section className="space-y-3">
+        <section className="space-y-2.5">
           {isLoading &&
             Array.from({ length: 4 }).map((_, idx) => (
               <div
                 key={`loading-${idx}`}
-                className="rounded-2xl border border-white/10 bg-[#050b14] p-5"
+                 className="rounded-2xl border border-white/10 bg-[#050b14] p-4"
               >
                 <Skeleton className="h-7 w-2/5 bg-white/10" />
                 <Skeleton className="mt-3 h-5 w-3/4 bg-white/10" />
@@ -497,20 +497,20 @@ export default function Applications() {
               return (
                 <article
                   key={app.id}
-                  className="relative rounded-2xl border border-white/10 bg-[#040a14]/90 px-6 py-6 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+                  className="relative rounded-2xl border border-white/10 bg-[#040a14]/90 px-5 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
                 >
                   <span
                     aria-hidden
                     className={`absolute left-0 top-0 h-full w-1 rounded-l-2xl ${meta.cardBar}`}
                   />
 
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
-                      <h3 className="truncate text-2xl font-semibold leading-tight text-white md:text-[2rem]">
+                       <h3 className="truncate text-xl font-semibold leading-tight text-white md:text-2xl">
                         {app.job_title}
                       </h3>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/68 md:text-[1.05rem]">
+                       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-white/68">
                         <span className="inline-flex items-center gap-1.5">
                           <Building2 className="h-4 w-4 text-white/45" />
                           {app.company}
@@ -535,8 +535,8 @@ export default function Applications() {
                         )}
                       </div>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300/35 bg-emerald-500/20 px-3 py-1.5 text-sm font-semibold text-emerald-100">
+                       <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300/35 bg-emerald-500/20 px-2.5 py-1 text-sm font-semibold text-emerald-100">
                           <DollarSign className="h-3.5 w-3.5" />
                           {payLabel}
                         </span>
@@ -546,7 +546,7 @@ export default function Applications() {
                             href={app.website}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.04] px-3 py-1.5 text-sm font-medium text-white/75 hover:bg-white/[0.09] hover:text-white"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.04] px-2.5 py-1 text-sm font-medium text-white/75 hover:bg-white/[0.09] hover:text-white"
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
                             Open website
@@ -561,7 +561,7 @@ export default function Applications() {
                         onValueChange={(value) => updateStatus(app.id, value)}
                       >
                         <SelectTrigger
-                          className={`h-12 min-w-[170px] rounded-xl px-4 text-sm font-semibold ${meta.selectTone}`}
+                           className={`h-10 min-w-[160px] rounded-xl px-3.5 text-sm font-semibold ${meta.selectTone}`}
                         >
                           <span className="inline-flex items-center gap-2">
                             <span className={`h-2 w-2 rounded-full ${meta.dotStrong}`} />

@@ -137,6 +137,26 @@ export default function Credits() {
   const monthlyPeriod = String(creditsMe?.credits?.monthlyPeriod || "");
   const plan = String(creditsMe?.plan || "free");
 
+  const ledgerMonthSpend = useMemo(() => {
+    if (!monthlyPeriod || !Array.isArray(ledger)) return 0;
+    return ledger.reduce((sum, entry) => {
+      const ts = entry?.ts ? new Date(entry.ts) : null;
+      if (!ts || !Number.isFinite(ts.getTime())) return sum;
+      const period = `${ts.getUTCFullYear()}-${String(ts.getUTCMonth() + 1).padStart(2, "0")}`;
+      if (period !== monthlyPeriod) return sum;
+
+      const type = String(entry?.type || "").toLowerCase();
+      const delta = Number(entry?.delta || 0) || 0;
+      const isSpend = type === "spend" || type === "debit" || delta < 0;
+      if (!isSpend) return sum;
+      return sum + Math.abs(delta);
+    }, 0);
+  }, [ledger, monthlyPeriod]);
+
+  const displayMonthlyUsed = Math.max(monthlyUsed, ledgerMonthSpend);
+  const displayMonthlyRemaining =
+    monthlyAllowance > 0 ? Math.max(0, monthlyAllowance - displayMonthlyUsed) : monthlyRemaining;
+
   const renewsOnLabel = useMemo(() => {
     const m = monthlyPeriod.match(/^(\d{4})-(\d{2})$/);
     if (!m) return "-";
@@ -265,11 +285,11 @@ export default function Credits() {
               </div>
               <div>
                 <div className="text-sm text-white/40">This Month</div>
-                <div className="text-3xl font-bold text-white">{loading ? "-" : monthlyUsed}</div>
+                <div className="text-3xl font-bold text-white">{loading ? "-" : displayMonthlyUsed}</div>
               </div>
             </div>
             <div className="text-xs text-white/30 mb-3">Credits Used</div>
-            <p className="text-sm text-white/40">{monthlyRemaining} credits remaining this period</p>
+            <p className="text-sm text-white/40">{displayMonthlyRemaining} credits remaining this period</p>
           </motion.div>
 
           <motion.div

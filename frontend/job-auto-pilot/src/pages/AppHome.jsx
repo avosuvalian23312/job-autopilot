@@ -10,7 +10,6 @@ import {
   BarChart3,
   Briefcase,
   CheckCircle2,
-  Coins,
   FileText,
   Plus,
   RefreshCw,
@@ -21,11 +20,11 @@ import {
 
 const STATUS_ORDER = ["generated", "applied", "interview", "offer", "rejected"];
 const STATUS_CLASS = {
-  generated: "from-emerald-300 to-emerald-400",
-  applied: "from-emerald-300 to-emerald-400",
-  interview: "from-emerald-300 to-emerald-400",
-  offer: "from-emerald-300 to-emerald-400",
-  rejected: "from-emerald-300 to-emerald-400",
+  generated: "from-cyan-300 to-teal-300",
+  applied: "from-sky-300 to-cyan-300",
+  interview: "from-amber-300 to-yellow-300",
+  offer: "from-emerald-300 to-lime-300",
+  rejected: "from-rose-400 to-red-500",
 };
 
 function toDate(v) {
@@ -436,7 +435,7 @@ export default function AppHome() {
             foot="Active now"
           />
           <StatCard
-            icon={Coins}
+            icon={Zap}
             label="Credits"
             value={statValue(credits, loading)}
             sub="5 credits per packet generation"
