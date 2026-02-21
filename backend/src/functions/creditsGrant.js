@@ -50,7 +50,7 @@ async function ensureProfile(c, userId) {
       userId,
       type: "profile",
       plan: "free",
-      monthlyCredits: 15,
+      monthlyCredits: 10,
       creditsBalance: 0,
       pricingDone: false,
       setupDone: false,

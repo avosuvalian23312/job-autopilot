@@ -137,11 +137,27 @@ export default function NewJob() {
     return userId;
   };
 
+  const getUserInfoUser = async () => {
+    try {
+      const data = await apiFetch("/api/userinfo", { method: "GET" });
+      const userId = String(data?.user?.userId || "").trim();
+      return userId || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveUserId = async () => {
+    const swaId = await getSwaUser();
+    if (swaId) return swaId;
+    return getUserInfoUser();
+  };
+
   // ✅ Use cached user id when possible (avoid repeated /.auth/me calls)
   const ensureUserId = async () => {
     if (swaUserId) return swaUserId;
 
-    const id = await getSwaUser(); // reads /.auth/me
+    const id = await resolveUserId();
     if (!id) {
       toast.error("You must be logged in.");
       throw new Error("Not authenticated");
@@ -810,7 +826,7 @@ export default function NewJob() {
     // warm SWA user id (non-blocking)
     (async () => {
       try {
-        const id = await getSwaUser();
+        const id = await resolveUserId();
         if (id) setSwaUserId(id);
       } catch {
         // ignore
