@@ -33,6 +33,11 @@ module.exports = async function (request, context) {
       query: `
         SELECT * FROM c
         WHERE c.userId = @uid
+          AND (NOT IS_DEFINED(c.hiddenFromLibrary) OR c.hiddenFromLibrary != true)
+          AND (NOT IS_DEFINED(c.tailoredFor))
+          AND (NOT IS_DEFINED(c.sourceResumeId))
+          AND (NOT IS_DEFINED(c.sourceType) OR c.sourceType != "tailored_packet")
+          AND (NOT IS_DEFINED(c.tailorMode) OR NOT STARTSWITH(c.tailorMode, "regen-ats"))
         ORDER BY c.uploadedAt DESC
       `,
       parameters: [{ name: "@uid", value: user.userId }],

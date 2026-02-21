@@ -1317,8 +1317,15 @@ export default function NewJob() {
           body: JSON.stringify(payload),
         });
 
-        if (savedJob?.id != null) {
-          localStorage.setItem("latestJobId", String(savedJob.id));
+        const savedJobId =
+          savedJob?.id != null
+            ? savedJob.id
+            : savedJob?.job?.id != null
+            ? savedJob.job.id
+            : null;
+
+        if (savedJobId != null) {
+          localStorage.setItem("latestJobId", String(savedJobId));
         }
       } catch (saveErr) {
         console.error("Job save failed:", saveErr);
@@ -1344,7 +1351,13 @@ export default function NewJob() {
       qs.set("mode", "prepare");
       if (tailoredResume?.id) qs.set("resumeId", String(tailoredResume.id));
       if (coverLetter?.id) qs.set("coverLetterId", String(coverLetter.id));
-      if (savedJob?.id != null) qs.set("jobId", String(savedJob.id)); // safe extra param
+      const finalJobId =
+        savedJob?.id != null
+          ? savedJob.id
+          : savedJob?.job?.id != null
+          ? savedJob.job.id
+          : null;
+      if (finalJobId != null) qs.set("jobId", String(finalJobId)); // safe extra param
 
       navigate(`/packet?${qs.toString()}`);
     } catch (e) {

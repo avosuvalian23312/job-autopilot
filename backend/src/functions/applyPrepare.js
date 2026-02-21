@@ -226,6 +226,15 @@ function cleanBullet(b) {
   // remove leading bullet marks (we draw our own "- ")
   s = s.replace(/^[-*]\s+/, "").trim();
 
+  // remove common AI quote artifacts, while keeping normal apostrophes in words
+  s = s
+    .replace(/["`]+/g, "")
+    .replace(/(^|\s)'+(?=\s|$)/g, " ")
+    .replace(/-{2,}/g, "-")
+    .replace(/\s*-\s*["']+\s*/g, " - ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
   // prevent trailing "for" / awkward incomplete endings
   s = s.replace(/\bfor\s*$/i, "").trim();
 
@@ -242,6 +251,21 @@ function clampStr(s, maxLen = 140) {
   if (!t) return "";
   if (t.length <= maxLen) return t;
   return t.slice(0, maxLen - 1).trim() + ".";
+}
+
+function cleanResumeField(value, maxLen = 140) {
+  let s = safeStr(value || "");
+  if (!s) return "";
+
+  s = s
+    .replace(/["`]+/g, "")
+    .replace(/(^|\s)'+(?=\s|$)/g, " ")
+    .replace(/\s*-\s*["']+\s*/g, " - ")
+    .replace(/-{2,}/g, "-")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return clampStr(s, maxLen);
 }
 
 /**
@@ -983,10 +1007,10 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
       .filter(Boolean);
 
     out.experience.push({
-      title: safeStr(r?.title),
-      company: safeStr(r?.company),
-      location: safeStr(r?.location),
-      dates: safeStr(r?.dates),
+      title: cleanResumeField(r?.title, 95),
+      company: cleanResumeField(r?.company, 95),
+      location: cleanResumeField(r?.location, 70),
+      dates: cleanResumeField(r?.dates, 45),
       bullets,
     });
   }
@@ -995,9 +1019,9 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
   const edu = Array.isArray(d.education) ? d.education : [];
   for (const e of edu.slice(0, 4)) {
     out.education.push({
-      school: safeStr(e?.school),
-      degree: safeStr(e?.degree),
-      dates: safeStr(e?.dates),
+      school: cleanResumeField(e?.school, 95),
+      degree: cleanResumeField(e?.degree, 95),
+      dates: cleanResumeField(e?.dates, 45),
       details: uniqStrings(e?.details, { max: 3 })
         .map((x) => clampStr(cleanBullet(x).replace(/^- /, ""), 120))
         .filter(Boolean),
@@ -1363,6 +1387,308 @@ async function renderAtsPdf(draft, { compact = false, trainingSample = false } =
   return { buffer: Buffer.from(bytes), pageCount: pdfDoc.getPageCount() };
 }
 
+async function renderAtsPdfSinglePage(
+  draft,
+  { compact = false, trainingSample = false } = {}
+) {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageSize = [612, 792];
+  const marginX = 54;
+  const marginTop = compact ? 44 : 52;
+  const marginBottom = compact ? 46 : 54;
+
+  const sizes = {
+    name: compact ? 15 : 16,
+    headline: compact ? 10.5 : 11,
+    contact: compact ? 10.2 : 10.5,
+    section: compact ? 11.5 : 12,
+    body: compact ? 10.3 : 10.6,
+    bodySmall: compact ? 10.1 : 10.5,
+    roleHeader: compact ? 10.8 : 11,
+    roleMeta: compact ? 10.1 : 10.5,
+  };
+
+  const gaps = {
+    tight: compact ? 1.16 : 1.22,
+    normal: compact ? 1.18 : 1.25,
+  };
+
+  const page = pdfDoc.addPage(pageSize);
+  let y = page.getHeight() - marginTop;
+  let truncated = false;
+
+  if (trainingSample) drawTrainingWatermark(page, fontBold);
+
+  const lineHeight = (size, gap) => size * (gap || gaps.normal);
+  const hasSpace = (need) => y - need >= marginBottom;
+
+  const drawTextLine = (
+    text,
+    { size = sizes.body, bold = false, indent = 0, gap = gaps.normal } = {}
+  ) => {
+    if (truncated) return false;
+    const s = safeStr(text);
+    if (!s) return true;
+
+    const f = bold ? fontBold : font;
+    const lh = lineHeight(size, gap);
+    if (!hasSpace(lh)) {
+      truncated = true;
+      return false;
+    }
+
+    page.drawText(s, {
+      x: marginX + indent,
+      y: y - size,
+      size,
+      font: f,
+      color: rgb(0, 0, 0),
+    });
+
+    y -= lh;
+    return true;
+  };
+
+  const wrap = (text, maxWidth, size, bold = false) => {
+    const f = bold ? fontBold : font;
+    const words = safeStr(text).split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = "";
+
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w;
+      if (f.widthOfTextAtSize(test, size) <= maxWidth) {
+        cur = test;
+      } else {
+        if (cur) lines.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+
+  const drawWrapped = (
+    text,
+    { size = sizes.body, bold = false, indent = 0, maxWidth, gap = gaps.normal } = {}
+  ) => {
+    const width = maxWidth || (page.getWidth() - marginX * 2 - indent);
+    const lines = wrap(text, width, size, bold);
+    for (const line of lines) {
+      if (!drawTextLine(line, { size, bold, indent, gap })) return false;
+    }
+    return true;
+  };
+
+  const drawLeftRight = (
+    left,
+    right,
+    { sizeLeft, sizeRight, boldLeft = true, boldRight = false, gap } = {}
+  ) => {
+    if (truncated) return false;
+    const l = safeStr(left);
+    const r = safeStr(right);
+    if (!l && !r) return true;
+
+    const sizeL = sizeLeft || sizes.roleHeader;
+    const sizeR = sizeRight || sizes.roleMeta;
+    const lh = lineHeight(Math.max(sizeL, sizeR), gap || gaps.normal);
+    if (!hasSpace(lh)) {
+      truncated = true;
+      return false;
+    }
+
+    if (l) {
+      page.drawText(l, {
+        x: marginX,
+        y: y - sizeL,
+        size: sizeL,
+        font: boldLeft ? fontBold : font,
+        color: rgb(0, 0, 0),
+      });
+    }
+
+    if (r) {
+      const f = boldRight ? fontBold : font;
+      const w = f.widthOfTextAtSize(r, sizeR);
+      const x = page.getWidth() - marginX - w;
+      page.drawText(r, {
+        x: Math.max(marginX + 260, x),
+        y: y - sizeR,
+        size: sizeR,
+        font: f,
+        color: rgb(0, 0, 0),
+      });
+    }
+
+    y -= lh;
+    return true;
+  };
+
+  const drawSection = (title) => {
+    if (truncated) return false;
+    const topGap = compact ? 6 : 8;
+    const afterRule = compact ? 7 : 8;
+    const reserve = topGap + lineHeight(sizes.section, gaps.tight) + 10 + afterRule;
+    if (!hasSpace(reserve)) {
+      truncated = true;
+      return false;
+    }
+
+    y -= topGap;
+    if (!drawTextLine(title, { size: sizes.section, bold: true, gap: gaps.tight })) return false;
+
+    page.drawLine({
+      start: { x: marginX, y: y - 2 },
+      end: { x: page.getWidth() - marginX, y: y - 2 },
+      thickness: 0.75,
+      color: rgb(0, 0, 0),
+      opacity: 0.35,
+    });
+    y -= afterRule;
+    return true;
+  };
+
+  const header = draft?.header || {};
+  drawTextLine(safeStr(header.fullName) || "Resume", {
+    size: sizes.name,
+    bold: true,
+    gap: gaps.tight,
+  });
+
+  const headline = safeStr(header.headline);
+  if (headline) drawWrapped(headline, { size: sizes.headline, gap: gaps.tight });
+
+  const contactBits = [
+    safeStr(header.location),
+    safeStr(header.phone),
+    safeStr(header.email),
+    safeStr(header.linkedin),
+    safeStr(header.portfolio),
+  ].filter(Boolean);
+  if (contactBits.length) {
+    drawWrapped(contactBits.join(" | "), {
+      size: sizes.contact,
+      maxWidth: page.getWidth() - marginX * 2,
+      gap: gaps.tight,
+    });
+  }
+
+  y -= compact ? 8 : 10;
+
+  const summary = uniqStrings(draft?.summary, { max: 4 });
+  if (summary.length && drawSection("PROFESSIONAL SUMMARY")) {
+    for (const item of summary) {
+      if (!drawWrapped(cleanBullet(item).replace(/^- /, ""), { size: sizes.bodySmall, gap: gaps.tight })) break;
+    }
+  }
+
+  const skills = Array.isArray(draft?.skills) ? draft.skills : [];
+  if (skills.length && drawSection("TECHNICAL SKILLS")) {
+    for (const cat of skills.slice(0, 12)) {
+      if (truncated) break;
+      const category = safeStr(cat?.category);
+      const items = uniqStrings(cat?.items, { max: 16 });
+      if (!category || !items.length) continue;
+
+      if (!drawTextLine(`${category}:`, { size: sizes.body, bold: true, gap: gaps.tight })) break;
+      if (
+        !drawWrapped(items.join(", "), {
+          size: sizes.body,
+          indent: 12,
+          maxWidth: page.getWidth() - marginX * 2 - 12,
+          gap: gaps.tight,
+        })
+      ) {
+        break;
+      }
+      y -= compact ? 1 : 2;
+    }
+  }
+
+  const exp = Array.isArray(draft?.experience) ? draft.experience : [];
+  if (exp.length && drawSection("EXPERIENCE")) {
+    for (const role of exp.slice(0, 5)) {
+      if (truncated) break;
+      const left = [safeStr(role?.title), safeStr(role?.company)].filter(Boolean).join(" - ");
+      const right = [safeStr(role?.location), safeStr(role?.dates)].filter(Boolean).join(" | ");
+      if (!drawLeftRight(left, right, { gap: gaps.tight })) break;
+
+      const bullets = uniqStrings(role?.bullets, { max: 6 }).map(cleanBullet).filter(Boolean);
+      for (const bullet of bullets) {
+        const lines = wrap(bullet, page.getWidth() - marginX * 2 - 18, sizes.body, false);
+        if (!lines.length) continue;
+        if (!drawTextLine(`- ${lines[0]}`, { size: sizes.body, gap: gaps.tight })) break;
+        for (const ln of lines.slice(1)) {
+          if (!drawTextLine(ln, { size: sizes.body, indent: 18, gap: gaps.tight })) break;
+        }
+        if (truncated) break;
+      }
+      y -= compact ? 5 : 6;
+    }
+  }
+
+  const edu = Array.isArray(draft?.education) ? draft.education : [];
+  if (edu.length && drawSection("EDUCATION")) {
+    for (const item of edu.slice(0, 3)) {
+      if (truncated) break;
+      const left = [safeStr(item?.degree), safeStr(item?.school)].filter(Boolean).join(" - ");
+      if (!drawLeftRight(left, safeStr(item?.dates), { sizeLeft: sizes.body, sizeRight: sizes.bodySmall })) break;
+
+      const details = uniqStrings(item?.details, { max: 3 });
+      for (const detail of details) {
+        if (
+          !drawWrapped(cleanBullet(detail).replace(/^- /, ""), {
+            size: sizes.bodySmall,
+            indent: 12,
+            gap: gaps.tight,
+          })
+        ) {
+          break;
+        }
+      }
+      y -= compact ? 3 : 4;
+    }
+  }
+
+  const certs = uniqStrings(draft?.certifications, { max: 12 });
+  if (certs.length && drawSection("CERTIFICATIONS")) {
+    for (const cert of certs) {
+      if (!drawTextLine(`- ${safeStr(cert)}`, { size: sizes.body, gap: gaps.tight })) break;
+    }
+  }
+
+  const projects = Array.isArray(draft?.projects) ? draft.projects : [];
+  const hasProjects = projects.some(
+    (p) => safeStr(p?.name) || (Array.isArray(p?.bullets) && p.bullets.length)
+  );
+  if (hasProjects && drawSection("PROJECTS")) {
+    for (const project of projects.slice(0, 3)) {
+      if (truncated) break;
+      const name = safeStr(project?.name);
+      if (name && !drawTextLine(name, { size: sizes.body, bold: true, gap: gaps.tight })) break;
+
+      const bullets = uniqStrings(project?.bullets, { max: 4 }).map(cleanBullet).filter(Boolean);
+      for (const bullet of bullets) {
+        const lines = wrap(bullet, page.getWidth() - marginX * 2 - 18, sizes.body, false);
+        if (!lines.length) continue;
+        if (!drawTextLine(`- ${lines[0]}`, { size: sizes.body, gap: gaps.tight })) break;
+        for (const ln of lines.slice(1)) {
+          if (!drawTextLine(ln, { size: sizes.body, indent: 18, gap: gaps.tight })) break;
+        }
+        if (truncated) break;
+      }
+      y -= compact ? 4 : 5;
+    }
+  }
+
+  const bytes = await pdfDoc.save();
+  return { buffer: Buffer.from(bytes), pageCount: 1, truncated };
+}
+
 async function tryLoadUserProfile(cosmos, dbName, userId) {
   const containerName =
     process.env.COSMOS_USER_SETTINGS_CONTAINER_NAME || "userSettings";
@@ -1653,10 +1979,10 @@ async function applyPrepare(request, context) {
       userEmail: user.email,
     });
 
-    // Render ATS PDF (try normal -> compact if spills to page 2)
-    let render = await renderAtsPdf(normalized, { compact: false, trainingSample });
-    if (render.pageCount > 1) {
-      render = await renderAtsPdf(normalized, { compact: true, trainingSample });
+    // Render ATS PDF (hard single-page; if truncated, rerender compact to fit more).
+    let render = await renderAtsPdfSinglePage(normalized, { compact: false, trainingSample });
+    if (render.truncated || render.pageCount > 1) {
+      render = await renderAtsPdfSinglePage(normalized, { compact: true, trainingSample });
     }
 
     const tailoredPdfBuffer = render.buffer;
@@ -1707,6 +2033,8 @@ async function applyPrepare(request, context) {
 
       tailorMode: trainingSample ? "training-sample-v1" : "regen-ats-v3",
       trainingSample: !!trainingSample,
+      hiddenFromLibrary: true,
+      sourceType: "tailored_packet",
 
       uploadedAt: now.toISOString(),
       updated_date: now.toISOString().split("T")[0],

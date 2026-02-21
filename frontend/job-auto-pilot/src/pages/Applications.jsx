@@ -6,6 +6,7 @@ import {
   Calendar,
   CheckCircle2,
   DollarSign,
+  Eye,
   ExternalLink,
   Globe,
   MapPin,
@@ -183,6 +184,15 @@ function normalizeJob(job) {
     payPeriod: String(job?.payPeriod ?? job?.pay_period ?? payObj?.period ?? "")
       .trim()
       .toLowerCase(),
+    sourceResumeId:
+      job?.sourceResumeId ??
+      job?.source_resume_id ??
+      job?.resumeId ??
+      job?.resume_id ??
+      null,
+    tailoredResumeId:
+      job?.tailoredResumeId ?? job?.tailored_resume_id ?? null,
+    coverLetterId: job?.coverLetterId ?? job?.cover_letter_id ?? null,
   };
 }
 
@@ -276,6 +286,7 @@ export default function Applications() {
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [previewingResumeId, setPreviewingResumeId] = useState("");
 
   const loadJobs = async () => {
     setIsLoading(true);
@@ -353,6 +364,34 @@ export default function Applications() {
     } catch {
       toast.error("Failed to update status.");
       loadJobs();
+    }
+  };
+
+  const handlePreviewTailoredResume = async (app) => {
+    const resumeId = String(app?.tailoredResumeId || "").trim();
+    if (!resumeId) {
+      toast.error("No tailored resume linked to this application yet.");
+      return;
+    }
+
+    try {
+      setPreviewingResumeId(resumeId);
+      const data = await apiFetch("/api/resume/read-url", {
+        method: "POST",
+        body: { id: resumeId },
+      });
+
+      const url = String(data?.url || "").trim();
+      if (!url) {
+        toast.error("Preview URL not available.");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e?.message || "Failed to preview resume.");
+    } finally {
+      setPreviewingResumeId("");
     }
   };
 
@@ -554,6 +593,20 @@ export default function Applications() {
                             <ExternalLink className="h-3.5 w-3.5" />
                             Open website
                           </a>
+                        )}
+
+                        {app.tailoredResumeId && (
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewTailoredResume(app)}
+                            disabled={previewingResumeId === app.tailoredResumeId}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.04] px-2.5 py-1 text-sm font-medium text-white/75 hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            {previewingResumeId === app.tailoredResumeId
+                              ? "Loading..."
+                              : "Preview resume"}
+                          </button>
                         )}
                       </div>
                     </div>

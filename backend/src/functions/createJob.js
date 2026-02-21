@@ -45,6 +45,9 @@ async function createJob(request, context) {
 
     const jobTitle = (body?.jobTitle || "").trim();
     const jobDescription = (body?.jobDescription || "").trim();
+    const sourceResumeId = String(body?.sourceResumeId || body?.resumeId || "").trim() || null;
+    const tailoredResumeId = String(body?.tailoredResumeId || "").trim() || null;
+    const coverLetterId = String(body?.coverLetterId || "").trim() || null;
 
     if (!jobTitle || !jobDescription) {
       return {
@@ -80,6 +83,9 @@ async function createJob(request, context) {
       aiMode: body?.aiMode ?? "standard",
       studentMode: !!body?.studentMode,
       status: "generated",
+      sourceResumeId,
+      tailoredResumeId,
+      coverLetterId,
 
 
       // ✅ Pay fields (top-level for easy frontend use)
@@ -109,7 +115,7 @@ async function createJob(request, context) {
     await container.items.create(doc, { partitionKey: userId });
 
     // ✅ JSON response now includes pay in job doc
-    return { status: 201, jsonBody: { ok: true, job: doc } };
+    return { status: 201, jsonBody: { ok: true, id: doc.id, job: doc } };
   } catch (err) {
     context.error("createJob error:", err);
     return {
