@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
-  Rocket,
-  Coins,
+  Zap,
   TrendingUp,
   Calendar,
   Download,
@@ -200,8 +199,8 @@ export default function Credits() {
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link to={createPageUrl("AppHome")} className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-              <Rocket className="w-4 h-4 text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+              <Zap className="h-4 w-4 text-slate-950" />
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </Link>
@@ -233,11 +232,11 @@ export default function Credits() {
             transition={{ delay: 0.1 }}
             className="glass-card rounded-2xl p-8"
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                <Coins className="w-6 h-6 text-purple-400" />
-              </div>
-              <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-400/25 flex items-center justify-center">
+                  <Zap className="w-6 h-6 text-emerald-300" />
+                </div>
+                <div>
                 <div className="text-sm text-white/40">Current Balance</div>
                 <div className="text-3xl font-bold text-white">{loading ? "-" : balance}</div>
               </div>

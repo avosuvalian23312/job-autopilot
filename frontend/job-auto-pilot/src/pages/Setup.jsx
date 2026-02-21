@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Rocket,
+  Zap,
   Upload,
   FileText,
   Check,
@@ -301,8 +301,8 @@ export default function Setup() {
       <header className="border-b border-white/5 bg-[hsl(240,10%,4%)]/70 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25 ring-1 ring-purple-400/20">
-              <Rocket className="w-4 h-4 text-white" />
+            <div className="grid h-9 w-9 place-items-center rounded-xl border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+              <Zap className="h-4 w-4 text-slate-950" />
             </div>
             <div className="leading-tight">
               <div className="font-bold text-white text-[15px]">

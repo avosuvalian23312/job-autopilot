@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Check, Sparkles, Rocket, HelpCircle, Loader2 } from "lucide-react";
+import { Check, Sparkles, Rocket, HelpCircle, Loader2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -155,8 +155,8 @@ export default function Pricing() {
       <header className="border-b border-white/5 bg-[hsl(225,24%,8%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-              <Rocket className="w-4 h-4 text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+              <Zap className="h-4 w-4 text-slate-950" />
             </div>
             <span className="font-bold text-white text-lg">Job Autopilot</span>
           </div>

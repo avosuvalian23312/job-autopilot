@@ -23,7 +23,7 @@ import {
   ArrowRight,
   Send,
   X,
-  Coins,
+  Zap,
   Lock,
   HelpCircle,
   CheckCircle2,
@@ -150,13 +150,18 @@ function Field({ label, icon: Icon, children, hint }) {
   );
 }
 
-function Section({ title, subtitle, children, icon: Icon }) {
+function Section({ title, subtitle, children, icon: Icon, iconTheme = "purple" }) {
+  const iconTone =
+    iconTheme === "emerald"
+      ? "bg-emerald-500/12 border-emerald-400/20 text-emerald-300"
+      : "bg-purple-500/10 border-purple-500/10 text-purple-300";
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
       <div className="flex items-start gap-3 mb-5">
         {Icon ? (
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/10 flex items-center justify-center">
-            <Icon className="w-5 h-5 text-purple-300" />
+          <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${iconTone}`}>
+            <Icon className="w-5 h-5" />
           </div>
         ) : null}
         <div className="min-w-0">
@@ -827,7 +832,7 @@ export default function Settings() {
                   value="credits"
                   className="settings-tab-trigger rounded-xl px-4 py-2.5 text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500/20 data-[state=active]:to-cyan-500/15 data-[state=active]:text-white data-[state=active]:shadow-none text-white/65 hover:text-white/90"
                 >
-                  <Coins className="w-4 h-4 mr-2" />
+                  <Zap className="w-4 h-4 mr-2 text-emerald-300" />
                   Credits
                 </TabsTrigger>
 
@@ -1313,7 +1318,8 @@ export default function Settings() {
                 <Section
                   title="Credits"
                   subtitle="Live balance and usage synced from your account."
-                  icon={Coins}
+                  icon={Zap}
+                  iconTheme="emerald"
                 >
                   {billingError ? (
                     <div className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">

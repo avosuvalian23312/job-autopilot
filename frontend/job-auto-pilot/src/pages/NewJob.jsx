@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import {
   Rocket,
+  Zap,
   Loader2,
   Sparkles,
   ArrowRight,
@@ -37,7 +38,6 @@ import {
   Stars,
   GraduationCap as EduIcon,
   Award,
-  Coins,
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1565,18 +1565,16 @@ export default function NewJob() {
           <div className={`h-[3px] ${neonLine}`} />
           <div className="w-full px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div
-                className={[
-                  "w-10 h-10 rounded-xl",
-                  "bg-[radial-gradient(circle_at_30%_20%,rgba(34,211,238,0.35),transparent_55%),radial-gradient(circle_at_70%_30%,rgba(167,139,250,0.35),transparent_55%),linear-gradient(180deg,rgba(99,102,241,0.28),rgba(0,0,0,0.15))]",
-                  "border border-white/10 ring-1 ring-white/10",
-                  "shadow-[0_12px_35px_rgba(0,0,0,0.6)]",
-                ].join(" ")}
-              >
-                <div className="w-full h-full flex items-center justify-center">
-                  <Rocket className="w-5 h-5 text-white" />
+                <div
+                  className={[
+                    "w-10 h-10 rounded-xl",
+                    "grid place-items-center border border-cyan-300/35",
+                    "bg-gradient-to-br from-cyan-400/95 to-teal-400/85",
+                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]",
+                  ].join(" ")}
+                >
+                  <Zap className="h-4 w-4 text-slate-950" />
                 </div>
-              </div>
 
               <div className="flex flex-col leading-tight">
                 <span className="font-bold tracking-tight text-white text-lg">
@@ -2659,25 +2657,25 @@ export default function NewJob() {
                             type="button"
                             onClick={() => navigate(createPageUrl("Credits"))}
                             className={[
-                              "shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-purple-500/30",
-                              "bg-[linear-gradient(165deg,rgba(168,85,247,0.22),rgba(147,51,234,0.12))]",
-                              "px-2.5 py-0.5 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(88,28,135,0.22)]",
+                              "shine-loop-container relative inline-flex items-center gap-1 rounded-full border border-emerald-300/30",
+                              "bg-[linear-gradient(150deg,rgba(0,58,55,0.95),rgba(1,39,53,0.94))]",
+                              "px-2.5 py-0.5 text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_22px_rgba(0,0,0,0.35)]",
                               "transition-transform duration-150 hover:scale-105",
                               creditPulse ? "newjob-credit-use-pulse" : "",
                               focusRing,
                             ].join(" ")}
-                          >
-                            <span
-                              aria-hidden
-                              className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06)_40%,rgba(255,255,255,0)_75%)]"
-                            />
+                            >
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06)_40%,rgba(255,255,255,0)_75%)]"
+                              />
                             <span aria-hidden className="shine-loop-overlay" />
-                            <Coins className="relative z-10 w-3.5 h-3.5 text-purple-100" />
+                            <Zap className="relative z-10 w-3.5 h-3.5 text-emerald-100" />
                             <span className="relative z-10">
                               {currentCredits === null ? "--" : currentCredits} available
                             </span>
                           </button>
-                          <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-purple-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-purple-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
+                          <span className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 origin-bottom scale-90 whitespace-nowrap rounded-xl border border-emerald-300/40 bg-black/90 px-3 py-1.5 text-xs font-semibold text-emerald-100 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
                             Each generation uses {PACKET_CREDIT_COST} credits
                           </span>
                         </span>
