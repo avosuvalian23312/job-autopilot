@@ -28,12 +28,12 @@ export default function BeforeAfter() {
             initial={{ opacity: 0, x: -24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="group relative overflow-hidden rounded-2xl border border-rose-300/20 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
+            className="group relative rounded-2xl border border-rose-300/20 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
           >
-            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-rose-200/90">
+            <div className="pointer-events-none absolute left-4 -top-3 z-20 rounded-full border border-rose-300/35 bg-[linear-gradient(135deg,rgba(37,14,25,0.95),rgba(28,11,19,0.9))] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-rose-100 shadow-[0_8px_22px_rgba(0,0,0,0.45)]">
               Resume Before
             </div>
-            <div className="aspect-[16/11] w-full">
+            <div className="aspect-[16/11] w-full overflow-hidden rounded-[inherit]">
               {missingImages.before ? (
                 <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_0%_0%,rgba(244,63,94,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
                   Add
@@ -70,12 +70,12 @@ export default function BeforeAfter() {
             initial={{ opacity: 0, x: 24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="group relative overflow-hidden rounded-2xl border border-emerald-300/25 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
+            className="group relative rounded-2xl border border-emerald-300/25 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
           >
-            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/90">
+            <div className="pointer-events-none absolute left-4 -top-3 z-20 rounded-full border border-emerald-300/35 bg-[linear-gradient(135deg,rgba(7,33,29,0.95),rgba(7,27,22,0.9))] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100 shadow-[0_8px_22px_rgba(0,0,0,0.45)]">
               Resume After
             </div>
-            <div className="aspect-[16/11] w-full">
+            <div className="aspect-[16/11] w-full overflow-hidden rounded-[inherit]">
               {missingImages.after ? (
                 <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_100%_0%,rgba(16,185,129,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
                   Add

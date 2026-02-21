@@ -78,12 +78,6 @@ export default function Landing() {
               Reviews
             </a>
 
-            <a
-              onClick={() => navigate(createPageUrl("Blog"))}
-              className={navTabClass}
-            >
-              Blog
-            </a>
           </nav>
 
           <div className="flex items-center gap-3">
