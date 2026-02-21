@@ -2,7 +2,7 @@
 
 const Stripe = require("stripe");
 const { getSwaUserId } = require("../lib/swaUser");
-const { readProfile } = require("../lib/billingStore.cjs");
+const { readProfile, setPlan } = require("../lib/billingStore.cjs");
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "*",
@@ -50,6 +50,25 @@ async function readJsonBody(request) {
     } catch {}
   }
   return {};
+}
+
+function isNoSuchCustomerError(err) {
+  const msg = String(err?.message || "");
+  return /no such customer/i.test(msg);
+}
+
+async function deriveCustomerIdFromSubscription(stripe, subscriptionId, context) {
+  if (!subscriptionId) return "";
+  try {
+    const sub = await stripe.subscriptions.retrieve(subscriptionId);
+    return (
+      (typeof sub?.customer === "string" && sub.customer) ||
+      String(sub?.customer?.id || "")
+    );
+  } catch (e) {
+    context?.log?.("stripePortal: subscription lookup failed", e?.message);
+    return "";
+  }
 }
 
 async function stripePortal(request, context) {
@@ -100,14 +119,16 @@ async function stripePortal(request, context) {
     let stripeCustomerId = String(plan.stripeCustomerId || "");
     const stripeSubscriptionId = String(plan.stripeSubscriptionId || "");
 
-    if (!stripeCustomerId && stripeSubscriptionId) {
-      try {
-        const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-        stripeCustomerId =
-          (typeof sub?.customer === "string" && sub.customer) ||
-          String(sub?.customer?.id || "");
-      } catch (e) {
-        context?.log?.("stripePortal: subscription lookup failed", e?.message);
+    if (stripeSubscriptionId) {
+      const subCustomerId = await deriveCustomerIdFromSubscription(
+        stripe,
+        stripeSubscriptionId,
+        context
+      );
+      // Self-heal stale customer id if subscription has the canonical one.
+      if (subCustomerId && subCustomerId !== stripeCustomerId) {
+        stripeCustomerId = subCustomerId;
+        await setPlan(authUserId, { stripeCustomerId: subCustomerId });
       }
     }
 
@@ -145,7 +166,36 @@ async function stripePortal(request, context) {
       };
     }
 
-    const session = await stripe.billingPortal.sessions.create(sessionParams);
+    let session;
+    try {
+      session = await stripe.billingPortal.sessions.create(sessionParams);
+    } catch (e) {
+      // If customer id is stale, try one recovery pass via subscription -> customer.
+      if (isNoSuchCustomerError(e) && stripeSubscriptionId) {
+        const recoveredCustomerId = await deriveCustomerIdFromSubscription(
+          stripe,
+          stripeSubscriptionId,
+          context
+        );
+        if (recoveredCustomerId) {
+          sessionParams.customer = recoveredCustomerId;
+          await setPlan(authUserId, { stripeCustomerId: recoveredCustomerId });
+          session = await stripe.billingPortal.sessions.create(sessionParams);
+        }
+      }
+
+      if (!session) {
+        if (isNoSuchCustomerError(e)) {
+          return json(400, {
+            ok: false,
+            error:
+              "Stripe billing profile is out of date for this account. Complete checkout once on the active Stripe account, then retry.",
+            code: "stripe_customer_not_found",
+          });
+        }
+        throw e;
+      }
+    }
 
     return json(200, {
       ok: true,

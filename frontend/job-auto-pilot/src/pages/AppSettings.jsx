@@ -33,6 +33,9 @@ import { toast } from "sonner";
 const STORAGE_KEY = "jobautopilot_profile_v1";
 
 function formatDateShort(dateLike) {
+  if (dateLike == null || dateLike === "") return "-";
+  if (typeof dateLike === "number" && dateLike <= 0) return "-";
+  if (typeof dateLike === "string" && /^0+$/.test(dateLike.trim())) return "-";
   const d = new Date(dateLike);
   if (!Number.isFinite(d.getTime())) return "-";
   return d.toLocaleDateString("en-US", {
