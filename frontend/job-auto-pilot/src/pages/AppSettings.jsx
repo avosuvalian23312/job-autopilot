@@ -238,6 +238,7 @@ export default function Settings() {
   const [billingProfile, setBillingProfile] = useState(null);
   const [stripeBilling, setStripeBilling] = useState(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [portalAction, setPortalAction] = useState("portal");
 
   // ✅ Make ALL inputs white text (including browser autofill)
   const inputBase =
@@ -618,13 +619,14 @@ export default function Settings() {
     navigate(createPageUrl("Credits"));
   };
 
-  const openStripePortal = async () => {
+  const openStripePortal = async (flow = "portal") => {
     if (portalLoading) return;
     setPortalLoading(true);
+    setPortalAction(flow);
     try {
       const resp = await apiFetch("/api/stripe/portal", {
         method: "POST",
-        body: { returnPath: createPageUrl("AppSettings") },
+        body: { returnPath: createPageUrl("AppSettings"), flow },
       });
 
       if (!resp.ok || !resp.data?.ok || !resp.data?.url) {
@@ -642,7 +644,12 @@ export default function Settings() {
       }
     } finally {
       setPortalLoading(false);
+      setPortalAction("portal");
     }
+  };
+
+  const openCancelSubscription = async () => {
+    await openStripePortal("cancel");
   };
 
   const saveProfile = async () => {
@@ -1257,7 +1264,28 @@ export default function Settings() {
                       disabled={portalLoading}
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
-                      {portalLoading ? "Opening portal..." : "Manage Billing Portal"}
+                      {portalLoading && portalAction === "portal"
+                        ? "Opening portal..."
+                        : "Manage Billing Portal"}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="border border-rose-400/30 bg-rose-500/10 text-rose-100 hover:text-rose-50 hover:bg-rose-500/18 rounded-xl py-5 px-5"
+                      onClick={openCancelSubscription}
+                      disabled={
+                        portalLoading ||
+                        !stripeSubscriptionId ||
+                        ["canceled", "cancelled", "incomplete_expired"].includes(
+                          String(stripeSubStatus || "").toLowerCase()
+                        )
+                      }
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      {portalLoading && portalAction === "cancel"
+                        ? "Opening cancellation..."
+                        : "Cancel Subscription"}
                     </Button>
 
                     <Button

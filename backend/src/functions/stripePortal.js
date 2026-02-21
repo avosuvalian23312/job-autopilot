@@ -73,6 +73,11 @@ async function stripePortal(request, context) {
 
     const body = await readJsonBody(request);
     const returnPath = normalizePath(body.returnPath || "/AppSettings");
+    const flow = String(body.flow || "").trim().toLowerCase();
+    const wantsCancelFlow =
+      flow === "cancel" ||
+      flow === "subscription_cancel" ||
+      flow === "cancel_subscription";
 
     const origin = getOrigin(request);
     if (!origin) {
@@ -114,16 +119,40 @@ async function stripePortal(request, context) {
       });
     }
 
-    const session = await stripe.billingPortal.sessions.create({
+    const sessionParams = {
       customer: stripeCustomerId,
       return_url: `${origin}${returnPath}`,
-    });
+    };
+
+    if (wantsCancelFlow) {
+      if (!stripeSubscriptionId) {
+        return json(400, {
+          ok: false,
+          error:
+            "No active Stripe subscription found to cancel for this account.",
+        });
+      }
+
+      sessionParams.flow_data = {
+        type: "subscription_cancel",
+        subscription_cancel: {
+          subscription: stripeSubscriptionId,
+        },
+        after_completion: {
+          type: "redirect",
+          redirect: { return_url: `${origin}${returnPath}` },
+        },
+      };
+    }
+
+    const session = await stripe.billingPortal.sessions.create(sessionParams);
 
     return json(200, {
       ok: true,
       url: session.url,
       id: session.id,
       customerId: stripeCustomerId,
+      flow: wantsCancelFlow ? "subscription_cancel" : "portal",
     });
   } catch (e) {
     context?.log?.error?.("stripePortal failed", e);
@@ -132,4 +161,3 @@ async function stripePortal(request, context) {
 }
 
 module.exports = { stripePortal };
-
