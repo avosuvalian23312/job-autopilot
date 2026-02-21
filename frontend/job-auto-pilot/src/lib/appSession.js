@@ -8,6 +8,34 @@ function looksLikeJwt(value) {
   );
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json = atob(padded);
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasAppSessionClaims(token) {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  if (payload?.typ === "email_login_challenge") return false;
+
+  const hasUserId = !!(payload?.userId || payload?.uid || payload?.sub);
+  const provider = String(payload?.provider || "").trim().toLowerCase();
+  const email = String(payload?.email || "").trim();
+  const hasEmailFallback = provider === "email" && !!email;
+
+  return hasUserId || hasEmailFallback;
+}
+
 function safeLocalStorageGet(key) {
   try {
     return window.localStorage.getItem(key);
@@ -58,7 +86,12 @@ export function getAppToken() {
   if (!token) return "";
 
   const lower = token.toLowerCase();
-  if (lower === "null" || lower === "undefined" || !looksLikeJwt(token)) {
+  if (
+    lower === "null" ||
+    lower === "undefined" ||
+    !looksLikeJwt(token) ||
+    !hasAppSessionClaims(token)
+  ) {
     safeLocalStorageRemove(APP_TOKEN_KEY);
     clearTokenCookie();
     return "";
@@ -69,13 +102,14 @@ export function getAppToken() {
 
 export function setAppToken(token) {
   const value = String(token || "").trim();
-  if (!value || !looksLikeJwt(value)) {
+  if (!value || !looksLikeJwt(value) || !hasAppSessionClaims(value)) {
     safeLocalStorageRemove(APP_TOKEN_KEY);
     clearTokenCookie();
-    return;
+    return false;
   }
   safeLocalStorageSet(APP_TOKEN_KEY, value);
   setTokenCookie(value);
+  return true;
 }
 
 export function clearAppToken() {

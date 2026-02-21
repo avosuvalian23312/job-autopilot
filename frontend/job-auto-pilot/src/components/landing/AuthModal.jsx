@@ -82,7 +82,6 @@ export default function AuthModal({ open, onClose, onComplete }) {
     return () => {
       if (pulseTimer.current) clearTimeout(pulseTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const startGoogle = async () => {
@@ -195,7 +194,11 @@ export default function AuthModal({ open, onClose, onComplete }) {
         return;
       }
 
-      setAppToken(String(res.data.appToken));
+      const saved = setAppToken(String(res.data.appToken));
+      if (!saved) {
+        setErr("Sign-in token was invalid. Please request a new code.");
+        return;
+      }
       try {
         onComplete?.({ provider: "email" });
       } catch {
