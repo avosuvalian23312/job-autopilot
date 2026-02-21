@@ -35,6 +35,10 @@ function getSwaUser(request) {
   }
 }
 
+function safeUserId(userId) {
+  return String(userId || "anon").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function parseStorageConnString(cs) {
   const parts = {};
   String(cs || "")
@@ -99,8 +103,19 @@ async function resumeSas(request, context) {
 
     if (!blobName) return { status: 400, jsonBody: { ok: false, error: "Missing resumeId or blobName" } };
 
-    // Basic ownership guard if blobName provided directly
-    if (!blobName.startsWith(`${user.userId}/`)) {
+    // Basic ownership guard. Support both raw and safe userId prefixes because
+    // resume blobs are persisted with safeUserId(...) in upload/generate flows.
+    const rawPrefix = `${String(user.userId || "")}/`;
+    const safePrefix = `${safeUserId(user.userId)}/`;
+    const rawContainerPrefix = `resumes/${String(user.userId || "")}/`;
+    const safeContainerPrefix = `resumes/${safeUserId(user.userId)}/`;
+    const owned =
+      blobName.startsWith(rawPrefix) ||
+      blobName.startsWith(safePrefix) ||
+      blobName.startsWith(rawContainerPrefix) ||
+      blobName.startsWith(safeContainerPrefix);
+
+    if (!owned) {
       return { status: 403, jsonBody: { ok: false, error: "Forbidden" } };
     }
 
