@@ -76,7 +76,7 @@ export default function FeatureCards() {
                     onError={() =>
                       setMissingImages((prev) => ({ ...prev, [i]: true }))
                     }
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.035]"
                   />
                 )}
               </div>

@@ -1,97 +1,105 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
 
 export default function BeforeAfter() {
-  const [side, setSide] = useState("before");
-
-  const before = [
-    "• Worked on web applications",
-    "• Managed a team",
-    "• Improved system performance",
-    "• Helped with customer issues",
-  ];
-
-  const after = [
-    "• Led cross-functional team of 8 engineers to deliver mission-critical platform redesign, resulting in 40% improvement in user engagement and 25% reduction in churn",
-    "• Architected and implemented scalable microservices infrastructure handling 10M+ daily requests with 99.97% uptime SLA",
-    "• Reduced infrastructure costs by 35% through strategic migration to containerized architecture and optimized resource allocation",
-    "• Drove product strategy for key revenue stream generating $2.4M ARR through data-driven A/B testing",
-  ];
+  const [missingImages, setMissingImages] = useState({});
 
   return (
-    <section className="py-32 px-4 relative overflow-hidden">
+    <section className="py-24 px-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-purple-900/5 to-transparent" />
-      
-      <div className="max-w-5xl mx-auto relative z-10">
+
+      <div className="max-w-6xl mx-auto relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="text-center mb-12"
         >
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-            Transform your resume bullets
+          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+            See the resume transformation
           </h2>
           <p className="text-lg text-white/40 max-w-2xl mx-auto">
-            Generic bullets vs. ATS-optimized, metric-driven accomplishments
+            Before vs. after ATS optimization, side by side.
           </p>
         </motion.div>
 
-        <div className="flex justify-center mb-8">
-          <div className="inline-flex p-1 bg-white/5 rounded-xl border border-white/5">
-            <button
-              onClick={() => setSide("before")}
-              className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                side === "before"
-                  ? "bg-red-500/20 text-red-400"
-                  : "text-white/40 hover:text-white/60"
-              }`}
-            >
-              ❌ Before
-            </button>
-            <button
-              onClick={() => setSide("after")}
-              className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                side === "after"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "text-white/40 hover:text-white/60"
-              }`}
-            >
-              ✅ After
-            </button>
-          </div>
-        </div>
-
-        <motion.div
-          key={side}
-          initial={{ opacity: 0, x: side === "before" ? -20 : 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="glass-card rounded-2xl p-8 md:p-12"
-        >
-          <div className="space-y-4">
-            {(side === "before" ? before : after).map((bullet, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className={`text-sm md:text-base leading-relaxed ${
-                  side === "before" ? "text-white/40" : "text-white/70"
-                }`}
-              >
-                {bullet}
-              </motion.div>
-            ))}
-          </div>
-
-          {side === "before" && (
-            <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-center gap-3 text-white/30">
-              <span className="text-sm">See the difference?</span>
-              <ArrowRight className="w-4 h-4" />
+        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-[1fr_auto_1fr] md:gap-6">
+          <motion.div
+            initial={{ opacity: 0, x: -24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="group relative overflow-hidden rounded-2xl border border-rose-300/20 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
+          >
+            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-rose-200/90">
+              Resume Before
             </div>
-          )}
-        </motion.div>
+            <div className="aspect-[16/10] w-full">
+              {missingImages.before ? (
+                <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_0%_0%,rgba(244,63,94,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
+                  Add
+                  <code className="mx-1 rounded bg-white/10 px-1 py-0.5 text-xs">
+                    resumebefore.jpg
+                  </code>
+                  in
+                  <code className="ml-1 rounded bg-white/10 px-1 py-0.5 text-xs">
+                    public/landing/previews
+                  </code>
+                </div>
+              ) : (
+                <img
+                  src="/landing/previews/resumebefore.jpg"
+                  alt="Resume before optimization"
+                  loading="lazy"
+                  onError={() => setMissingImages((prev) => ({ ...prev, before: true }))}
+                  className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+                />
+              )}
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
+          </motion.div>
+
+          <div className="relative flex items-center justify-center">
+            <div className="h-px w-full bg-gradient-to-r from-rose-300/30 via-white/40 to-emerald-300/30 md:hidden" />
+            <div className="hidden h-full w-px bg-gradient-to-b from-rose-300/35 via-cyan-300/60 to-emerald-300/35 md:block" />
+            <div className="absolute rounded-full border border-white/25 bg-black/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200 shadow-[0_0_20px_rgba(56,189,248,0.25)]">
+              vs
+            </div>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="group relative overflow-hidden rounded-2xl border border-emerald-300/25 bg-black/30 shadow-[0_18px_38px_rgba(0,0,0,0.35)]"
+          >
+            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/90">
+              Resume After
+            </div>
+            <div className="aspect-[16/10] w-full">
+              {missingImages.after ? (
+                <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_120%_at_100%_0%,rgba(16,185,129,0.22),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(6,10,18,0.96))] px-8 text-center text-white/70">
+                  Add
+                  <code className="mx-1 rounded bg-white/10 px-1 py-0.5 text-xs">
+                    resumeafter.jpg
+                  </code>
+                  in
+                  <code className="ml-1 rounded bg-white/10 px-1 py-0.5 text-xs">
+                    public/landing/previews
+                  </code>
+                </div>
+              ) : (
+                <img
+                  src="/landing/previews/resumeafter.jpg"
+                  alt="Resume after optimization"
+                  loading="lazy"
+                  onError={() => setMissingImages((prev) => ({ ...prev, after: true }))}
+                  className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+                />
+              )}
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
+          </motion.div>
+        </div>
       </div>
     </section>
   );

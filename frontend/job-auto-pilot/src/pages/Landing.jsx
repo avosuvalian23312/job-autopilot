@@ -11,7 +11,6 @@ import HeroSection from "@/components/landing/HeroSection";
 import CompanyLogos from "@/components/landing/CompanyLogos";
 import HowItWorks from "@/components/landing/HowItWorks";
 import FeatureCards from "@/components/landing/FeatureCards";
-import FeaturesPreview from "@/components/landing/FeaturesPreview";
 import BeforeAfter from "@/components/landing/BeforeAfter";
 import StatsSection from "@/components/landing/StatsSection";
 import ReviewsSection from "@/components/landing/ReviewsSection";
@@ -136,15 +135,6 @@ export default function Landing() {
             transition={{ duration: 0.5 }}
           >
             <FeatureCards />
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-          >
-            <FeaturesPreview />
           </motion.div>
         </div>
 
