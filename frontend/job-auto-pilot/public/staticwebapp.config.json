@@ -38,6 +38,12 @@
       }
     }
   },
+  "routes": [
+    {
+      "route": "/api/verify/email-login",
+      "allowedRoles": ["anonymous"]
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
