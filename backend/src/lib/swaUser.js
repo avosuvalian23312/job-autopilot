@@ -14,20 +14,58 @@ function getHeader(request, name) {
   return key ? request.headers[key] : undefined;
 }
 
-function parseBearerPrincipal(request) {
-  const auth = getHeader(request, "authorization");
-  if (!auth) return null;
+function getCookie(request, name) {
+  const cookieHeader = getHeader(request, "cookie");
+  if (!cookieHeader) return null;
 
-  const match = String(auth).match(/^Bearer\s+(.+)$/i);
-  if (!match) return null;
+  const target = String(name || "").trim();
+  if (!target) return null;
+
+  const parts = String(cookieHeader).split(";");
+  for (const part of parts) {
+    const idx = part.indexOf("=");
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim();
+    if (key !== target) continue;
+
+    const raw = part.slice(idx + 1).trim();
+    if (!raw) return null;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  return null;
+}
+
+function getAppTokenFromRequest(request) {
+  const auth = String(getHeader(request, "authorization") || "").trim();
+  if (auth) {
+    const match = auth.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) return String(match[1]).trim();
+  }
+
+  const headerToken = String(getHeader(request, "x-app-token") || "").trim();
+  if (headerToken) return headerToken;
+
+  const cookieToken = String(getCookie(request, "jobautopilot_app_token") || "").trim();
+  if (cookieToken) return cookieToken;
+
+  return null;
+}
+
+function parseBearerPrincipal(request) {
+  const token = getAppTokenFromRequest(request);
+  if (!token) return null;
 
   const secret = process.env.APP_JWT_SECRET;
   if (!secret) return null;
 
   try {
-    const payload = jwt.verify(match[1], secret);
-    const userId =
-      payload?.userId || payload?.uid || payload?.sub || null;
+    const payload = jwt.verify(token, secret);
+    const userId = payload?.userId || payload?.uid || payload?.sub || null;
     if (!userId) return null;
 
     const email = String(payload?.email || "").trim() || null;
@@ -95,6 +133,8 @@ function getSwaIdentityProvider(request) {
 
 module.exports = {
   getHeader,
+  getCookie,
+  getAppTokenFromRequest,
   parseClientPrincipal,
   getSwaUserId,
   getAuthenticatedUser,

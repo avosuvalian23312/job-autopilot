@@ -3,7 +3,7 @@ module.exports = async (request, context) => {
   if (request.method === "OPTIONS") {
     return { status: 204, headers: cors() };
   }
-//gf
+
   const user = getAuthenticatedUser(request) || getSwaUser(request);
   if (!user) {
     return json(401, { ok: false, error: "Not authenticated" });
@@ -46,7 +46,7 @@ function getSwaUser(request) {
 function cors() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-App-Token",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
   };
 }

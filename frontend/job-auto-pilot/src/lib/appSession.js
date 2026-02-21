@@ -1,5 +1,6 @@
 const APP_TOKEN_KEY = "jobautopilot.app_token";
 const FETCH_GUARD_KEY = "__jobAutopilotFetchWrapped";
+const APP_TOKEN_COOKIE = "jobautopilot_app_token";
 
 function looksLikeJwt(value) {
   return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(
@@ -31,6 +32,26 @@ function safeLocalStorageRemove(key) {
   }
 }
 
+function setTokenCookie(token) {
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${APP_TOKEN_COOKIE}=${encodeURIComponent(
+      token
+    )}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Lax${secure}`;
+  } catch {
+    // ignore
+  }
+}
+
+function clearTokenCookie() {
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${APP_TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+  } catch {
+    // ignore
+  }
+}
+
 export function getAppToken() {
   const raw = safeLocalStorageGet(APP_TOKEN_KEY);
   const token = String(raw || "").trim();
@@ -39,6 +60,7 @@ export function getAppToken() {
   const lower = token.toLowerCase();
   if (lower === "null" || lower === "undefined" || !looksLikeJwt(token)) {
     safeLocalStorageRemove(APP_TOKEN_KEY);
+    clearTokenCookie();
     return "";
   }
 
@@ -49,13 +71,16 @@ export function setAppToken(token) {
   const value = String(token || "").trim();
   if (!value || !looksLikeJwt(value)) {
     safeLocalStorageRemove(APP_TOKEN_KEY);
+    clearTokenCookie();
     return;
   }
   safeLocalStorageSet(APP_TOKEN_KEY, value);
+  setTokenCookie(value);
 }
 
 export function clearAppToken() {
   safeLocalStorageRemove(APP_TOKEN_KEY);
+  clearTokenCookie();
 }
 
 function isApiRequest(url) {
@@ -75,6 +100,9 @@ function withAuthHeader(input, init, token) {
   const headers = new Headers(nextInit.headers || undefined);
   if (!headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+  if (!headers.has("X-App-Token")) {
+    headers.set("X-App-Token", token);
   }
   nextInit.headers = headers;
   return nextInit;

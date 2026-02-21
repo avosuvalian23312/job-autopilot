@@ -1,11 +1,20 @@
 "use strict";
 
-const { getHeader, parseClientPrincipal } = require("../lib/swaUser");
+const {
+  getHeader,
+  getCookie,
+  getAppTokenFromRequest,
+  parseClientPrincipal,
+} = require("../lib/swaUser");
 
 async function debugAuth(request, context) {
   const hasPrincipal = !!getHeader(request, "x-ms-client-principal");
   const hasIdToken = !!getHeader(request, "x-ms-token-aad-id-token");
   const hasAccessToken = !!getHeader(request, "x-ms-token-aad-access-token");
+  const hasAuthorization = !!getHeader(request, "authorization");
+  const hasXAppToken = !!getHeader(request, "x-app-token");
+  const hasAppTokenCookie = !!getCookie(request, "jobautopilot_app_token");
+  const hasParsedAppToken = !!getAppTokenFromRequest(request);
 
   const principal = parseClientPrincipal(request);
 
@@ -17,6 +26,10 @@ async function debugAuth(request, context) {
       hasClientPrincipal: hasPrincipal,
       hasAadIdToken: hasIdToken,
       hasAadAccessToken: hasAccessToken,
+      hasAuthorization,
+      hasXAppToken,
+      hasAppTokenCookie,
+      hasParsedAppToken,
       principalPreview: principal
         ? {
             identityProvider: principal.identityProvider,

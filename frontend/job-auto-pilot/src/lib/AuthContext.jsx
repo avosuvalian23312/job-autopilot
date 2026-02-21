@@ -72,6 +72,7 @@ export function AuthProvider({ children }) {
         credentials: "include",
         headers: {
           Authorization: `Bearer ${appToken}`,
+          "X-App-Token": appToken,
         },
       });
 
