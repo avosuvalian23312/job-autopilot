@@ -70,6 +70,9 @@ export function AuthProvider({ children }) {
       const who = await fetch("/api/userinfo", {
         method: "GET",
         credentials: "include",
+        headers: {
+          Authorization: `Bearer ${appToken}`,
+        },
       });
 
       if (!who.ok) {

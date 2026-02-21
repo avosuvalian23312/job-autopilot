@@ -1,6 +1,12 @@
 const APP_TOKEN_KEY = "jobautopilot.app_token";
 const FETCH_GUARD_KEY = "__jobAutopilotFetchWrapped";
 
+function looksLikeJwt(value) {
+  return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(
+    String(value || "").trim()
+  );
+}
+
 function safeLocalStorageGet(key) {
   try {
     return window.localStorage.getItem(key);
@@ -26,12 +32,22 @@ function safeLocalStorageRemove(key) {
 }
 
 export function getAppToken() {
-  return safeLocalStorageGet(APP_TOKEN_KEY) || "";
+  const raw = safeLocalStorageGet(APP_TOKEN_KEY);
+  const token = String(raw || "").trim();
+  if (!token) return "";
+
+  const lower = token.toLowerCase();
+  if (lower === "null" || lower === "undefined" || !looksLikeJwt(token)) {
+    safeLocalStorageRemove(APP_TOKEN_KEY);
+    return "";
+  }
+
+  return token;
 }
 
 export function setAppToken(token) {
   const value = String(token || "").trim();
-  if (!value) {
+  if (!value || !looksLikeJwt(value)) {
     safeLocalStorageRemove(APP_TOKEN_KEY);
     return;
   }
