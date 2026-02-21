@@ -551,6 +551,9 @@ export default function Settings() {
   const stripeSubStatus = String(
     stripeBilling?.subscriptionStatus || billingPlanStatus || "inactive"
   );
+  const isSubscriptionCanceled = ["canceled", "cancelled", "incomplete_expired"].includes(
+    String(stripeSubStatus || "").toLowerCase()
+  );
   const stripePeriodEndLabel = formatDateShort(stripeBilling?.currentPeriodEnd);
   const stripeCardBrand = String(stripePaymentCard?.brand || "Stripe").toUpperCase();
   const stripeCardLast4 = String(stripePaymentCard?.last4 || "----");
@@ -650,7 +653,12 @@ export default function Settings() {
   }, [billingProfile]);
 
   const openPricing = () => {
-    navigate(`${createPageUrl("Pricing")}?force=pricing`);
+    const target = `${createPageUrl("Pricing")}?force=pricing&from=billing`;
+    if (typeof window !== "undefined" && window.location?.assign) {
+      window.location.assign(target);
+      return;
+    }
+    navigate(target);
   };
 
   const openCreditsPage = () => {
@@ -1315,9 +1323,7 @@ export default function Settings() {
                       disabled={
                         portalLoading ||
                         !stripeSubscriptionId ||
-                        ["canceled", "cancelled", "incomplete_expired"].includes(
-                          String(stripeSubStatus || "").toLowerCase()
-                        )
+                        isSubscriptionCanceled
                       }
                     >
                       <X className="w-4 h-4 mr-2" />
@@ -1331,7 +1337,7 @@ export default function Settings() {
                       className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl py-5 px-5 font-semibold"
                       onClick={openPricing}
                     >
-                      Upgrade
+                      {isSubscriptionCanceled ? "Resubscribe" : "Upgrade"}
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
