@@ -82,7 +82,49 @@
     @apply border-border outline-ring/50;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+  }
+
+  img,
+  video,
+  canvas,
+  iframe {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    overflow-x: clip;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  a,
+  li,
+  td,
+  th {
+    overflow-wrap: anywhere;
+  }
+
+  [data-radix-popper-content-wrapper] {
+    max-width: calc(100vw - 1rem) !important;
   }
 }

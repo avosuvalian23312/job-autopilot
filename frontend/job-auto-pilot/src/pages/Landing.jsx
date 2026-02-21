@@ -41,7 +41,9 @@ export default function Landing() {
             <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
               <Zap className="h-4 w-4 text-slate-950" />
             </div>
-            <span className="font-bold text-white text-lg">Job Autopilot</span>
+            <span className="hidden font-bold text-white text-lg sm:block">
+              Job Autopilot
+            </span>
           </div>
 
           <nav className="hidden md:flex items-center gap-1.5 text-sm font-medium">
@@ -80,20 +82,21 @@ export default function Landing() {
 
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Button
               variant="ghost"
               onClick={() => setAuthOpen(true)}
-              className="text-white/60 hover:text-white hover:bg-white/5 text-sm font-medium"
+              className="hidden text-white/60 hover:text-white hover:bg-white/5 text-sm font-medium sm:inline-flex"
             >
               Sign in
             </Button>
 
             <Button
               onClick={() => setAuthOpen(true)}
-              className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium px-5 py-2 rounded-lg premium-button shadow-lg hover:shadow-purple-500/25"
+              className="bg-purple-600 hover:bg-purple-500 text-white text-xs sm:text-sm font-medium px-3.5 sm:px-5 py-2 rounded-lg premium-button shadow-lg hover:shadow-purple-500/25"
             >
-              Get Started Free
+              <span className="sm:hidden">Get Started</span>
+              <span className="hidden sm:inline">Get Started Free</span>
             </Button>
           </div>
         </div>

@@ -219,7 +219,7 @@ export default function Pricing() {
   };
 
   return (
-    <div className="min-h-screen text-white bg-[radial-gradient(920px_500px_at_12%_-12%,rgba(139,92,246,0.2),transparent_60%),radial-gradient(780px_500px_at_95%_5%,rgba(6,182,212,0.14),transparent_62%),linear-gradient(180deg,hsl(222,28%,8%),hsl(228,27%,7%))]">
+    <div className="min-h-screen overflow-x-hidden text-white bg-[radial-gradient(920px_500px_at_12%_-12%,rgba(139,92,246,0.2),transparent_60%),radial-gradient(780px_500px_at_95%_5%,rgba(6,182,212,0.14),transparent_62%),linear-gradient(180deg,hsl(222,28%,8%),hsl(228,27%,7%))]">
       <header className="border-b border-white/5 bg-[hsl(225,24%,8%)]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

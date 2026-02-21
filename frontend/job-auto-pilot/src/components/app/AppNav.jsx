@@ -98,7 +98,7 @@ export default function AppNav({ currentPage, credits }) {
 
   return (
     <nav className="sticky top-0 z-40 border-b border-white/10 bg-[linear-gradient(180deg,rgba(4,9,16,0.96),rgba(4,9,16,0.92))] backdrop-blur-xl shadow-[0_10px_24px_rgba(0,0,0,0.35)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 sm:py-0 sm:h-16 flex flex-wrap items-center justify-between gap-y-2">
         <Link
           to={createPageUrl("AppHome")}
           className="flex items-center gap-2.5"
@@ -111,12 +111,12 @@ export default function AppNav({ currentPage, credits }) {
           </span>
         </Link>
 
-        <div className="flex items-center gap-1.5">
+        <div className="order-3 flex w-full items-center justify-between gap-1 overflow-x-auto pb-1 sm:order-2 sm:w-auto sm:flex-1 sm:justify-center sm:gap-1.5 sm:overflow-visible sm:pb-0">
           {navItems.map((item) => (
             <Link
               key={item.page}
               to={createPageUrl(item.page)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`shrink-0 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200 sm:px-3 ${
                 currentPage === item.page
                   ? "border border-emerald-300/25 bg-emerald-500/15 text-emerald-200"
                   : "border border-transparent text-white/55 hover:text-white/85 hover:bg-white/[0.06]"
@@ -128,10 +128,10 @@ export default function AppNav({ currentPage, credits }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="order-2 ml-auto flex items-center gap-2 sm:order-3 sm:ml-0 sm:gap-3">
           <Link
             to={createPageUrl("Credits")}
-            className="credits-pill group relative flex cursor-pointer items-center gap-2.5 rounded-xl border border-emerald-300/30 bg-[linear-gradient(140deg,rgba(0,58,55,0.95),rgba(1,39,53,0.94))] px-3.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_22px_rgba(0,0,0,0.35)] transition-all hover:-translate-y-0.5 hover:border-emerald-200/40"
+            className="credits-pill group relative flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-300/30 bg-[linear-gradient(140deg,rgba(0,58,55,0.95),rgba(1,39,53,0.94))] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_22px_rgba(0,0,0,0.35)] transition-all hover:-translate-y-0.5 hover:border-emerald-200/40 sm:gap-2.5 sm:px-3.5"
           >
             <span
               aria-hidden
@@ -151,7 +151,7 @@ export default function AppNav({ currentPage, credits }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/45 transition-all hover:bg-white/[0.06] hover:text-white/80"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-white/45 transition-all hover:bg-white/[0.06] hover:text-white/80 sm:px-3"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden md:block">Logout</span>
