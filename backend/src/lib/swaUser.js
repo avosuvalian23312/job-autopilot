@@ -65,16 +65,27 @@ function parseBearerPrincipal(request) {
 
   try {
     const payload = jwt.verify(token, secret);
-    const userId = payload?.userId || payload?.uid || payload?.sub || null;
+    const email = String(payload?.email || "").trim().toLowerCase() || null;
+    const provider = String(payload?.provider || "").trim().toLowerCase() || "";
+
+    const derivedEmailUserId =
+      provider === "email" && email ? `email:${email}` : null;
+
+    const userId =
+      payload?.userId ||
+      payload?.uid ||
+      payload?.sub ||
+      derivedEmailUserId ||
+      null;
     if (!userId) return null;
 
-    const email = String(payload?.email || "").trim() || null;
-    const provider = String(payload?.provider || "email").trim() || "email";
+    const normalizedProvider =
+      provider || (String(userId).startsWith("email:") ? "email" : "unknown");
 
     return {
       userId: String(userId),
       userDetails: email || String(userId),
-      identityProvider: provider,
+      identityProvider: normalizedProvider,
       claims: email ? [{ typ: "emails", val: email }] : [],
     };
   } catch {

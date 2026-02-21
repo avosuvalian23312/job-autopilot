@@ -1,5 +1,6 @@
 "use strict";
 
+const jwt = require("jsonwebtoken");
 const {
   getHeader,
   getCookie,
@@ -14,9 +15,36 @@ async function debugAuth(request, context) {
   const hasAuthorization = !!getHeader(request, "authorization");
   const hasXAppToken = !!getHeader(request, "x-app-token");
   const hasAppTokenCookie = !!getCookie(request, "jobautopilot_app_token");
-  const hasParsedAppToken = !!getAppTokenFromRequest(request);
+  const token = getAppTokenFromRequest(request);
+  const hasParsedAppToken = !!token;
 
   const principal = parseClientPrincipal(request);
+  let tokenDebug = null;
+
+  if (token) {
+    const decoded = jwt.decode(token, { complete: true });
+    const payload = decoded?.payload || {};
+    const secret = process.env.APP_JWT_SECRET;
+    let verifyOk = false;
+    let verifyError = null;
+    try {
+      if (!secret) throw new Error("Missing APP_JWT_SECRET");
+      jwt.verify(token, secret);
+      verifyOk = true;
+    } catch (e) {
+      verifyError = e?.message || "verify_failed";
+    }
+
+    tokenDebug = {
+      verifyOk,
+      verifyError,
+      hasUserId: !!(payload?.userId || payload?.uid || payload?.sub),
+      typ: payload?.typ || null,
+      provider: payload?.provider || null,
+      hasEmail: !!payload?.email,
+      payloadKeys: Object.keys(payload || {}),
+    };
+  }
 
   return {
     status: 200,
@@ -30,6 +58,7 @@ async function debugAuth(request, context) {
       hasXAppToken,
       hasAppTokenCookie,
       hasParsedAppToken,
+      tokenDebug,
       principalPreview: principal
         ? {
             identityProvider: principal.identityProvider,
