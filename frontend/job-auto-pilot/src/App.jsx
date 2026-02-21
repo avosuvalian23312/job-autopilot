@@ -250,7 +250,8 @@ function AppRoutes() {
 
     // Enforce onboarding order (cloud truth)
     if (effectiveOnboarding.step === "pricing" && pageLower !== "pricing") {
-      return <Navigate to={PRICING_PATH} replace />;
+      const qs = stripeSessionId ? `?session_id=${encodeURIComponent(stripeSessionId)}` : "";
+      return <Navigate to={`${PRICING_PATH}${qs}`} replace />;
     }
 
     // If user tries to visit Pricing after pricing is complete, bounce forward

@@ -374,6 +374,13 @@ app.http("stripeBillingSummary", {
   handler: lazy("./src/functions/stripeBillingSummary.js", "stripeBillingSummary"),
 });
 
+app.http("stripeConfirmSession", {
+  methods: ["POST", "OPTIONS"],
+  route: "stripe/confirm-session",
+  authLevel: "anonymous",
+  handler: lazy("./src/functions/stripeConfirmSession.js", "stripeConfirmSession"),
+});
+
 app.http("stripeWebhook", {
   methods: ["POST"],
   route: "stripe/webhook",

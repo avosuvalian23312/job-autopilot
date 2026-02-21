@@ -37,6 +37,15 @@ function getCancelPath() {
   }
 }
 
+function getCurrentPath() {
+  try {
+    const p = window.location.pathname || "/Pricing";
+    return p.startsWith("/") ? p : "/Pricing";
+  } catch {
+    return "/Pricing";
+  }
+}
+
 async function postJson(path, body) {
   const res = await fetch(path, {
     method: "POST",
@@ -60,6 +69,7 @@ export default function Pricing() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [loadingPlan, setLoadingPlan] = useState(null);
+  const [confirmingSession, setConfirmingSession] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   const forceMode = useMemo(() => {
@@ -72,22 +82,54 @@ export default function Pricing() {
   }, []);
 
   useEffect(() => {
-    try {
-      const qs = new URLSearchParams(window.location.search);
-      const sessionId = qs.get("session_id");
-      if (!sessionId || forceMode) return;
+    let active = true;
 
-      qc.invalidateQueries({ queryKey: ["onboarding:me"] });
-      navigate(`${getSetupPath()}?session_id=${encodeURIComponent(sessionId)}`, {
-        replace: true,
-      });
-    } catch {
-      // no-op
-    }
+    const confirmCheckout = async () => {
+      try {
+        const qs = new URLSearchParams(window.location.search);
+        const sessionId = qs.get("session_id");
+        if (!sessionId || forceMode) return;
+
+        setErrorMsg("");
+        setConfirmingSession(true);
+
+        const resp = await postJson("/api/stripe/confirm-session", {
+          session_id: sessionId,
+        });
+
+        if (!active) return;
+
+        if (!resp.ok || !resp.data?.ok) {
+          const msg =
+            resp.data?.error ||
+            resp.data?.message ||
+            resp.data?.detail ||
+            `Checkout confirmation failed (HTTP ${resp.status})`;
+          setErrorMsg(msg);
+          return;
+        }
+
+        onboarding.clearCache?.();
+        await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+        await qc.refetchQueries({ queryKey: ["onboarding:me"] });
+        navigate(getSetupPath(), { replace: true });
+      } catch (e) {
+        if (!active) return;
+        setErrorMsg(e?.message || "Checkout confirmation failed. Please refresh.");
+      } finally {
+        if (active) setConfirmingSession(false);
+      }
+    };
+
+    confirmCheckout();
+
+    return () => {
+      active = false;
+    };
   }, [forceMode, navigate, qc]);
 
   const handleSelectPlan = async (plan) => {
-    if (loadingPlan) return;
+    if (loadingPlan || confirmingSession) return;
 
     setErrorMsg("");
     setLoadingPlan(plan.id);
@@ -112,7 +154,7 @@ export default function Pricing() {
         return;
       }
 
-      const successPath = getSetupPath();
+      const successPath = getCurrentPath();
       const cancelPath = getCancelPath();
 
       // Persist selected plan in backend profile (no local storage).
@@ -188,6 +230,12 @@ export default function Pricing() {
           {forceMode ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
               Test mode: opened via <span className="font-mono">?force=pricing</span>
+            </div>
+          ) : null}
+
+          {confirmingSession ? (
+            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/20 text-sm text-cyan-100">
+              Confirming your Stripe checkout. Please wait...
             </div>
           ) : null}
 
@@ -336,7 +384,7 @@ export default function Pricing() {
                   e.stopPropagation();
                   handleSelectPlan(plan);
                 }}
-                disabled={loadingPlan === plan.id}
+                disabled={loadingPlan === plan.id || confirmingSession}
                 className={`w-full h-12 rounded-xl text-[0.95rem] font-semibold mb-2 transform-gpu transition-all duration-150 ease-out ${
                   plan.id === "pro"
                     ? "bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)] hover:from-violet-400 hover:via-purple-400 hover:to-fuchsia-400 hover:shadow-[0_16px_36px_rgba(139,92,246,0.45)]"
