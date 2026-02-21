@@ -390,7 +390,7 @@ export default function Setup() {
                 <div className="mt-5 max-w-sm mx-auto">
                   <Input
                     type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     onChange={handleFileUpload}
                     className="bg-white/5 border-white/10 text-white file:text-white file:bg-white/10 file:border-0 file:rounded-lg file:px-3 file:py-2 file:mr-3 hover:file:bg-white/15"
                   />
@@ -404,7 +404,7 @@ export default function Setup() {
                   </div>
                 ) : (
                   <div className="mt-6 text-xs text-white/30">
-                    Accepted: .pdf, .doc, .docx
+                    Accepted: .pdf, .docx
                   </div>
                 )}
               </div>

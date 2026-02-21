@@ -11,6 +11,13 @@ const { callAoaiChat, safeJsonParse } = require("../lib/aoai");
 const { extractPdfLayout } = require("../lib/pdfTailor");
 const { spendCredits, grantCredits, getCredits } = require("../lib/billingStore.cjs");
 
+let mammoth = null;
+try {
+  mammoth = require("mammoth");
+} catch {
+  mammoth = null;
+}
+
 // ---------------------------
 // Helpers
 // ---------------------------
@@ -99,6 +106,71 @@ async function uploadPdfBuffer(connectionString, containerName, blobName, buffer
   });
 
   return stripQuery(block.url);
+}
+
+function detectResumeInputKind(contentType, originalName) {
+  const ct = String(contentType || "").toLowerCase();
+  const name = String(originalName || "").toLowerCase();
+
+  if (ct.includes("pdf") || name.endsWith(".pdf")) return "pdf";
+  if (
+    ct.includes("officedocument.wordprocessingml.document") ||
+    ct.includes("vnd.openxmlformats-officedocument.wordprocessingml.document") ||
+    name.endsWith(".docx")
+  ) {
+    return "docx";
+  }
+  if (
+    (ct.includes("application/msword") || ct.includes("msword") || name.endsWith(".doc")) &&
+    !name.endsWith(".docx")
+  ) {
+    return "doc";
+  }
+  if (ct.startsWith("text/") || name.endsWith(".txt")) return "text";
+
+  return "unknown";
+}
+
+function normalizeExtractedResumeText(raw, maxChars = 16000) {
+  const text = String(raw || "").replace(/\r/g, "\n").replace(/\u0000/g, "").trim();
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars);
+}
+
+async function extractResumeTextFromBytes(buffer, { contentType, originalName } = {}) {
+  const kind = detectResumeInputKind(contentType, originalName);
+
+  if (kind === "pdf") {
+    const pdfBytes = Buffer.isBuffer(buffer) ? new Uint8Array(buffer) : buffer;
+    const layout = await extractPdfLayout(pdfBytes, { maxPages: 12 });
+    return normalizeExtractedResumeText(buildResumeTextFromLayout(layout, { maxChars: 16000 }));
+  }
+
+  if (kind === "docx") {
+    if (!mammoth) {
+      const err = new Error("DOCX parser is unavailable. Install mammoth in backend dependencies.");
+      err.code = "DOCX_PARSER_MISSING";
+      throw err;
+    }
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+    const out = await mammoth.extractRawText({ buffer: bytes });
+    return normalizeExtractedResumeText(out?.value || "");
+  }
+
+  if (kind === "doc") {
+    const err = new Error("Legacy .doc files are not supported. Please upload .docx or .pdf.");
+    err.code = "UNSUPPORTED_DOC_FORMAT";
+    throw err;
+  }
+
+  if (kind === "text" || kind === "unknown") {
+    const text = Buffer.isBuffer(buffer)
+      ? buffer.toString("utf8")
+      : Buffer.from(buffer || []).toString("utf8");
+    return normalizeExtractedResumeText(text);
+  }
+
+  return "";
 }
 
 /**
@@ -1434,25 +1506,51 @@ async function applyPrepare(request, context) {
 
     if (!resumeDoc) return { status: 404, jsonBody: { ok: false, error: "Resume not found" } };
     if (!resumeDoc.blobName) return { status: 400, jsonBody: { ok: false, error: "Resume doc missing blobName" } };
-    if (String(resumeDoc.contentType || "").toLowerCase() !== "application/pdf") {
-      return { status: 400, jsonBody: { ok: false, error: "Only PDF resumes supported." } };
-    }
 
-    // Download PDF bytes
-    const pdfBuffer = await downloadBlobToBuffer(
+    const resumeContentType = String(resumeDoc.contentType || "").toLowerCase();
+    const resumeOriginalName = String(resumeDoc.originalName || resumeDoc.name || "resume.pdf");
+
+    // Download source resume bytes
+    const resumeBuffer = await downloadBlobToBuffer(
       AZURE_STORAGE_CONNECTION_STRING,
       BLOB_RESUMES_CONTAINER,
       resumeDoc.blobName
     );
 
-    if (!pdfBuffer || pdfBuffer.length === 0) {
-      return { status: 500, jsonBody: { ok: false, error: "Failed to download resume PDF bytes" } };
+    if (!resumeBuffer || resumeBuffer.length === 0) {
+      return { status: 500, jsonBody: { ok: false, error: "Failed to download resume bytes" } };
     }
 
-    // Extract resume text (ground truth)
-    const pdfBytesForExtract = Buffer.isBuffer(pdfBuffer) ? new Uint8Array(pdfBuffer) : pdfBuffer;
-    const layout = await extractPdfLayout(pdfBytesForExtract, { maxPages: 12 });
-    const resumeText = buildResumeTextFromLayout(layout, { maxChars: 16000 });
+    // Extract resume text (ground truth) from PDF or DOCX.
+    let resumeText = "";
+    try {
+      resumeText = await extractResumeTextFromBytes(resumeBuffer, {
+        contentType: resumeContentType,
+        originalName: resumeOriginalName,
+      });
+    } catch (extractErr) {
+      if (extractErr?.code === "UNSUPPORTED_DOC_FORMAT") {
+        return { status: 400, jsonBody: { ok: false, error: extractErr.message } };
+      }
+      return {
+        status: 400,
+        jsonBody: {
+          ok: false,
+          error: "Could not read resume content. Upload a selectable PDF or DOCX.",
+          detail: extractErr?.message || String(extractErr),
+        },
+      };
+    }
+
+    if (!resumeText || resumeText.length < 40) {
+      return {
+        status: 400,
+        jsonBody: {
+          ok: false,
+          error: "Could not extract enough resume text. Use a selectable PDF or DOCX.",
+        },
+      };
+    }
 
     // Load profile (trusted)
     const profile = await tryLoadUserProfile(cosmos, COSMOS_DB_NAME, user.userId);
@@ -1566,7 +1664,9 @@ async function applyPrepare(request, context) {
     // Upload tailored PDF
     const now = new Date();
     const ts = now.toISOString().replace(/[:.]/g, "-");
-    const baseName = String(resumeDoc.originalName || resumeDoc.name || "resume.pdf").replace(/\.pdf$/i, "");
+    const baseName = String(resumeDoc.originalName || resumeDoc.name || "resume")
+      .replace(/\.(pdf|doc|docx|txt)$/i, "")
+      .trim();
 
     const suffix = trainingSample ? "_TRAINING_SAMPLE" : "_TAILORED";
     const tailoredFileName = `${baseName}${suffix}_${ts}.pdf`;
