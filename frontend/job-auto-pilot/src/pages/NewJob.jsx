@@ -148,12 +148,12 @@ export default function NewJob() {
   };
 
   const resolveUserId = async () => {
-    const swaId = await getSwaUser();
-    if (swaId) return swaId;
-    return getUserInfoUser();
+    const tokenId = await getUserInfoUser();
+    if (tokenId) return tokenId;
+    return getSwaUser();
   };
 
-  // ✅ Use cached user id when possible (avoid repeated /.auth/me calls)
+  // ✅ Use cached user id when possible
   const ensureUserId = async () => {
     if (swaUserId) return swaUserId;
 
@@ -823,7 +823,7 @@ export default function NewJob() {
   };
 
   useEffect(() => {
-    // warm SWA user id (non-blocking)
+    // warm resolved user id (non-blocking)
     (async () => {
       try {
         const id = await resolveUserId();
