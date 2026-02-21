@@ -16,6 +16,25 @@ import { onboarding } from "@/lib/onboarding";
 import { pricingPlans } from "@/lib/pricingPlans";
 
 const PENDING_STRIPE_SESSION_KEY = "jobautopilot_pending_stripe_session_id";
+const FREE_PLAN = {
+  id: "free",
+  name: "Free",
+  price: 0,
+  originalPrice: null,
+  saveText: null,
+  credits: 25,
+  description: "Good for getting started and testing the workflow",
+  features: [
+    "25 credits per month",
+    "Core generation features",
+    "Standard generation speed",
+    "Community support",
+  ],
+  popular: false,
+  badges: [],
+  limitedBadge: null,
+  cta: "Continue Free",
+};
 
 function getSetupPath() {
   const Pages = pagesConfig?.Pages || {};
@@ -109,6 +128,20 @@ export default function Pricing() {
     }
   }, []);
 
+  const isUpgradeFlow = useMemo(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      return qs.get("from") === "billing";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const visiblePlans = useMemo(() => {
+    if (isUpgradeFlow) return pricingPlans;
+    return [FREE_PLAN, ...pricingPlans];
+  }, [isUpgradeFlow]);
+
   useEffect(() => {
     let active = true;
 
@@ -177,6 +210,20 @@ export default function Pricing() {
     setLoadingPlan(plan.id);
 
     try {
+      if (String(plan?.id || "").toLowerCase() === "free") {
+        if (typeof onboarding?.setSelectedPlan === "function") {
+          await onboarding.setSelectedPlan("free");
+        }
+        if (typeof onboarding?.completePricing === "function") {
+          await onboarding.completePricing("free");
+        }
+        onboarding.clearCache?.();
+        await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
+        await qc.refetchQueries({ queryKey: ["onboarding:me"] });
+        navigate(getSetupPath(), { replace: true });
+        return;
+      }
+
       const successPath = getCurrentPath();
       const cancelPath = getCancelPath();
 
@@ -240,7 +287,7 @@ export default function Pricing() {
           className="text-center mb-10"
         >
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight drop-shadow-[0_2px_16px_rgba(255,255,255,0.14)]">
-            Choose your plan
+            {isUpgradeFlow ? "Upgrade your plan" : "Choose your plan"}
           </h1>
           <p className="text-lg text-white/85 mb-2">
             Secure checkout via Stripe.
@@ -272,8 +319,8 @@ export default function Pricing() {
           <div className="pointer-events-none absolute left-[16%] top-20 h-72 w-72 rounded-full bg-violet-500/14 blur-3xl" />
           <div className="pointer-events-none absolute right-[12%] top-20 h-72 w-72 rounded-full bg-cyan-400/14 blur-3xl" />
           <div className="pointer-events-none absolute inset-x-[30%] bottom-[-2.5rem] h-24 rounded-full bg-indigo-400/10 blur-3xl" />
-          <div className="grid md:grid-cols-2 gap-6 max-w-[860px] mx-auto items-stretch">
-            {pricingPlans.map((plan, i) => (
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-[1240px] mx-auto items-stretch">
+            {visiblePlans.map((plan, i) => (
               <motion.div
                 key={plan.id}
                 initial={{ opacity: 0, y: 14 }}
