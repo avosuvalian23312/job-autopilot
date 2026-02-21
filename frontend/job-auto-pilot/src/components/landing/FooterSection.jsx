@@ -1,5 +1,5 @@
 import React from "react";
-import { Rocket } from "lucide-react";
+import { Zap } from "lucide-react";
 
 export default function FooterSection() {
   return (
@@ -8,8 +8,8 @@ export default function FooterSection() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-                <Rocket className="w-4 h-4 text-white" />
+              <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/35 bg-gradient-to-br from-cyan-400/95 to-teal-400/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_10px_26px_rgba(6,182,212,0.32)]">
+                <Zap className="h-4 w-4 text-slate-950" />
               </div>
               <span className="font-bold text-white">Job Autopilot</span>
             </div>

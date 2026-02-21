@@ -1,47 +1,36 @@
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Target, FileText, BarChart3, Coins, Zap } from "lucide-react";
 
-const features = [
+const featureImageCards = [
   {
-    icon: Sparkles,
-    title: "AI Resume & Cover Letter Generator",
-    description: "Instantly create tailored documents for any job posting",
-    color: "from-purple-500 to-purple-600"
+    title: "Quickly Generate Tailored Resumes and Cover Letters",
+    description:
+      "Paste any job description and generate personalized documents in seconds.",
+    image: "/landing/previews/feature-1.jpg",
   },
   {
-    icon: Target,
-    title: "ATS Keyword Matching",
-    description: "Pass applicant tracking systems with optimized content",
-    color: "from-cyan-500 to-cyan-600"
+    title: "Track Every Application Effortlessly",
+    description:
+      "Organize and monitor your progress from application to interview to offer.",
+    image: "/landing/previews/feature-2.jpg",
   },
   {
-    icon: FileText,
-    title: "Application Tracker",
-    description: "Never lose track of where you applied and when",
-    color: "from-emerald-500 to-emerald-600"
+    title: "Stay on Top of Your Job Search Stats",
+    description:
+      "Use real-time analytics to improve response rates and optimize strategy.",
+    image: "/landing/previews/feature-3.jpg",
   },
   {
-    icon: BarChart3,
-    title: "Interview & Offer Analytics",
-    description: "Track your success rate and optimize your strategy",
-    color: "from-amber-500 to-amber-600"
-  },
-  {
-    icon: Coins,
-    title: "Credit-Based Usage Control",
-    description: "Pay only for what you use with flexible credit packages",
-    color: "from-pink-500 to-pink-600"
-  },
-  {
-    icon: Zap,
-    title: "Lightning Fast Generation",
-    description: "Get your documents in under 10 seconds, every time",
-    color: "from-violet-500 to-violet-600"
+    title: "Never Miss Important Updates and Reminders",
+    description:
+      "Get useful alerts so your pipeline keeps moving forward every week.",
+    image: "/landing/previews/feature-4.jpg",
   },
 ];
 
 export default function FeatureCards() {
+  const [missingImages, setMissingImages] = useState({});
+
   return (
     <section className="py-32 px-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-purple-900/5 to-transparent" />
@@ -57,29 +46,41 @@ export default function FeatureCards() {
             Everything you need to succeed
           </h2>
           <p className="text-lg text-white/40 max-w-2xl mx-auto">
-            All the tools professional job seekers use to land offers faster
+            Visual workflows for resumes, tracking, analytics, and reminders
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, i) => (
+        <div className="grid md:grid-cols-2 gap-6">
+          {featureImageCards.map((card, i) => (
             <motion.div
-              key={i}
+              key={card.title}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className="glass-card rounded-2xl p-6 hover:bg-white/[0.04] transition-all duration-300 hover:scale-[1.02] group cursor-pointer"
+              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black/25 shadow-[0_16px_36px_rgba(0,0,0,0.32)] transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/35"
             >
-              <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-5 group-hover:scale-110 transition-transform`}>
-                <feature.icon className="w-7 h-7 text-white" />
+              <div className="aspect-[16/10] w-full">
+                {missingImages[i] ? (
+                  <div className="relative h-full w-full bg-[radial-gradient(120%_140%_at_0%_0%,rgba(99,102,241,0.32),transparent_45%),radial-gradient(120%_140%_at_100%_100%,rgba(34,211,238,0.25),transparent_45%),linear-gradient(180deg,rgba(8,12,22,0.95),rgba(6,10,18,0.95))] p-6">
+                    <div className="text-xl font-bold text-white">{card.title}</div>
+                    <div className="mt-3 max-w-[34ch] text-sm text-white/70">
+                      {card.description}
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src={card.image}
+                    alt={card.title}
+                    loading="lazy"
+                    onError={() =>
+                      setMissingImages((prev) => ({ ...prev, [i]: true }))
+                    }
+                    className="h-full w-full object-cover"
+                  />
+                )}
               </div>
-              <h3 className="text-lg font-bold text-white mb-3 group-hover:text-purple-400 transition-colors">
-                {feature.title}
-              </h3>
-              <p className="text-white/60 text-sm leading-relaxed line-clamp-2">
-                {feature.description}
-              </p>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/65 to-transparent" />
             </motion.div>
           ))}
         </div>

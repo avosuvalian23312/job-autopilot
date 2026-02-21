@@ -25,8 +25,8 @@ export default function Landing() {
   const navigate = useNavigate();
   const navTabClass =
     "rounded-lg border border-white/10 px-3 py-2 text-white/60 cursor-pointer " +
-    "transition-all duration-200 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_0_16px_rgba(34,211,238,0.08)] " +
-    "hover:text-white hover:bg-white/[0.06] hover:border-cyan-300/45 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.5),0_0_22px_rgba(34,211,238,0.24)]";
+    "transition-all duration-200 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_0_16px_rgba(59,130,246,0.14)] " +
+    "hover:text-white hover:bg-white/[0.06] hover:border-blue-300/50 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.58),0_0_24px_rgba(59,130,246,0.34)]";
 
   const handleAuthComplete = () => {
     setAuthOpen(false);
