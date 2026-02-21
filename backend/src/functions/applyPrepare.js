@@ -268,6 +268,77 @@ function cleanResumeField(value, maxLen = 140) {
   return clampStr(s, maxLen);
 }
 
+function normalizeForCompare(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizedContains(haystack, needle) {
+  const h = normalizeForCompare(haystack);
+  const n = normalizeForCompare(needle);
+  if (!h || !n) return false;
+  return h.includes(n);
+}
+
+function normalizeDateText(value, maxLen = 45) {
+  let s = cleanResumeField(value, maxLen);
+  if (!s) return "";
+
+  s = s.replace(/\b((?:19|20)\d{2})\s*((?:19|20)\d{2}|Present)\b/g, "$1 - $2");
+  s = s.replace(/\b((?:19|20)\d{2})Present\b/g, "$1 - Present");
+  s = s.replace(/\s{2,}/g, " ").trim();
+
+  return clampStr(s, maxLen);
+}
+
+function sanitizeDraftAgainstTargetRole(draft, { jobData, resumeText, aiMode } = {}) {
+  const out = draft && typeof draft === "object" ? { ...draft } : {};
+  const isElite = String(aiMode || "").toLowerCase() === "elite";
+  if (!isElite) return out;
+
+  const targetCompany = safeStr(jobData?.company || "");
+  const targetTitle = safeStr(jobData?.jobTitle || "");
+  const resume = String(resumeText || "");
+
+  if (!targetCompany && !targetTitle) return out;
+
+  const sourceHasTargetCompany = targetCompany
+    ? normalizedContains(resume, targetCompany)
+    : false;
+  const sourceHasTargetTitle = targetTitle
+    ? normalizedContains(resume, targetTitle)
+    : false;
+
+  const tc = normalizeForCompare(targetCompany);
+  const tt = normalizeForCompare(targetTitle);
+
+  const exp = Array.isArray(out.experience) ? out.experience : [];
+  out.experience = exp.filter((row) => {
+    const rc = normalizeForCompare(row?.company || "");
+    const rt = normalizeForCompare(row?.title || "");
+    if (!rc && !rt) return true;
+
+    const companyMatch =
+      !!tc &&
+      !!rc &&
+      (rc === tc || rc.includes(tc) || tc.includes(rc));
+    const titleMatch =
+      !!tt &&
+      !!rt &&
+      (rt === tt || rt.includes(tt) || tt.includes(rt));
+
+    // Keep mock experience allowed, but never fabricate the target role/company.
+    if (companyMatch && !sourceHasTargetCompany) return false;
+    if (companyMatch && titleMatch && !sourceHasTargetTitle) return false;
+    return true;
+  });
+
+  return out;
+}
+
 /**
  * Build a resume text summary from extracted layout.
  * Used to ground AOAI.
@@ -490,6 +561,9 @@ HARD CONSTRAINTS:
 - No "..." anywhere.
 - Bullets <= 110 characters preferred.
 - Keep it 1-page dense and recruiter-friendly.
+- Never fabricate prior experience for the exact target employer in JOB DATA unless that employer appears in RESUME TEXT.
+- Never fabricate prior experience for the exact target role title in JOB DATA unless that role title appears in RESUME TEXT.
+- Skill categories should be concise and professional (1 to 3 words).
 - Skills must be grouped into 5 to 7 clean, professional categories.
 - Extremely tailor summary, skills, experience, and projects to JOB DATA and TARGET_KEYWORDS.
 
@@ -622,6 +696,7 @@ HARD CONSTRAINTS:
 - No "..." anywhere. No incomplete phrases.
 - Bullets <= 110 characters preferred. Strong verbs. No fluff.
 - Keep output 1-page dense and recruiter-friendly.
+- Never insert the target JOB DATA company/role as prior experience unless that same company/role is present in RESUME TEXT.
 - Skills must be grouped into clean, professional categories (5Ã¢â‚¬â€œ7 categories).
 
 TRUTHFULNESS RULES (STRICT):
@@ -687,6 +762,9 @@ HARD CONSTRAINTS:
 - No "..." anywhere.
 - Bullets <= 110 characters preferred.
 - Keep it 1-page dense and recruiter-friendly.
+- Never fabricate prior experience for the exact target employer in JOB DATA unless that employer appears in RESUME TEXT.
+- Never fabricate prior experience for the exact target role title in JOB DATA unless that role title appears in RESUME TEXT.
+- Skill categories should be concise and professional (1 to 3 words).
 
 ELITE MODE RULES:
 - You MAY generate mock experience using REAL companies that match the jobÃ¢â‚¬â„¢s industry.
@@ -874,6 +952,9 @@ HARD CONSTRAINTS:
 - No "..." anywhere.
 - Bullets <= 110 characters preferred.
 - Keep it 1-page dense and recruiter-friendly.
+- Never fabricate prior experience for the exact target employer in JOB DATA unless that employer appears in RESUME TEXT.
+- Never fabricate prior experience for the exact target role title in JOB DATA unless that role title appears in RESUME TEXT.
+- Skill categories should be concise and professional (1 to 3 words).
 
 ELITE MODE RULES:
 - You MAY generate mock experience using REAL companies that match the jobÃ¢â‚¬â„¢s industry.
@@ -991,11 +1072,20 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
 
   // Skills
   const skills = Array.isArray(d.skills) ? d.skills : [];
+  const globalSkillSeen = new Set();
   for (const s of skills.slice(0, 12)) {
-    const category = safeStr(s?.category);
-    const items = uniqStrings(s?.items, { max: 14 }).map((x) => clampStr(x, 45));
+    const category = cleanResumeField(String(s?.category || "").replace(/:+$/, ""), 40);
+    const items = uniqStrings(s?.items, { max: 12 })
+      .map((x) => clampStr(x, 42))
+      .filter((item) => {
+        const key = normalizeForCompare(item);
+        if (!key || globalSkillSeen.has(key)) return false;
+        globalSkillSeen.add(key);
+        return true;
+      });
     if (!category || !items.length) continue;
-    out.skills.push({ category, items });
+    out.skills.push({ category, items: items.slice(0, 8) });
+    if (out.skills.length >= 6) break;
   }
 
   // Experience
@@ -1006,11 +1096,18 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
       .map((b) => clampStr(b, 125))
       .filter(Boolean);
 
+    const title = cleanResumeField(r?.title, 95);
+    const company = cleanResumeField(r?.company, 95);
+    const location = cleanResumeField(r?.location, 70);
+    const dates = normalizeDateText(r?.dates, 45);
+
+    if (!title && !company && !location && !dates && !bullets.length) continue;
+
     out.experience.push({
-      title: cleanResumeField(r?.title, 95),
-      company: cleanResumeField(r?.company, 95),
-      location: cleanResumeField(r?.location, 70),
-      dates: cleanResumeField(r?.dates, 45),
+      title,
+      company,
+      location,
+      dates,
       bullets,
     });
   }
@@ -1021,7 +1118,7 @@ function normalizeDraft(draft, { canonicalFullName, profile, userEmail }) {
     out.education.push({
       school: cleanResumeField(e?.school, 95),
       degree: cleanResumeField(e?.degree, 95),
-      dates: cleanResumeField(e?.dates, 45),
+      dates: normalizeDateText(e?.dates, 45),
       details: uniqStrings(e?.details, { max: 3 })
         .map((x) => clampStr(cleanBullet(x).replace(/^- /, ""), 120))
         .filter(Boolean),
