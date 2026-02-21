@@ -5,3 +5,5 @@ data
 *.log
 .env
 local.settings.json
+local.settings.*.json
+exchange.json

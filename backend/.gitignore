@@ -92,6 +92,10 @@ bin
 obj
 appsettings.json
 local.settings.json
+local.settings.*.json
+exchange.json
+*.secrets.json
+*.secrets.local.json
 
 # Azurite artifacts
 __blobstorage__

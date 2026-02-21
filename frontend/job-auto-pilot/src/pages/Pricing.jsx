@@ -177,25 +177,6 @@ export default function Pricing() {
     setLoadingPlan(plan.id);
 
     try {
-      if (plan.id === "free") {
-        if (typeof onboarding?.completePricing === "function") {
-          await onboarding.completePricing("free");
-        } else if (typeof onboarding?.setSelectedPlan === "function") {
-          await onboarding.setSelectedPlan("free");
-        }
-
-        // Warm credits so free monthly allocation is immediately reflected.
-        await fetch("/api/credits/me", {
-          method: "GET",
-          credentials: "include",
-        }).catch(() => {});
-
-        onboarding.clearCache?.();
-        await qc.invalidateQueries({ queryKey: ["onboarding:me"] });
-        navigate(getSetupPath());
-        return;
-      }
-
       const successPath = getCurrentPath();
       const cancelPath = getCancelPath();
 
@@ -272,12 +253,6 @@ export default function Pricing() {
           </div>
           <p className="text-xs text-white/70">No hidden fees | Cancel anytime</p>
 
-          {forceMode ? (
-            <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-200">
-              Test mode: opened via <span className="font-mono">?force=pricing</span>
-            </div>
-          ) : null}
-
           {confirmingSession ? (
             <div className="max-w-xl mx-auto mb-6 px-4 py-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/20 text-sm text-cyan-100">
               Confirming your Stripe checkout. Please wait...
@@ -297,7 +272,7 @@ export default function Pricing() {
           <div className="pointer-events-none absolute left-[16%] top-20 h-72 w-72 rounded-full bg-violet-500/14 blur-3xl" />
           <div className="pointer-events-none absolute right-[12%] top-20 h-72 w-72 rounded-full bg-cyan-400/14 blur-3xl" />
           <div className="pointer-events-none absolute inset-x-[30%] bottom-[-2.5rem] h-24 rounded-full bg-indigo-400/10 blur-3xl" />
-          <div className="grid md:grid-cols-3 gap-6 max-w-[1120px] mx-auto items-stretch">
+          <div className="grid md:grid-cols-2 gap-6 max-w-[860px] mx-auto items-stretch">
             {pricingPlans.map((plan, i) => (
               <motion.div
                 key={plan.id}
@@ -400,18 +375,12 @@ export default function Pricing() {
                 ) : null}
 
                 <div className="relative z-[2] flex items-baseline gap-1">
-                  {plan.id === "free" ? (
-                    <span className="font-black tracking-tight text-[2.15rem] text-white">
-                      FREE
+                  <>
+                    <span className="font-black tracking-tight text-[2.6rem] text-white">
+                      ${formatPrice(plan.price)}
                     </span>
-                  ) : (
-                    <>
-                      <span className="font-black tracking-tight text-[2.6rem] text-white">
-                        ${formatPrice(plan.price)}
-                      </span>
-                      <span className="text-white/80">/month</span>
-                    </>
-                  )}
+                    <span className="text-white/80">/month</span>
+                  </>
                 </div>
                 {plan.saveText ? (
                   <p className="text-xs text-emerald-300 font-semibold mt-1">

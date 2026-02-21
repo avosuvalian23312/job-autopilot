@@ -1,24 +1,5 @@
 export const pricingPlans = [
   {
-    id: "free",
-    name: "FREE",
-    price: 0,
-    originalPrice: null,
-    saveText: null,
-    credits: 10,
-    description: "Perfect for trying Job Autopilot",
-    features: [
-      "10 credits per month",
-      "Resume generation",
-      "Cover letter generation",
-      "Basic support",
-    ],
-    popular: false,
-    badges: [],
-    limitedBadge: null,
-    cta: "Start Free",
-  },
-  {
     id: "pro",
     name: "Pro",
     price: 14.99,
@@ -28,7 +9,7 @@ export const pricingPlans = [
     description: "Best for active job hunters",
     features: [
       "150 credits per month",
-      "Everything in Free",
+      "All core generation features",
       "Priority generation",
       "Priority support",
     ],

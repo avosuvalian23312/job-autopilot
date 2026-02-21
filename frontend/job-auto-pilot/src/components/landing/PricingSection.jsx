@@ -30,10 +30,10 @@ export default function PricingSection({ onSelect }) {
           </p>
         </motion.div>
 
-        <div className="relative max-w-5xl mx-auto">
+        <div className="relative max-w-4xl mx-auto">
           <div className="pointer-events-none absolute left-[14%] top-16 h-64 w-64 rounded-full bg-violet-500/14 blur-3xl" />
           <div className="pointer-events-none absolute right-[12%] top-16 h-64 w-64 rounded-full bg-cyan-400/14 blur-3xl" />
-          <div className="grid md:grid-cols-3 gap-6 items-stretch">
+          <div className="grid md:grid-cols-2 gap-6 items-stretch">
             {pricingPlans.map((plan, i) => (
               <motion.div
                 key={plan.id}
@@ -104,16 +104,12 @@ export default function PricingSection({ onSelect }) {
                     <div className="h-6" />
                   )}
                   <div className="flex items-baseline gap-1">
-                    {plan.id === "free" ? (
-                      <span className="font-black tracking-tight text-[2.2rem] text-white">FREE</span>
-                    ) : (
-                      <>
-                        <span className="font-black tracking-tight text-[2.6rem] text-white">
-                          ${formatPrice(plan.price)}
-                        </span>
-                        <span className="text-white/70">/month</span>
-                      </>
-                    )}
+                    <>
+                      <span className="font-black tracking-tight text-[2.6rem] text-white">
+                        ${formatPrice(plan.price)}
+                      </span>
+                      <span className="text-white/70">/month</span>
+                    </>
                   </div>
                   <p className="text-xs text-emerald-300 font-semibold mt-1">
                     {plan.saveText || "Entry plan"}
